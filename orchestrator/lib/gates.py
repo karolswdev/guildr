@@ -86,6 +86,13 @@ class GateRegistry:
 
             return gate.decision
 
+    def is_open(self, name: str) -> bool:
+        """Check if a gate is still open (not yet decided)."""
+        gate = self._gates.get(name)
+        if gate is None:
+            return False
+        return gate.decision == "pending"
+
     def get_rejection_reason(self, name: str) -> str:
         """Get the reason for a gate rejection."""
         gate = self._gates.get(name)
