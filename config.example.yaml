@@ -1,0 +1,25 @@
+# Orchestrator configuration example.
+# Copy to config.yaml and adjust values.
+
+llama_server_url: http://192.168.1.13:8080
+project_dir: ./project
+
+# Maximum retries per phase before escalation
+max_retries: 3
+
+# Total orchestrator iterations before halting
+max_total_iterations: 20
+
+# Architect self-evaluation passes
+architect_max_passes: 3
+architect_pass_threshold: 4
+
+# Quiz turns (ingestion phase)
+quiz_min_turns: 3
+quiz_max_turns: 10
+
+# Require human approval at gate transitions
+require_human_approval: true
+
+# Expose server to non-RFC1918 IPs (LAN-only by default)
+expose_public: false

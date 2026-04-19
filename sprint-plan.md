@@ -120,7 +120,7 @@ tests/test_state.py::TestReadWriteFile::test_read_file_not_found PASSED [100%]
 
 ============================== 13 passed in 0.02s ==============================```
 - [x] Atomic-write test passes
-- [ ] Committed as <short-sha>
+- [x] Committed as ff5f7e0
 
 
 ### Task 4: Config loading
@@ -140,8 +140,31 @@ tests/test_state.py::TestReadWriteFile::test_read_file_not_found PASSED [100%]
 - Round-trip: write YAML → load → compare struct
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
-- [ ] Round-trip test passes
+- [ ] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: respx-0.23.1, anyio-4.13.0
+collecting ... collected 14 items
+
+tests/test_config.py::TestFromYaml::test_loads_full_config PASSED        [  7%]
+tests/test_config.py::TestFromYaml::test_loads_minimal_config PASSED     [ 14%]
+tests/test_config.py::TestFromYaml::test_defaults_expose_public_false PASSED [ 21%]
+tests/test_config.py::TestFromYaml::test_missing_required_field PASSED   [ 28%]
+tests/test_config.py::TestFromYaml::test_missing_file PASSED             [ 35%]
+tests/test_config.py::TestFromYaml::test_invalid_yaml PASSED             [ 42%]
+tests/test_config.py::TestFromYaml::test_yaml_with_hyphenated_keys PASSED [ 50%]
+tests/test_config.py::TestFromYaml::test_round_trip PASSED               [ 57%]
+tests/test_config.py::TestFromEnv::test_minimal_env PASSED               [ 64%]
+tests/test_config.py::TestFromEnv::test_missing_url PASSED               [ 71%]
+tests/test_config.py::TestFromEnv::test_env_overrides_defaults PASSED    [ 78%]
+tests/test_config.py::TestFromEnv::test_legacy_url_var PASSED            [ 85%]
+tests/test_config.py::TestFromEnv::test_primary_url_var PASSED           [ 92%]
+tests/test_config.py::TestFromEnv::test_primary_takes_precedence PASSED [100%]
+
+============================== 14 passed in 0.03s ==============================```
+- [x] Round-trip test passes
 - [ ] Committed as <short-sha>
 
 
