@@ -26,9 +26,9 @@ Phase 1 establishes the core infrastructure: LLM client for llama-server communi
 - Run `python -c "import orchestrator; print(orchestrator.__file__)"`
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```Successfully built orchestrator / Successfully installed orchestrator-0.1.0```
-- [ ] Import verified: `/Users/karol/dev/projects/llm-projects/build/workspace/orchestrator/__init__.py`
-- [ ] Committed as f573d44
+- [x] Test command run, output recorded: ```Successfully built orchestrator / Successfully installed orchestrator-0.1.0```
+- [x] Import verified: `/Users/karol/dev/projects/llm-projects/build/workspace/orchestrator/__init__.py`
+- [x] Committed as dd68070
 
 
 ### Task 2: LLM client
