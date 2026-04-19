@@ -1049,8 +1049,35 @@ tests/test_dry_run.py::TestZeroRealCalls::test_dry_run_mode_without_network PASS
 - Manual: run inspect commands against a completed project dir
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
-- [ ] Manual inspect commands work correctly
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, respx-0.23.1, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 17 items
+
+tests/test_inspect.py::TestFindProject::test_finds_by_direct_path PASSED [  5%]
+tests/test_inspect.py::TestFindProject::test_finds_by_name_in_tmp PASSED [ 11%]
+tests/test_inspect.py::TestFindProject::test_raises_on_missing_project PASSED [ 17%]
+tests/test_inspect.py::TestListPhases::test_lists_all_phases PASSED      [ 23%]
+tests/test_inspect.py::TestListPhases::test_marks_current_phase PASSED [ 29%]
+tests/test_inspect.py::TestListPhases::test_marks_done_phases PASSED     [ 35%]
+tests/test_inspect.py::TestListPhases::test_shows_gate_status PASSED     [ 41%]
+tests/test_inspect.py::TestDumpSession::test_dumps_session_json PASSED     [ 47%]
+tests/test_inspect.py::TestDumpSession::test_finds_latest_session PASSED   [ 52%]
+tests/test_inspect.py::TestDumpSession::test_exits_on_missing_session PASSED [ 58%]
+tests/test_inspect.py::TestShowTokens::test_shows_token_summary PASSED     [ 64%]
+tests/test_inspect.py::TestShowTokens::test_counts_only_llm_calls PASSED   [ 70%]
+tests/test_inspect.py::TestShowTokens::test_exits_on_missing_logs PASSED   [ 76%]
+tests/test_inspect.py::TestMain::test_list_phases_by_default PASSED       [ 82%]
+tests/test_inspect.py::TestMain::test_dump_phase_session PASSED           [ 88%]
+tests/test_inspect.py::TestMain::test_show_tokens PASSED                  [ 94%]
+tests/test_inspect.py::TestMain::test_unknown_project_exits PASSED        [100%]
+
+============================== 17 passed in 0.03s ==============================```
+- [x] Manual inspect commands work correctly
 - [ ] Committed as <short-sha>
 
 
