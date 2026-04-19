@@ -299,6 +299,123 @@ tests/test_ensure_qwendea.py::TestEndToEnd::test_full_quiz_flow PASSED   [100%]
 - [x] Committed as 0651a81
 
 
+## Phase 3: Architect with Self-Evaluation Loop
+
+### Task 1: Prompt templates
+- **Priority**: P0
+- **Dependencies**: none
+- **Files**: `orchestrator/roles/prompts/architect/{generate,refine,judge}.txt`
+
+**Acceptance Criteria:**
+- [ ] `generate.txt` includes the full `sprint-plan.md` structure
+      specification from `01-conventions.md`
+- [ ] `judge.txt` includes the skeptical framing and the strict JSON
+      schema
+- [ ] `refine.txt` references `{failures}` and `{current_plan}` slots
+      only — no extra context
+
+**Evidence Required:**
+- Visual inspection via `cat`
+- `grep "Evidence Required" orchestrator/roles/prompts/architect/generate.txt`
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```<actual output>```
+- [ ] Committed as <short-sha>  <!-- mandatory; filled after commit -->
+
+
+
+### Task 2: `_generate` and `_refine`
+- **Priority**: P0
+- **Dependencies**: Task 1, Phase 1
+- **Files**: `orchestrator/roles/architect.py`,
+  `tests/test_architect_gen.py`
+
+**Acceptance Criteria:**
+- [ ] `_generate` produces a markdown string with all sprint-plan
+      headers
+- [ ] `_refine` strips prior reasoning from the messages array
+- [ ] `_refine` injects only the failed-criteria feedback, not the full
+      evaluation JSON
+
+**Evidence Required:**
+- `pytest tests/test_architect_gen.py -v`
+- Message-array inspection: mock LLM, capture the `messages`
+  parameter, assert no `reasoning_content` field present
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```<actual output>```
+- [ ] Committed as <short-sha>  <!-- mandatory; filled after commit -->
+
+
+
+### Task 3: `_self_evaluate` with JSON robustness
+- **Priority**: P0
+- **Dependencies**: Task 1
+- **Files**: `orchestrator/roles/architect.py`,
+  `tests/test_architect_judge.py`
+
+**Acceptance Criteria:**
+- [ ] Strict JSON parse succeeds on well-formed output
+- [ ] Re-prompt on malformed → success on retry
+- [ ] Regex fallback extracts outermost `{...}` block
+- [ ] After 2 failed reparse attempts, returns score 0 with
+      `{"reason": "malformed"}`
+
+**Evidence Required:**
+- `pytest tests/test_architect_judge.py -v`
+- Test fixtures: valid JSON, JSON with prose wrapper, JSON with
+  trailing junk, completely malformed
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```<actual output>```
+- [ ] Committed as <short-sha>  <!-- mandatory; filled after commit -->
+
+
+
+### Task 4: Pass/fail logic with mandatory criteria
+- **Priority**: P0
+- **Dependencies**: Task 3
+- **Files**: `orchestrator/roles/architect.py`,
+  `tests/test_architect_passes.py`
+
+**Acceptance Criteria:**
+- [ ] Score 5/6 with Testability=0 → FAIL (mandatory)
+- [ ] Score 5/6 with Evidence=0 → FAIL (mandatory)
+- [ ] Score 4/6 with Testability=1 AND Evidence=1 → PASS
+- [ ] Score 6/6 → PASS
+- [ ] Score 3/6 with all mandatory=1 → FAIL (below threshold)
+
+**Evidence Required:**
+- `pytest tests/test_architect_passes.py -v` covering all 5 cases
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```<actual output>```
+- [ ] Committed as <short-sha>  <!-- mandatory; filled after commit -->
+
+
+
+### Task 5: Escalation
+- **Priority**: P1
+- **Dependencies**: Task 4
+- **Files**: `orchestrator/roles/architect.py`,
+  `tests/test_architect_escalate.py`
+
+**Acceptance Criteria:**
+- [ ] Writes all drafts to `.orchestrator/drafts/`
+- [ ] Writes evaluation JSONs alongside
+- [ ] Writes human-readable `.orchestrator/escalation.md`
+- [ ] Raises `ArchitectFailure` with best score in the message
+
+**Evidence Required:**
+- `pytest tests/test_architect_escalate.py -v`
+- File-existence assertions after forced 3-pass failure
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```<actual output>```
+- [ ] Committed as <short-sha>  <!-- mandatory; filled after commit -->
+
+
+
 ## Risks & Mitigations
 1. llama-server unavailable → Integration tests gated on LLAMA_SERVER_URL env var
 2. OpenAI SDK version changes → Pin minimum version in pyproject.toml
