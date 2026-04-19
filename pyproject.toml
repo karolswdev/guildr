@@ -10,17 +10,21 @@ requires-python = ">=3.12"
 dependencies = [
     "openai>=1.0.0",
     "pyyaml>=6.0",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "python-multipart>=0.0.6",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "respx>=0.20",
-    "httpx-mock>=0.3",
+    "httpx>=0.25.0",
+    "pytest-asyncio>=0.23.0",
 ]
 
 [tool.setuptools.packages.find]
-include = ["orchestrator*"]
+include = ["orchestrator*", "web*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "web/backend/tests"]

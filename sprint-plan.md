@@ -507,3 +507,192 @@ tests/test_architect_escalate.py::TestFormatFailures::test_returns_default_when_
 1. llama-server unavailable → Integration tests gated on LLAMA_SERVER_URL env var
 2. OpenAI SDK version changes → Pin minimum version in pyproject.toml
 3. YAML parsing errors → Validate config schema on load
+
+
+## Phase 6: Web API + PWA
+
+### Task 1: FastAPI skeleton + LAN middleware
+- **Priority**: P0
+- **Files**: `web/backend/app.py`, `web/backend/middleware.py`,
+  `web/backend/tests/test_middleware.py`
+
+**Acceptance Criteria:**
+- [x] Server starts on `0.0.0.0:8000`
+- [x] Requests from `192.168.0.0/16` succeed
+- [x] Requests from `8.8.8.8` return 403
+- [x] `ORCHESTRATOR_EXPOSE_PUBLIC=1` bypasses the check
+- [x] Startup log contains WARNING when bypass enabled
+
+**Evidence Required:**
+- `pytest web/backend/tests/test_middleware.py -v`
+- Manual: `curl -H "X-Forwarded-For: 8.8.8.8" ...` returns 403 when
+  middleware honors X-Forwarded-For (decide via config — default OFF)
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0, /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, respx-0.23.1, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_fixture_loop_scope=None
+collecting ... collected 13 items
+
+web/backend/tests/test_middleware.py::TestIsRfc1918::test_private_10 PASSED [  7%]
+web/backend/tests/test_middleware.py::TestIsRfc1918::test_private_172 PASSED [ 15%]
+web/backend/tests/test_middleware.py::TestIsRfc1918::test_private_192 PASSED [ 23%]
+web/backend/tests/test_middleware.py::TestIsRfc1918::test_loopback PASSED [ 30%]
+web/backend/tests/test_middleware.py::TestIsRfc1918::test_public_google_dns PASSED [ 38%]
+web/backend/tests/test_middleware.py::TestIsRfc1918::test_public_cloudflare PASSED [ 46%]
+web/backend/tests/test_middleware.py::TestIsRfc1918::test_invalid_ip PASSED [ 53%]
+web/backend/tests/test_middleware.py::test_lan_request_succeeds PASSED   [ 61%]
+web/backend/tests/test_middleware.py::test_public_ip_returns_403 PASSED  [ 69%]
+web/backend/tests/test_middleware.py::test_expose_public_bypass PASSED   [ 76%]
+web/backend/tests/test_middleware.py::test_loopback_succeeds PASSED      [ 84%]
+web/backend/tests/test_middleware.py::test_no_forwarded_uses_client_host PASSED [ 92%]
+web/backend/tests/test_middleware.py::test_startup_warning_when_expose_public PASSED [100%]
+
+============================== 13 passed in 0.14s ==============================```
+- [x] Committed as 181b4ec
+
+
+### Task 2: Project routes
+- **Priority**: P0
+- **Dependencies**: Task 1, Phase 5
+- **Files**: `web/backend/routes/projects.py`, tests
+
+**Acceptance Criteria:**
+- [ ] Create / list / get / start endpoints return documented shapes
+- [ ] Creating a project writes project dir
+- [ ] `start` enqueues the orchestrator run in the background
+
+**Evidence Required:**
+- `pytest web/backend/tests/test_projects.py -v`
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```...```
+- [ ] Committed as <sha>
+
+
+### Task 3: Quiz routes
+- **Priority**: P0
+- **Dependencies**: Task 2, Phase 2
+- **Files**: `web/backend/routes/quiz.py`, tests
+
+**Acceptance Criteria:**
+- [ ] `/next` returns next seed, then adaptive, then `done:true` with
+      synthesized `qwendea`
+- [ ] `/edit` truncates subsequent turns correctly
+- [ ] `/commit` writes `qwendea.md` to project dir
+
+**Evidence Required:**
+- Integration test: scripted answer sequence produces valid `qwendea.md`
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```...```
+- [ ] Committed as <sha>
+
+
+### Task 4: Gate routes
+- **Priority**: P0
+- **Dependencies**: Task 2
+- **Files**: `web/backend/routes/gates.py`, tests
+
+**Acceptance Criteria:**
+- [ ] List returns pending + decided gates
+- [ ] Decide unblocks `Gate.wait()` in orchestrator
+- [ ] Deciding an already-decided gate is idempotent (returns current)
+
+**Evidence Required:**
+- `pytest web/backend/tests/test_gates.py -v`
+- Async test: open gate, call decide, orchestrator proceeds
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```...```
+- [ ] Committed as <sha>
+
+
+### Task 5: SSE stream
+- **Priority**: P1
+- **Dependencies**: Task 2, Phase 5 EventBus
+- **Files**: `web/backend/routes/stream.py`, tests
+
+**Acceptance Criteria:**
+- [ ] SSE endpoint streams orchestrator events live
+- [ ] Client reconnect doesn't crash server
+- [ ] Multiple subscribers all receive events
+
+**Evidence Required:**
+- `pytest web/backend/tests/test_stream.py -v`
+- Manual: two `curl -N` subscribers, emit event, both receive
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```...```
+- [ ] Committed as <sha>
+
+
+### Task 6: Metrics passthrough
+- **Priority**: P2
+- **Dependencies**: Task 1
+- **Files**: `web/backend/routes/metrics.py`, tests
+
+**Acceptance Criteria:**
+- [ ] `/api/llama/metrics` returns llama-server's raw metrics
+- [ ] `/api/llama/health` returns llama-server's health JSON
+- [ ] Upstream errors → 502 with useful message
+
+**Evidence Required:**
+- `pytest web/backend/tests/test_metrics.py -v`
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```...```
+- [ ] Committed as <sha>
+
+
+### Task 7: PWA shell + manifest + SW
+- **Priority**: P0
+- **Dependencies**: Task 1
+- **Files**: `web/frontend/index.html`, `manifest.json`, `sw.js`,
+  `src/app.ts`
+
+**Acceptance Criteria:**
+- [ ] `manifest.json` has icons, name, start_url, display=standalone
+- [ ] Service worker caches app shell
+- [ ] Installs to home screen on iOS Safari and Android Chrome
+- [ ] Offline load shows "you are offline — needs LAN" message
+
+**Evidence Required:**
+- Lighthouse PWA audit score ≥ 90
+- Manual install test on a phone on the LAN
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```...```
+- [ ] Committed as <sha>
+
+
+### Task 8: Views (NewProject, Quiz, Progress, Gate, Artifacts)
+- **Priority**: P0
+- **Dependencies**: Task 7 + backend routes
+- **Files**: `web/frontend/src/views/*.ts`
+
+**Acceptance Criteria:**
+- [ ] New project view: create → quiz-or-paste flow
+- [ ] Quiz view: Q&A with back-edit
+- [ ] Progress view: live event log + phase indicator + metrics gauge
+- [ ] Gate view: markdown artifact + approve/reject with reason
+- [ ] Mobile-responsive at 375px
+
+**Evidence Required:**
+- Manual end-to-end on a phone: new project → quiz → approve
+  sprint-plan → watch Coder progress
+- Screenshot fixtures for regression
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```...```
+- [ ] Committed as <sha>
+
+
+## Risks & Mitigations (Phase 6)
+1. PWA install on iOS Safari → Use apple-mobile-web-app-capable meta tag
+2. Service worker caching stale assets → Use cache-busting filenames
+3. SSE connection drops → Implement client-side reconnect with exponential backoff
