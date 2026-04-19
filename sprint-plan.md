@@ -570,8 +570,27 @@ web/backend/tests/test_middleware.py::test_startup_warning_when_expose_public PA
 - `pytest web/backend/tests/test_projects.py -v`
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```...```
-- [ ] Committed as <sha>
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0, /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, respx-0.23.1, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_fixture_loop_scope=None
+collecting ... collected 9 items
+
+web/backend/tests/test_projects.py::test_create_project PASSED           [ 11%]
+web/backend/tests/test_projects.py::test_create_project_needs_quiz_when_no_idea PASSED [ 22%]
+web/backend/tests/test_projects.py::test_list_projects PASSED            [ 33%]
+web/backend/tests/test_projects.py::test_get_project PASSED              [ 44%]
+web/backend/tests/test_projects.py::test_get_project_not_found PASSED    [ 55%]
+web/backend/tests/test_projects.py::test_start_project PASSED            [ 66%]
+web/backend/tests/test_projects.py::test_start_project_not_found PASSED  [ 77%]
+web/backend/tests/test_projects.py::test_project_dir_created PASSED      [ 88%]
+web/backend/tests/test_projects.py::test_initial_idea_written_to_disk PASSED [100%]
+
+============================== 9 passed in 0.16s ==============================```
+- [x] Committed as f9df8e9
 
 
 ### Task 3: Quiz routes
