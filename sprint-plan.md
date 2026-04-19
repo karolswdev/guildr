@@ -344,8 +344,25 @@ tests/test_ensure_qwendea.py::TestEndToEnd::test_full_quiz_flow PASSED   [100%]
   parameter, assert no `reasoning_content` field present
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
-- [ ] Committed as <short-sha>  <!-- mandatory; filled after commit -->
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: respx-0.23.1, anyio-4.13.0
+collecting ... collected 8 items
+
+tests/test_architect_gen.py::TestGenerate::test_generate_calls_llm_with_system_and_user PASSED [ 12%]
+tests/test_architect_gen.py::TestGenerate::test_generate_includes_qwendea_in_prompt PASSED [ 25%]
+tests/test_architect_gen.py::TestGenerate::test_generate_produces_markdown_with_headers PASSED [ 37%]
+tests/test_architect_gen.py::TestGenerate::test_generate_uses_max_tokens PASSED [ 50%]
+tests/test_architect_gen.py::TestRefine::test_refine_strips_reasoning_content PASSED [ 62%]
+tests/test_architect_gen.py::TestRefine::test_refine_injects_only_failed_criteria PASSED [ 75%]
+tests/test_architect_gen.py::TestRefine::test_refine_includes_prior_plan PASSED [ 87%]
+tests/test_architect_gen.py::TestRefine::test_refine_uses_max_tokens PASSED [100%]
+
+============================== 8 passed in 0.20s ==============================```
+- [x] Committed as 3a774d3
 
 
 
