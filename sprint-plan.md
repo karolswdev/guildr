@@ -433,8 +433,29 @@ tests/test_architect_judge.py::TestComputeScore::test_non_dict_entry_treated_as_
 - `pytest tests/test_architect_passes.py -v` covering all 5 cases
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
-- [ ] Committed as <short-sha>  <!-- mandatory; filled after commit -->
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: respx-0.23.1, anyio-4.13.0
+collecting ... collected 12 items
+
+tests/test_architect_passes.py::TestPassFailLogic::test_score_5_with_testability_0_fails PASSED [  8%]
+tests/test_architect_passes.py::TestPassFailLogic::test_score_5_with_evidence_0_fails PASSED [ 16%]
+tests/test_architect_passes.py::TestPassFailLogic::test_score_4_with_mandatory_1_passes PASSED [ 25%]
+tests/test_architect_passes.py::TestPassFailLogic::test_score_6_passes PASSED [ 33%]
+tests/test_architect_passes.py::TestPassFailLogic::test_score_3_below_threshold_fails PASSED [ 41%]
+tests/test_architect_passes.py::TestPassFailLogic::test_score_4_with_testability_0_fails PASSED [ 50%]
+tests/test_architect_passes.py::TestPassFailLogic::test_score_4_with_evidence_0_fails PASSED [ 58%]
+tests/test_architect_passes.py::TestPassFailLogic::test_score_5_with_both_mandatory_passes PASSED [ 66%]
+tests/test_architect_passes.py::TestPassFailLogic::test_score_exactly_at_threshold PASSED [ 75%]
+tests/test_architect_passes.py::TestPassFailLogic::test_score_below_threshold_fails_even_with_mandatory PASSED [ 83%]
+tests/test_architect_passes.py::TestPassFailLogic::test_empty_evaluation_fails PASSED [ 91%]
+tests/test_architect_passes.py::TestPassFailLogic::test_missing_mandatory_treated_as_zero PASSED [100%]
+
+============================== 12 passed in 0.21s ==============================```
+- [x] Committed as 7731097
 
 
 
