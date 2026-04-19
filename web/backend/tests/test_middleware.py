@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from unittest.mock import MagicMock
 
@@ -14,6 +15,9 @@ from web.backend.middleware import LanOnlyMiddleware, _is_rfc1918
 
 
 def _make_app() -> FastAPI:
+    if os.environ.get("ORCHESTRATOR_EXPOSE_PUBLIC") == "1":
+        logging.warning("ORCHESTRATOR_EXPOSE_PUBLIC=1 — accepting non-RFC1918 connections")
+
     app = FastAPI()
     app.add_middleware(LanOnlyMiddleware)
 

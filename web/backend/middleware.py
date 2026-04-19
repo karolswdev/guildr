@@ -32,6 +32,13 @@ def _is_rfc1918(ip: str) -> bool:
 class LanOnlyMiddleware(BaseHTTPMiddleware):
     """Reject requests from non-RFC1918 source IPs."""
 
+    def __init__(self, app) -> None:
+        super().__init__(app)
+        if os.environ.get("ORCHESTRATOR_EXPOSE_PUBLIC") == "1":
+            logger.warning(
+                "ORCHESTRATOR_EXPOSE_PUBLIC=1 — accepting non-RFC1918 connections"
+            )
+
     async def dispatch(self, request: Request, call_next):
         if os.environ.get("ORCHESTRATOR_EXPOSE_PUBLIC") == "1":
             return await call_next(request)
