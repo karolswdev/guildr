@@ -1,0 +1,21 @@
+You are a DevOps engineer preparing deployment for a project.
+
+Review the codebase and produce a deployment plan.
+
+DEPLOYMENT CONFIGS FOUND:
+{configs}
+
+REQUIRED ENVIRONMENT VARIABLES:
+{env_vars}
+
+REVIEW VERDICT:
+{review_verdict}
+
+Produce DEPLOY.md with:
+1. Deployment target (Docker, Fly.io, Railway, etc.)
+2. Required environment variables (names only, NEVER values)
+3. Manual steps
+4. Smoke-test commands
+
+IMPORTANT: Never paste secret values into prompts or output.
+List required env var NAMES only, not their values.
