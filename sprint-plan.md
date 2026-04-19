@@ -215,18 +215,38 @@ tests/test_quiz.py::TestAnswerHistory::test_is_complete_false_during_quiz PASSED
 - **Files**: `orchestrator/ingestion/quiz.py`, `tests/test_synthesize.py`
 
 **Acceptance Criteria:**
-- [ ] Produces markdown with all 5 required headers
-- [ ] Retries once on missing-header output with targeted feedback
-- [ ] Strips wrapping code fences if present
-- [ ] On second failure, raises `SynthesisError` with the bad output
+- [x] Produces markdown with all 5 required headers
+- [x] Retries once on missing-header output with targeted feedback
+- [x] Strips wrapping code fences if present
+- [x] On second failure, raises `SynthesisError` with the bad output
 
 **Evidence Required:**
 - Mock LLM returning malformed output → retry → valid output → passes
 - Mock LLM returning malformed output twice → `SynthesisError` raised
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```...```
-- [ ] Committed as <short-sha>
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /opt/homebrew/opt/python@3.14/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: respx-0.23.1, anyio-4.13.0
+collecting ... collected 11 items
+
+tests/test_synthesize.py::TestSynthesizeSuccess::test_produces_valid_qwendea PASSED [  9%]
+tests/test_synthesize.py::TestSynthesizeSuccess::test_strips_code_fences PASSED [ 18%]
+tests/test_synthesize.py::TestSynthesizeSuccess::test_strips_code_fences_without_language_tag PASSED [ 27%]
+tests/test_synthesize.py::TestSynthesizeRetry::test_retry_on_missing_headers PASSED [ 36%]
+tests/test_synthesize.py::TestSynthesizeRetry::test_prompt_contains_missing_headers PASSED [ 45%]
+tests/test_synthesize.py::TestSynthesisError::test_raises_on_double_failure PASSED [ 54%]
+tests/test_synthesize.py::TestSynthesisError::test_error_message_lists_missing_headers PASSED [ 63%]
+tests/test_synthesize.py::TestSynthesisError::test_raises_on_llm_error_during_retry PASSED [ 72%]
+tests/test_synthesize.py::TestSynthesisPrompt::test_synthesize_prompt_includes_qa_log PASSED [ 81%]
+tests/test_synthesize.py::TestSynthesisPrompt::test_synthesize_prompt_structure PASSED [ 90%]
+tests/test_synthesize.py::TestSynthesisPrompt::test_retry_prompt_structure PASSED [100%]
+
+============================== 11 passed in 0.21s ==============================```
+- [x] Committed as 7c3249d
 
 
 ### Task 3: _ensure_qwendea() entry point
@@ -236,10 +256,10 @@ tests/test_quiz.py::TestAnswerHistory::test_is_complete_false_during_quiz PASSED
   `tests/test_ensure_qwendea.py`
 
 **Acceptance Criteria:**
-- [ ] If `qwendea.md` exists: read, validate structure, return content
-- [ ] If missing: expose a `QuizSession` object the PWA can drive
-- [ ] On PWA session completion, write `qwendea.md` to `project_dir`
-- [ ] Existing `qwendea.md` with missing headers → raise
+- [x] If `qwendea.md` exists: read, validate structure, return content
+- [x] If missing: expose a `QuizSession` object the PWA can drive
+- [x] On PWA session completion, write `qwendea.md` to `project_dir`
+- [x] Existing `qwendea.md` with missing headers → raise
   `InvalidQwendea` with specific missing headers
 
 **Evidence Required:**
