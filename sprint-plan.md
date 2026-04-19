@@ -476,8 +476,30 @@ tests/test_architect_passes.py::TestPassFailLogic::test_missing_mandatory_treate
 - File-existence assertions after forced 3-pass failure
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
-- [ ] Committed as <short-sha>  <!-- mandatory; filled after commit -->
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: respx-0.23.1, anyio-4.13.0
+collecting ... collected 13 items
+
+tests/test_architect_escalate.py::TestEscalationFiles::test_writes_draft_files PASSED [  7%]
+tests/test_architect_escalate.py::TestEscalationFiles::test_writes_evaluation_jsons PASSED [ 15%]
+tests/test_architect_escalate.py::TestEscalationFiles::test_writes_escalation_md PASSED [ 23%]
+tests/test_architect_escalate.py::TestEscalationFiles::test_escalation_lists_best_draft PASSED [ 30%]
+tests/test_architect_escalate.py::TestArchitectFailure::test_raises_with_best_score PASSED [ 38%]
+tests/test_architect_escalate.py::TestArchitectFailure::test_writes_drafts_on_failure PASSED [ 46%]
+tests/test_architect_escalate.py::TestArchitectFailure::test_writes_escalation_on_failure PASSED [ 53%]
+tests/test_architect_escalate.py::TestExecuteSuccess::test_writes_sprint_plan_on_pass PASSED [ 61%]
+tests/test_architect_escalate.py::TestExecuteSuccess::test_returns_immediately_on_first_pass PASSED [ 69%]
+tests/test_architect_escalate.py::TestFormatFailures::test_formats_single_failure PASSED [ 76%]
+tests/test_architect_escalate.py::TestFormatFailures::test_formats_multiple_failures PASSED [ 84%]
+tests/test_architect_escalate.py::TestFormatFailures::test_returns_reason_for_malformed PASSED [ 92%]
+tests/test_architect_escalate.py::TestFormatFailures::test_returns_default_when_no_failures PASSED [100%]
+
+============================== 13 passed in 0.22s ==============================```
+- [x] Committed as 44fcf1b
 
 
 
