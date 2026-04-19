@@ -51,7 +51,29 @@ Phase 1 establishes the core infrastructure: LLM client for llama-server communi
   has non-empty `content` OR `reasoning` fields
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
+- [ ] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: respx-0.23.1, anyio-4.13.0
+collecting ... collected 13 items
+
+tests/test_llm.py::TestLLMClientParsing::test_parses_content_and_reasoning PASSED [  7%]
+tests/test_llm.py::TestLLMClientParsing::test_parses_empty_reasoning PASSED [ 15%]
+tests/test_llm.py::TestLLMClientParsing::test_parses_none_reasoning PASSED [ 23%]
+tests/test_llm.py::TestThinkingTruncation::test_raises_on_length_with_empty_content PASSED [ 30%]
+tests/test_llm.py::TestThinkingTruncation::test_no_raise_on_length_with_content PASSED [ 38%]
+tests/test_llm.py::TestThinkingTruncation::test_no_raise_on_stop_reason PASSED [ 46%]
+tests/test_llm.py::TestHealth::test_health_returns_true_on_ok PASSED     [ 53%]
+tests/test_llm.py::TestHealth::test_health_returns_false_on_non_ok PASSED [ 61%]
+tests/test_llm.py::TestHealth::test_health_returns_false_on_error PASSED [ 69%]
+tests/test_llm.py::TestRetryBehavior::test_retries_on_503 PASSED         [ 76%]
+tests/test_llm.py::TestRetryBehavior::test_max_retries_exhausted PASSED  [ 84%]
+tests/test_llm.py::TestRetryBehavior::test_connection_refused_raises_immediately PASSED [ 92%]
+tests/test_llm.py::TestIntegration::test_real_server_response SKIPPED    [100%]
+
+================== 12 passed, 1 skipped, 1 warning in 16.77s ===================```
 - [ ] Mock tests verify retry behavior
 - [ ] Integration test passes (if LLAMA_SERVER_URL set)
 - [ ] Committed as <short-sha>
