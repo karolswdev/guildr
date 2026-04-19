@@ -608,8 +608,32 @@ web/backend/tests/test_projects.py::test_initial_idea_written_to_disk PASSED [10
 - Integration test: scripted answer sequence produces valid `qwendea.md`
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```...```
-- [ ] Committed as <sha>
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0, /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, respx-0.23.1, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_fixture_loop_scope=None
+collecting ... collected 14 items
+
+web/backend/tests/test_quiz.py::test_next_question_returns_seed_question PASSED [  7%]
+web/backend/tests/test_quiz.py::test_next_question_after_project_creation PASSED [ 14%]
+web/backend/tests/test_quiz.py::test_answer_and_next PASSED                  [ 21%]
+web/backend/tests/test_quiz.py::test_edit_answer PASSED                      [ 28%]
+web/backend/tests/test_quiz.py::test_edit_invalid_turn_returns_400 PASSED    [ 35%]
+web/backend/tests/test_quiz.py::test_commit_writes_qwendea PASSED            [ 42%]
+web/backend/tests/test_quiz.py::test_quiz_next_not_found PASSED              [ 50%]
+web/backend/tests/test_quiz.py::TestQuizSession::test_seed_questions PASSED  [ 57%]
+web/backend/tests/test_quiz.py::TestQuizSession::test_next_returns_sequential_seed_questions PASSED [ 64%]
+web/backend/tests/test_quiz.py::TestQuizSession::test_next_after_seed_returns_followup PASSED [ 71%]
+web/backend/tests/test_quiz.py::TestQuizSession::test_is_complete_when_done PASSED [ 78%]
+web/backend/tests/test_quiz.py::TestQuizSession::test_edit_truncates_subsequent PASSED [ 85%]
+web/backend/tests/test_quiz.py::TestQuizSession::test_qa_log_format PASSED   [ 92%]
+web/backend/tests/test_quiz.py::TestQuizSession::test_synthesize_produces_markdown PASSED [100%]
+
+============================== 14 passed in 0.19s ==============================```
+- [x] Committed as c9f5a07
 
 
 ### Task 4: Gate routes
