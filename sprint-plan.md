@@ -1,13 +1,14 @@
 # Sprint Plan
 
 ## Overview
-Phase 1 establishes the core infrastructure: LLM client for llama-server communication, project state persistence, and config loading. These components form the foundation for all subsequent phases.
+Phase 1 establishes the core infrastructure: LLM client for llama-server communication, project state persistence, and config loading. Phase 2 adds requirements ingestion via an interactive quiz that produces `qwendea.md`.
 
 ## Architecture Decisions
 - Use the `openai` Python SDK (OpenAI-compatible protocol) for llama-server communication
 - JSON-based state persistence with atomic writes (tmp + rename pattern)
 - YAML config file with environment variable overrides
 - All code in `orchestrator/lib/` package
+- Quiz engine in `orchestrator/ingestion/` with adaptive LLM-driven follow-ups
 
 ## Tasks
 
@@ -166,6 +167,88 @@ tests/test_config.py::TestFromEnv::test_primary_takes_precedence PASSED  [100%]
 ============================== 14 passed in 0.03s ==============================```
 - [x] Round-trip test passes
 - [x] Committed as dd64d25
+
+
+### Task 1: QuizEngine seed + adaptive loop
+- **Priority**: P0
+- **Dependencies**: Phase 1 complete
+- **Files**: `orchestrator/ingestion/quiz.py`, `tests/test_quiz.py`
+
+**Acceptance Criteria:**
+- [ ] Returns seed questions in order for the first 3 turns
+- [ ] Calls LLM for adaptive questions from turn 4 onward
+- [ ] Stops on `DONE` or `quiz_max_turns`
+- [ ] Answer history preserved in order
+
+**Evidence Required:**
+- `pytest tests/test_quiz.py -v`
+- Mock LLM returning `DONE` after 5 turns → quiz stops at turn 5
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /opt/homebrew/opt/python@3.14/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: respx-0.23.1, anyio-4.13.0
+collecting ... collected 11 items
+
+tests/test_quiz.py::TestSeedQuestions::test_returns_three_seed_questions PASSED [  9%]
+tests/test_quiz.py::TestSeedQuestions::test_first_question PASSED [ 18%]
+tests/test_quiz.py::TestSeedQuestions::test_second_question PASSED [ 27%]
+tests/test_quiz.py::TestSeedQuestions::test_third_question PASSED [ 36%]
+tests/test_quiz.py::TestAdaptiveLoop::test_stops_on_done PASSED [ 45%]
+tests/test_quiz.py::TestAdaptiveLoop::test_stops_at_max_turns PASSED [ 54%]
+tests/test_quiz.py::TestAdaptiveLoop::test_adaptive_calls_llm PASSED [ 63%]
+tests/test_quiz.py::TestAnswerHistory::test_preserves_all_answers_in_order PASSED [ 72%]
+tests/test_quiz.py::TestAnswerHistory::test_qa_log_format PASSED [ 81%]
+tests/test_quiz.py::TestAnswerHistory::test_is_complete_becomes_true PASSED [ 90%]
+tests/test_quiz.py::TestAnswerHistory::test_is_complete_false_during_quiz PASSED [100%]
+
+============================== 11 passed in 0.22s ==============================```
+- [ ] Committed as <short-sha>
+
+
+### Task 2: synthesize() + validator
+- **Priority**: P0
+- **Dependencies**: Task 1
+- **Files**: `orchestrator/ingestion/quiz.py`, `tests/test_synthesize.py`
+
+**Acceptance Criteria:**
+- [ ] Produces markdown with all 5 required headers
+- [ ] Retries once on missing-header output with targeted feedback
+- [ ] Strips wrapping code fences if present
+- [ ] On second failure, raises `SynthesisError` with the bad output
+
+**Evidence Required:**
+- Mock LLM returning malformed output → retry → valid output → passes
+- Mock LLM returning malformed output twice → `SynthesisError` raised
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```...```
+- [ ] Committed as <short-sha>
+
+
+### Task 3: _ensure_qwendea() entry point
+- **Priority**: P0
+- **Dependencies**: Task 2
+- **Files**: `orchestrator/ingestion/ensure.py`,
+  `tests/test_ensure_qwendea.py`
+
+**Acceptance Criteria:**
+- [ ] If `qwendea.md` exists: read, validate structure, return content
+- [ ] If missing: expose a `QuizSession` object the PWA can drive
+- [ ] On PWA session completion, write `qwendea.md` to `project_dir`
+- [ ] Existing `qwendea.md` with missing headers → raise
+  `InvalidQwendea` with specific missing headers
+
+**Evidence Required:**
+- `pytest tests/test_ensure_qwendea.py -v`
+- End-to-end test with a scripted answer sequence
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Test command run, output recorded: ```...```
+- [ ] Committed as <short-sha>
 
 
 ## Risks & Mitigations
