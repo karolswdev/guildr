@@ -553,7 +553,7 @@ web/backend/tests/test_middleware.py::test_no_forwarded_uses_client_host PASSED 
 web/backend/tests/test_middleware.py::test_startup_warning_when_expose_public PASSED [100%]
 
 ============================== 13 passed in 0.14s ==============================```
-- [x] Committed as 181b4ec
+- [x] Committed as 3d604c9
 
 
 ### Task 2: Project routes
