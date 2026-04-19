@@ -47,6 +47,7 @@ def create_app(store=None) -> FastAPI:
     _include_router(app, "quiz", "/api/projects")
     _include_router(app, "gates", "/api/projects")
     _include_router(app, "stream", "/api/projects")
+    _include_router(app, "artifacts", "/api/projects")
     _include_router(app, "metrics", "/api/llama")
 
     @app.get("/healthz")

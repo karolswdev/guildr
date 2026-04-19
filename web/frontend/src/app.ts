@@ -4,6 +4,12 @@
  * Hash-based routing, module-level store, vanilla TS views.
  */
 
+import { renderNewProject } from "./views/NewProject.js";
+import { renderQuiz } from "./views/Quiz.js";
+import { renderProgress } from "./views/Progress.js";
+import { renderGate } from "./views/Gate.js";
+import { renderArtifacts } from "./views/Artifacts.js";
+
 // -- hash-based router -------------------------------------------------------
 
 type Route = { view: string; params: Record<string, string> };
@@ -81,18 +87,49 @@ function render(): void {
   const { view, params } = parseHash(window.location.hash);
   setState({ currentView: view, selectedProject: params.id || null });
 
-  // Simple view dispatcher — full views implemented in Task 8
+  // Full view dispatcher — Task 8
   switch (view) {
     case "":
     case "projects":
       renderProjectsList(app);
       break;
-    case "project":
-      renderProjectDetail(app, params);
+    case "new-project":
+      renderNewProjectView(app);
       break;
     default:
-      renderNotFound(app, view);
+      if (view.startsWith("project/")) {
+        renderProjectView(app, view, params);
+      } else {
+        renderNotFound(app, view);
+      }
   }
+}
+
+function renderProjectView(container: Element, view: string, params: Record<string, string>): void {
+  const projectId = params.id || "unknown";
+  const sub = params.sub || "";
+
+  switch (sub) {
+    case "quiz":
+      renderQuiz(container, navigate, projectId);
+      break;
+    case "progress":
+      renderProgress(container, navigate, projectId);
+      break;
+    case "gate":
+      renderGate(container, navigate, projectId, params.id || "");
+      break;
+    case "artifacts":
+      renderArtifacts(container, navigate, projectId, params.sub ? params.sub : undefined);
+      break;
+    default:
+      renderProjectDetail(container, params);
+      break;
+  }
+}
+
+function renderNewProjectView(container: Element): void {
+  renderNewProject(container, navigate);
 }
 
 function renderProjectsList(container: Element): void {
@@ -112,11 +149,46 @@ function renderProjectsList(container: Element): void {
       </button>
       <div id="project-list">
         <p style="color: #888; text-align: center; padding: 32px 0;">
-          No projects yet. Create one to get started.
+          Loading...
         </p>
       </div>
     </main>
   `;
+  loadProjectsList(container);
+}
+
+async function loadProjectsList(container: Element): Promise<void> {
+  const listEl = container.querySelector("#project-list") as HTMLDivElement;
+  try {
+    const projects = await apiGet("/api/projects") as Array<{
+      id: string; name: string; current_phase: string | null; created_at: string;
+    }>;
+
+    if (projects.length === 0) {
+      listEl.innerHTML = `<p style="color: #888; text-align: center; padding: 32px 0;">
+        No projects yet. Create one to get started.
+      </p>`;
+      return;
+    }
+
+    listEl.innerHTML = "";
+    for (const proj of projects) {
+      const div = document.createElement("div");
+      div.style.cssText = "margin-bottom: 8px; padding: 12px; background: #16213e; border-radius: 8px; cursor: pointer;";
+      div.innerHTML = `
+        <div style="font-size: 15px; font-weight: 600; margin-bottom: 4px;">${escapeHtml(proj.name)}</div>
+        <div style="font-size: 13px; color: #888;">
+          ${proj.current_phase ? "Phase: " + proj.current_phase : "No phase"} · ${proj.created_at}
+        </div>
+      `;
+      div.addEventListener("click", () => navigate(`#project/${proj.id}`));
+      listEl.appendChild(div);
+    }
+  } catch (err: unknown) {
+    listEl.innerHTML = `<p style="color: #e74c3c; text-align: center; padding: 32px 0;">
+      Failed to load projects: ${err instanceof Error ? err.message : "Unknown error"}
+    </p>`;
+  }
 }
 
 function renderProjectDetail(container: Element, params: Record<string, string>): void {
@@ -130,12 +202,76 @@ function renderProjectDetail(container: Element, params: Record<string, string>)
       >
         ← Back
       </button>
-      <h1 style="font-size: 18px; margin-top: 8px;">Project ${projectId}</h1>
+      <h1 style="font-size: 18px; margin-top: 8px;">Project ${escapeHtml(projectId)}</h1>
     </header>
     <main style="padding: 16px;">
-      <p style="color: #888;">Project detail view — loading...</p>
+      <div id="project-info" style="margin-bottom: 24px;">
+        <p style="color: #888;">Loading project info...</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button class="tap-target" id="btn-progress" style="width: 100%; padding: 14px; background: #0f3460; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">
+            Progress
+        </button>
+        <button class="tap-target" id="btn-gates" style="width: 100%; padding: 14px; background: #0f3460; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">
+            Gates
+        </button>
+        <button class="tap-target" id="btn-artifacts" style="width: 100%; padding: 14px; background: #0f3460; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">
+            Artifacts
+        </button>
+        <button class="tap-target" id="btn-start" style="width: 100%; padding: 14px; background: #4fc3f7; color: #0a0a0a; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: 600;">
+            Start Run
+        </button>
+      </div>
     </main>
   `;
+
+  loadProjectInfo(container, projectId);
+
+  const btnProgress = container.querySelector("#btn-progress") as HTMLButtonElement;
+  const btnGates = container.querySelector("#btn-gates") as HTMLButtonElement;
+  const btnArtifacts = container.querySelector("#btn-artifacts") as HTMLButtonElement;
+  const btnStart = container.querySelector("#btn-start") as HTMLButtonElement;
+
+  btnProgress.addEventListener("click", () => navigate(`#project/${projectId}/progress`));
+  btnGates.addEventListener("click", () => navigate(`#project/${projectId}/gates`));
+  btnArtifacts.addEventListener("click", () => navigate(`#project/${projectId}/artifacts`));
+  btnStart.addEventListener("click", async () => {
+    btnStart.disabled = true;
+    btnStart.textContent = "Starting...";
+    try {
+      await apiPost(`/api/projects/${projectId}/start`, {});
+      btnStart.textContent = "Run Started!";
+      setTimeout(() => navigate(`#project/${projectId}/progress`), 1000);
+    } catch (err: unknown) {
+      btnStart.textContent = "Start Run";
+      btnStart.disabled = false;
+      alert(err instanceof Error ? err.message : "Failed to start run");
+    }
+  });
+}
+
+async function loadProjectInfo(container: Element, projectId: string): Promise<void> {
+  const infoEl = container.querySelector("#project-info") as HTMLDivElement;
+  try {
+    const proj = await apiGet(`/api/projects/${projectId}`) as {
+      name: string; current_phase: string | null; created_at: string;
+    };
+
+    infoEl.innerHTML = `
+      <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">${escapeHtml(proj.name)}</div>
+      <div style="font-size: 14px; color: #888;">
+        ${proj.current_phase ? "Current phase: " + proj.current_phase : "No active phase"}
+      </div>
+    `;
+  } catch (err: unknown) {
+    infoEl.innerHTML = `<p style="color: #e74c3c;">Failed to load: ${err instanceof Error ? err.message : "Unknown error"}</p>`;
+  }
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function renderNotFound(container: Element, view: string): void {
