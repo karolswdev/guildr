@@ -765,8 +765,36 @@ web/backend/tests/test_metrics.py::test_health_upstream_error_returns_502 PASSED
 - Manual install test on a phone on the LAN
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```...```
-- [ ] Committed as <sha>
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0, /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, respx-0.23.1, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_fixture_loop_scope=None
+collecting ... collected 18 items
+
+web/frontend/tests/test_pwa.py::TestManifest::test_manifest_exists PASSED [  5%]
+web/frontend/tests/test_pwa.py::TestManifest::test_has_name PASSED       [ 11%]
+web/frontend/tests/test_pwa.py::TestManifest::test_has_start_url PASSED  [ 16%]
+web/frontend/tests/test_pwa.py::TestManifest::test_has_display_standalone PASSED [ 22%]
+web/frontend/tests/test_pwa.py::TestManifest::test_has_icons PASSED     [ 27%]
+web/frontend/tests/test_pwa.py::TestManifest::test_icons_have_sizes PASSED [ 33%]
+web/frontend/tests/test_pwa.py::TestServiceWorker::test_sw_exists PASSED [ 38%]
+web/frontend/tests/test_pwa.py::TestServiceWorker::test_sw_registers_cache PASSED [ 44%]
+web/frontend/tests/test_pwa.py::TestServiceWorker::test_sw_offline_fallback PASSED [ 50%]
+web/frontend/tests/test_pwa.py::TestIndexHtml::test_html_exists PASSED   [ 55%]
+web/frontend/tests/test_pwa.py::TestIndexHtml::test_has_manifest_link PASSED [ 61%]
+web/frontend/tests/test_pwa.py::TestIndexHtml::test_has_apple_mobile_web_app PASSED [ 66%]
+web/frontend/tests/test_pwa.py::TestIndexHtml::test_has_service_worker_registration PASSED [ 72%]
+web/frontend/tests/test_pwa.py::TestIndexHtml::test_has_offline_banner PASSED [ 77%]
+web/frontend/tests/test_pwa.py::TestIndexHtml::test_has_viewport_meta PASSED [ 83%]
+web/frontend/tests/test_pwa.py::TestAppTs::test_app_ts_exists PASSED    [ 88%]
+web/frontend/tests/test_pwa.py::TestAppTs::test_has_hash_routing PASSED  [ 94%]
+web/frontend/tests/test_pwa.py::TestAppTs::test_has_api_functions PASSED [100%]
+
+============================== 18 passed in 0.02s ==============================```
+- [x] Committed as 7c9b55a
 
 
 ### Task 8: Views (NewProject, Quiz, Progress, Gate, Artifacts)
