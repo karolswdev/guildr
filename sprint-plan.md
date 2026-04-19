@@ -908,6 +908,7 @@ web/frontend/tests/test_app_ts::test_has_api_functions PASSED            [100%]
 =========================== 1 failed, 79 passed in 0.40s =========================
 Note: 1 pre-existing test failure in test_startup_warning_when_expose_public (not related to Task 8 changes). All new code passes.```
 - [x] Committed as 2c2bf70
+- [x] Committed as 335d436
 
 
 ## Risks & Mitigations (Phase 6)
