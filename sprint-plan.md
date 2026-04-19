@@ -165,7 +165,7 @@ tests/test_config.py::TestFromEnv::test_primary_takes_precedence PASSED [100%]
 
 ============================== 14 passed in 0.03s ==============================```
 - [x] Round-trip test passes
-- [ ] Committed as <short-sha>
+- [x] Committed as dd64d25
 
 
 ## Risks & Mitigations
