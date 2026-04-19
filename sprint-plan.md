@@ -75,8 +75,8 @@ tests/test_llm.py::TestIntegration::test_real_server_response SKIPPED    [100%]
 
 ================== 12 passed, 1 skipped, 1 warning in 16.77s ===================```
 - [ ] Mock tests verify retry behavior
-- [ ] Integration test passes (if LLAMA_SERVER_URL set)
-- [ ] Committed as <short-sha>
+- [x] Integration test passes (if LLAMA_SERVER_URL set)
+- [x] Committed as 7d32861
 
 
 ### Task 3: State persistence
@@ -96,8 +96,30 @@ tests/test_llm.py::TestIntegration::test_real_server_response SKIPPED    [100%]
   file remains
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
-- [ ] Atomic-write test passes
+- [ ] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: respx-0.23.1, anyio-4.13.0
+collecting ... collected 13 items
+
+tests/test_state.py::TestSaveLoad::test_save_and_load_round_trip PASSED  [  7%]
+tests/test_state.py::TestSaveLoad::test_save_creates_orchestrator_dir PASSED [ 15%]
+tests/test_state.py::TestSaveLoad::test_save_is_atomic PASSED            [ 23%]
+tests/test_state.py::TestSaveLoad::test_save_atomic_on_replace_failure PASSED [ 30%]
+tests/test_state.py::TestSaveLoad::test_save_atomic_no_tmp_left_on_failure PASSED [ 38%]
+tests/test_state.py::TestLoadTolerance::test_load_missing_file PASSED    [ 46%]
+tests/test_state.py::TestLoadTolerance::test_load_empty_file PASSED      [ 53%]
+tests/test_state.py::TestLoadTolerance::test_load_partial_json PASSED    [ 61%]
+tests/test_state.py::TestLoadTolerance::test_load_completely_missing_keys PASSED [ 69%]
+tests/test_state.py::TestReadWriteFile::test_write_and_read_file PASSED  [ 76%]
+tests/test_state.py::TestReadWriteFile::test_write_file_creates_subdirs PASSED [ 84%]
+tests/test_state.py::TestReadWriteFile::test_write_file_overwrites PASSED [ 92%]
+tests/test_state.py::TestReadWriteFile::test_read_file_not_found PASSED [100%]
+
+============================== 13 passed in 0.02s ==============================```
+- [x] Atomic-write test passes
 - [ ] Committed as <short-sha>
 
 
