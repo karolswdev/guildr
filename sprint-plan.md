@@ -1005,8 +1005,32 @@ tests/test_logger.py::TestLogLlmError::test_logs_error_with_latency PASSED [100%
 - CI log: full pipeline under dry-run, zero real LLM calls
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
-- [ ] CI log shows zero real LLM calls
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, respx-0.23.1, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 14 items
+
+tests/test_dry_run.py::TestFakeLLMClient::test_returns_canned_response_for_role PASSED [  7%]
+tests/test_dry_run.py::TestFakeLLMClient::test_falls_back_to_default_response PASSED [ 14%]
+tests/test_dry_run.py::TestFakeLLMClient::test_raises_keyerror_for_unknown_role PASSED [ 21%]
+tests/test_dry_run.py::TestFakeLLMClient::test_increments_call_count PASSED [ 28%]
+tests/test_dry_run.py::TestFakeLLMClient::test_was_called_returns_true_after_calls PASSED [ 35%]
+tests/test_dry_run.py::TestFakeLLMClient::test_was_called_returns_false_when_unused PASSED [ 42%]
+tests/test_dry_run.py::TestFakeLLMClient::test_health_returns_true PASSED      [ 50%]
+tests/test_dry_run.py::TestFakeLLMClient::test_returns_token_counts_from_response PASSED [ 57%]
+tests/test_dry_run.py::TestDryRunIntegration::test_dry_run_uses_fake_llm_not_pool PASSED [ 64%]
+tests/test_dry_run.py::TestDryRunIntegration::test_dry_run_false_without_fake_llm PASSED [ 71%]
+tests/test_dry_run.py::TestDryRunIntegration::test_dry_run_produces_output_files PASSED [ 78%]
+tests/test_dry_run.py::TestDryRunIntegration::test_dry_run_requires_fake_llm_or_pool PASSED [ 85%]
+tests/test_dry_run.py::TestZeroRealCalls::test_fake_llm_tracks_all_calls PASSED [ 92%]
+tests/test_dry_run.py::TestZeroRealCalls::test_dry_run_mode_without_network PASSED [100%]
+
+============================== 14 passed in 0.22s ==============================```
+- [x] CI log shows zero real LLM calls
 - [ ] Committed as <short-sha>
 
 

@@ -33,6 +33,7 @@ class Orchestrator:
         gate_registry: object | None = None,
         events: object | None = None,
         git_ops: object | None = None,
+        fake_llm: object | None = None,
     ) -> None:
         # All dependent modules are imported lazily so the engine skeleton
         # can be committed independently of Tasks 2-6.
@@ -43,6 +44,7 @@ class Orchestrator:
         self._gate_registry = gate_registry
         self._events = events
         self._git_ops = git_ops
+        self._fake_llm = fake_llm
 
     # -- lazy accessors (import on first use) --------------------------------
 
@@ -192,7 +194,7 @@ class Orchestrator:
         """Run the Architect role."""
         from orchestrator.roles.architect import Architect
 
-        llm = self._pool.chat if self._pool else None
+        llm = self._fake_llm or (self._pool.chat if self._pool else None)
         if llm is None:
             raise PhaseFailure("architect")
 
@@ -204,7 +206,7 @@ class Orchestrator:
         """Run the Coder role."""
         from orchestrator.roles.coder import Coder
 
-        llm = self._pool.chat if self._pool else None
+        llm = self._fake_llm or (self._pool.chat if self._pool else None)
         if llm is None:
             raise PhaseFailure("implementation")
 
@@ -215,7 +217,7 @@ class Orchestrator:
         """Run the Tester role."""
         from orchestrator.roles.tester import Tester
 
-        llm = self._pool.chat if self._pool else None
+        llm = self._fake_llm or (self._pool.chat if self._pool else None)
         if llm is None:
             raise PhaseFailure("testing")
 
@@ -226,7 +228,7 @@ class Orchestrator:
         """Run the Reviewer role."""
         from orchestrator.roles.reviewer import Reviewer
 
-        llm = self._pool.chat if self._pool else None
+        llm = self._fake_llm or (self._pool.chat if self._pool else None)
         if llm is None:
             raise PhaseFailure("review")
 
@@ -237,7 +239,7 @@ class Orchestrator:
         """Run the Deployer role."""
         from orchestrator.roles.deployer import Deployer
 
-        llm = self._pool.chat if self._pool else None
+        llm = self._fake_llm or (self._pool.chat if self._pool else None)
         if llm is None:
             raise PhaseFailure("deployment")
 
@@ -259,3 +261,17 @@ class Orchestrator:
             set_orchestrator = getattr(self._pool, "set_orchestrator", None)
             if set_orchestrator is not None:
                 set_orchestrator(self)
+
+    @property
+    def fake_llm(self) -> Any | None:
+        """Access the fake LLM client (used in dry-run mode)."""
+        return self._fake_llm
+
+    @fake_llm.setter
+    def fake_llm(self, value: Any) -> None:
+        """Set the fake LLM client."""
+        self._fake_llm = value
+
+    def is_dry_run(self) -> bool:
+        """Return True if the fake LLM client is set."""
+        return self._fake_llm is not None
