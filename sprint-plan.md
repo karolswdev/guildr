@@ -936,8 +936,34 @@ Note: 1 pre-existing test failure in test_startup_warning_when_expose_public (no
   expected fields
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
-- [ ] Sample log file inspected for expected fields
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, respx-0.23.1, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function
+collecting ... collected 16 items
+
+tests/test_logger.py::TestJsonFormatter::test_formats_standard_fields PASSED [  6%]
+tests/test_logger.py::TestJsonFormatter::test_includes_llm_token_fields PASSED [ 12%]
+tests/test_logger.py::TestJsonFormatter::test_auto_timestamp PASSED      [ 18%]
+tests/test_logger.py::TestJsonFormatter::test_includes_exception_info PASSED [ 25%]
+tests/test_logger.py::TestPhaseFileHandler::test_writes_jsonl_to_phase_file PASSED [ 31%]
+tests/test_logger.py::TestPhaseFileHandler::test_appends_multiple_records PASSED [ 37%]
+tests/test_logger.py::TestPhaseFileHandler::test_creates_parent_dirs PASSED [ 43%]
+tests/test_logger.py::TestSetupPhaseLogger::test_creates_logger_with_handlers PASSED [ 50%]
+tests/test_logger.py::TestSetupPhaseLogger::test_auto_generates_session_id PASSED [ 56%]
+tests/test_logger.py::TestSetupPhaseLogger::test_uses_provided_session_id PASSED [ 62%]
+tests/test_logger.py::TestSetupPhaseLogger::test_creates_log_directory PASSED [ 68%]
+tests/test_logger.py::TestSetupPhaseLogger::test_configurable_log_level PASSED [ 75%]
+tests/test_logger.py::TestLogLlmCall::test_logs_token_counts PASSED      [ 81%]
+tests/test_logger.py::TestLogLlmCall::test_logs_with_zero_tokens_on_none_response PASSED [ 87%]
+tests/test_logger.py::TestLogLlmCall::test_event_name_includes_role PASSED [ 93%]
+tests/test_logger.py::TestLogLlmError::test_logs_error_with_latency PASSED [100%]
+
+============================== 16 passed in 0.03s ==============================```
+- [x] Sample log file inspected for expected fields
 - [ ] Committed as <short-sha>
 
 

@@ -27,8 +27,17 @@ class CoderError(Exception):
 class Coder(BaseRole):
     """Implements tasks from sprint-plan.md sequentially."""
 
-    def __init__(self, llm: LLMClient, state: State, max_tokens: int = 16384) -> None:
-        super().__init__(llm, state)
+    _phase: str = "implementation"
+    _role: str = "coder"
+
+    def __init__(
+        self,
+        llm: LLMClient,
+        state: State,
+        max_tokens: int = 16384,
+        phase_logger: Any = None,
+    ) -> None:
+        super().__init__(llm, state, phase_logger=phase_logger)
         self.max_tokens = max_tokens
 
     # -- public API ----------------------------------------------------------

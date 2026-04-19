@@ -49,6 +49,9 @@ class Architect:
     llm: LLMClient
     state: State
     config: Config
+    _phase_logger: Any = None
+    _phase: str = "architect"
+    _role: str = "architect"
     EVALUATION_CRITERIA: list[str] = field(
         default_factory=lambda: [
             "specificity", "testability", "evidence",
@@ -115,8 +118,34 @@ class Architect:
             {"role": "user", "content": user_prompt},
         ]
 
-        response = self.llm.chat(messages, max_tokens=16384)
-        return response.content
+        import time
+        start = time.monotonic()
+        try:
+            response = self.llm.chat(messages, max_tokens=16384)
+            elapsed_ms = (time.monotonic() - start) * 1000
+            if self._phase_logger is not None:
+                from orchestrator.lib.logger import log_llm_call
+                log_llm_call(
+                    self._phase_logger,
+                    phase=self._phase,
+                    role=self._role,
+                    messages=messages,
+                    response=response,
+                    latency_ms=elapsed_ms,
+                )
+            return response.content
+        except Exception as e:
+            elapsed_ms = (time.monotonic() - start) * 1000
+            if self._phase_logger is not None:
+                from orchestrator.lib.logger import log_llm_error
+                log_llm_error(
+                    self._phase_logger,
+                    phase=self._phase,
+                    role=self._role,
+                    error=e,
+                    latency_ms=elapsed_ms,
+                )
+            raise
 
     def _refine(self, qwendea: str, prior: str, prior_eval: dict[str, Any]) -> str:
         """Refine a sprint plan with targeted corrective feedback.
@@ -138,8 +167,34 @@ class Architect:
             {"role": "user", "content": failures_text},
         ]
 
-        response = self.llm.chat(messages, max_tokens=16384)
-        return response.content
+        import time
+        start = time.monotonic()
+        try:
+            response = self.llm.chat(messages, max_tokens=16384)
+            elapsed_ms = (time.monotonic() - start) * 1000
+            if self._phase_logger is not None:
+                from orchestrator.lib.logger import log_llm_call
+                log_llm_call(
+                    self._phase_logger,
+                    phase=self._phase,
+                    role=self._role,
+                    messages=messages,
+                    response=response,
+                    latency_ms=elapsed_ms,
+                )
+            return response.content
+        except Exception as e:
+            elapsed_ms = (time.monotonic() - start) * 1000
+            if self._phase_logger is not None:
+                from orchestrator.lib.logger import log_llm_error
+                log_llm_error(
+                    self._phase_logger,
+                    phase=self._phase,
+                    role=self._role,
+                    error=e,
+                    latency_ms=elapsed_ms,
+                )
+            raise
 
     # -- self-evaluation -----------------------------------------------------
 
@@ -192,8 +247,34 @@ class Architect:
 
     def _call_judge(self, messages: list[dict]) -> str:
         """Send the judge prompt and return raw response content."""
-        response = self.llm.chat(messages, max_tokens=4096)
-        return response.content
+        import time
+        start = time.monotonic()
+        try:
+            response = self.llm.chat(messages, max_tokens=4096)
+            elapsed_ms = (time.monotonic() - start) * 1000
+            if self._phase_logger is not None:
+                from orchestrator.lib.logger import log_llm_call
+                log_llm_call(
+                    self._phase_logger,
+                    phase=self._phase,
+                    role="judge",
+                    messages=messages,
+                    response=response,
+                    latency_ms=elapsed_ms,
+                )
+            return response.content
+        except Exception as e:
+            elapsed_ms = (time.monotonic() - start) * 1000
+            if self._phase_logger is not None:
+                from orchestrator.lib.logger import log_llm_error
+                log_llm_error(
+                    self._phase_logger,
+                    phase=self._phase,
+                    role="judge",
+                    error=e,
+                    latency_ms=elapsed_ms,
+                )
+            raise
 
     @staticmethod
     def _parse_json(raw: str) -> dict[str, Any] | None:

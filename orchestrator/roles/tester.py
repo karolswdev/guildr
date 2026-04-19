@@ -40,6 +40,17 @@ class TaskResult:
 class Tester(BaseRole):
     """Independently re-verifies Coder's Evidence Log entries."""
 
+    _phase: str = "testing"
+    _role: str = "tester"
+
+    def __init__(
+        self,
+        llm: LLMClient,
+        state: State,
+        phase_logger: Any = None,
+    ) -> None:
+        super().__init__(llm, state, phase_logger=phase_logger)
+
     # -- public API ----------------------------------------------------------
 
     def execute(self, sprint_plan_path: str = "sprint-plan.md") -> str:

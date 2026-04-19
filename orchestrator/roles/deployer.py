@@ -46,6 +46,17 @@ _DEPLOY_CONFIGS = [
 class Deployer(BaseRole):
     """Produces DEPLOY.md with deployment plan and environment requirements."""
 
+    _phase: str = "deployment"
+    _role: str = "deployer"
+
+    def __init__(
+        self,
+        llm: LLMClient,
+        state: State,
+        phase_logger: Any = None,
+    ) -> None:
+        super().__init__(llm, state, phase_logger=phase_logger)
+
     # -- public API ----------------------------------------------------------
 
     def execute(self, review_path: str = "REVIEW.md") -> str:
