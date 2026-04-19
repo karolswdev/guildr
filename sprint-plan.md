@@ -651,8 +651,31 @@ web/backend/tests/test_quiz.py::TestQuizSession::test_synthesize_produces_markdo
 - Async test: open gate, call decide, orchestrator proceeds
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```...```
-- [ ] Committed as <sha>
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0, /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, respx-0.23.1, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_fixture_loop_scope=None
+collecting ... collected 13 items
+
+web/backend/tests/test_gates.py::test_list_gates_empty PASSED            [  7%]
+web/backend/tests/test_gates.py::test_list_gates_returns_pending_and_decided PASSED [ 15%]
+web/backend/tests/test_gates.py::test_get_gate PASSED                    [ 23%]
+web/backend/tests/test_gates.py::test_get_gate_not_found PASSED          [ 30%]
+web/backend/tests/test_gates.py::test_decide_gate PASSED                 [ 38%]
+web/backend/tests/test_gates.py::test_decide_rejected_gate PASSED        [ 46%]
+web/backend/tests/test_gates.py::test_decide_is_idempotent PASSED        [ 53%]
+web/backend/tests/test_gates.py::TestGateRegistry::test_open_gate PASSED [ 61%]
+web/backend/tests/test_gates.py::TestGateRegistry::test_open_already_decided_raises PASSED [ 69%]
+web/backend/tests/test_gates.py::TestGateRegistry::test_decide_creates_if_missing PASSED [ 76%]
+web/backend/tests/test_gates.py::TestGateRegistry::test_get_gate_returns_none_for_missing PASSED [ 84%]
+web/backend/tests/test_gates.py::TestGateRegistry::test_list_gates_empty PASSED [ 92%]
+web/backend/tests/test_gates.py::TestGateRegistry::test_list_gates_multiple PASSED [100%]
+
+============================== 13 passed in 0.17s ==============================```
+- [x] Committed as ae1dc74
 
 
 ### Task 5: SSE stream
