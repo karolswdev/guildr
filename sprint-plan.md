@@ -1104,7 +1104,7 @@ tests/test_inspect.py::TestMain::test_unknown_project_exits PASSED        [100%]
       docs/examples/todo-app/qwendea.md (example project description)
       docs/examples/todo-app/sprint-plan.md (example sprint plan)
 - [x] Getting-started walkthrough follows documented steps
-- [ ] Committed as <short-sha>
+- [x] Committed as e98c525
 
 
 ### Task 6 (optional): Parallel coder tasks
