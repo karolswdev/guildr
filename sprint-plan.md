@@ -693,8 +693,26 @@ web/backend/tests/test_gates.py::TestGateRegistry::test_list_gates_multiple PASS
 - Manual: two `curl -N` subscribers, emit event, both receive
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```...```
-- [ ] Committed as <sha>
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0, /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, respx-0.23.1, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_fixture_loop_scope=None
+collecting ... collected 8 items
+
+web/backend/tests/test_stream.py::test_stream_returns_200 PASSED         [ 12%]
+web/backend/tests/test_stream.py::test_multiple_subscribers_receive_events PASSED [ 25%]
+web/backend/tests/test_stream.py::test_emit_formats_correctly PASSED     [ 37%]
+web/backend/tests/test_stream.py::test_unsubscribe_removes_subscriber PASSED [ 50%]
+web/backend/tests/test_stream.py::TestSimpleEventBus::test_emit_to_single_subscriber PASSED [ 62%]
+web/backend/tests/test_stream.py::TestSimpleEventBus::test_emit_to_multiple_subscribers PASSED [ 75%]
+web/backend/tests/test_stream.py::TestSimpleEventBus::test_unsubscribe PASSED [ 87%]
+web/backend/tests/test_stream.py::TestSimpleEventBus::test_emit_to_removed_subscriber_no_crash PASSED [100%]
+
+============================== 8 passed in 0.14s ==============================```
+- [x] Committed as b093a3e
 
 
 ### Task 6: Metrics passthrough
