@@ -385,8 +385,34 @@ tests/test_architect_gen.py::TestRefine::test_refine_uses_max_tokens PASSED [100
   trailing junk, completely malformed
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
-- [ ] Committed as <short-sha>  <!-- mandatory; filled after commit -->
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: respx-0.23.1, anyio-4.13.0
+collecting ... collected 17 items
+
+tests/test_architect_judge.py::TestStrictJsonParse::test_parses_valid_json PASSED [  5%]
+tests/test_architect_judge.py::TestStrictJsonParse::test_rejects_non_dict_json PASSED [ 11%]
+tests/test_architect_judge.py::TestStrictJsonParse::test_rejects_invalid_json PASSED [ 17%]
+tests/test_architect_judge.py::TestStrictJsonParse::test_rejects_empty_string PASSED [ 23%]
+tests/test_architect_judge.py::TestReprompt::test_reprompt_on_prose_wrapper PASSED [ 29%]
+tests/test_architect_judge.py::TestReprompt::test_reprompt_on_trailing_junk PASSED [ 35%]
+tests/test_architect_judge.py::TestRegexFallback::test_regex_extracts_outermost_json PASSED [ 41%]
+tests/test_architect_judge.py::TestRegexFallback::test_regex_fails_on_completely_malformed PASSED [ 47%]
+tests/test_architect_judge.py::TestRegexFallback::test_regex_fails_on_nested_unbalanced PASSED [ 52%]
+tests/test_architect_judge.py::TestRegexFallback::test_regex_fails_on_invalid_json_inside_braces PASSED [ 58%]
+tests/test_architect_judge.py::TestMalformedExhaustion::test_returns_score_0_on_exhaustion PASSED [ 64%]
+tests/test_architect_judge.py::TestMalformedExhaustion::test_reprompt_message_is_injected PASSED [ 70%]
+tests/test_architect_judge.py::TestComputeScore::test_score_6_all_pass PASSED [ 76%]
+tests/test_architect_judge.py::TestComputeScore::test_score_0_all_fail PASSED [ 82%]
+tests/test_architect_judge.py::TestComputeScore::test_score_partial PASSED [ 88%]
+tests/test_architect_judge.py::TestComputeScore::test_missing_criteria_treated_as_fail PASSED [ 94%]
+tests/test_architect_judge.py::TestComputeScore::test_non_dict_entry_treated_as_fail PASSED [100%]
+
+============================== 17 passed in 0.25s ==============================```
+- [x] Committed as 17d08e9
 
 
 

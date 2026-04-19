@@ -239,10 +239,14 @@ class Architect:
         """
         if score < self.config.architect_pass_threshold:
             return False
-        return all(
-            evaluation.get(c, {}).get("score") == 1
-            for c in self.MANDATORY
-        )
+        for c in self.MANDATORY:
+            entry = evaluation.get(c, {})
+            if isinstance(entry, dict):
+                if entry.get("score") != 1:
+                    return False
+            elif entry != 1:
+                return False
+        return True
 
     # -- escalation ----------------------------------------------------------
 
