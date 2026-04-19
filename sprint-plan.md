@@ -18,8 +18,8 @@ Phase 1 establishes the core infrastructure: LLM client for llama-server communi
   `pyproject.toml`, `tests/__init__.py`
 
 **Acceptance Criteria:**
-- [ ] `pip install -e .` succeeds
-- [ ] `python -c "import orchestrator"` works
+- [x] `pip install -e .` succeeds
+- [x] `python -c "import orchestrator"` works
 
 **Evidence Required:**
 - Run `pip install -e .` and capture success output
@@ -37,11 +37,11 @@ Phase 1 establishes the core infrastructure: LLM client for llama-server communi
 - **Files**: `orchestrator/lib/llm.py`, `tests/test_llm.py`
 
 **Acceptance Criteria:**
-- [ ] `LLMClient.chat()` parses both `content` and `reasoning_content`
-- [ ] Mid-thinking truncation raises `ThinkingTruncation`
-- [ ] `health()` hits `/health` endpoint
-- [ ] HTTP 5xx triggers exponential backoff (1,2,4,8s; max 4 retries)
-- [ ] Connection refused raises immediately without retry
+- [x] `LLMClient.chat()` parses both `content` and `reasoning_content`
+- [x] Mid-thinking truncation raises `ThinkingTruncation`
+- [x] `health()` hits `/health` endpoint
+- [x] HTTP 5xx triggers exponential backoff (1,2,4,8s; max 4 retries)
+- [x] Connection refused raises immediately without retry
 
 **Evidence Required:**
 - Run `pytest tests/test_llm.py -v` and observe all tests pass
@@ -51,7 +51,7 @@ Phase 1 establishes the core infrastructure: LLM client for llama-server communi
   has non-empty `content` OR `reasoning` fields
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```============================= test session starts ==============================
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
 platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
 cachedir: .pytest_cache
 rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
@@ -63,7 +63,7 @@ tests/test_llm.py::TestLLMClientParsing::test_parses_content_and_reasoning PASSE
 tests/test_llm.py::TestLLMClientParsing::test_parses_empty_reasoning PASSED [ 15%]
 tests/test_llm.py::TestLLMClientParsing::test_parses_none_reasoning PASSED [ 23%]
 tests/test_llm.py::TestThinkingTruncation::test_raises_on_length_with_empty_content PASSED [ 30%]
-tests/test_llm.py::TestThinkingTruncation::test_no_raise_on_length_with_content PASSED [ 38%]
+tests/test_llm.py::TestThinkingTruncation::test_no_raise_with_content PASSED [ 38%]
 tests/test_llm.py::TestThinkingTruncation::test_no_raise_on_stop_reason PASSED [ 46%]
 tests/test_llm.py::TestHealth::test_health_returns_true_on_ok PASSED     [ 53%]
 tests/test_llm.py::TestHealth::test_health_returns_false_on_non_ok PASSED [ 61%]
@@ -74,7 +74,7 @@ tests/test_llm.py::TestRetryBehavior::test_connection_refused_raises_immediately
 tests/test_llm.py::TestIntegration::test_real_server_response SKIPPED    [100%]
 
 ================== 12 passed, 1 skipped, 1 warning in 16.77s ===================```
-- [ ] Mock tests verify retry behavior
+- [x] Mock tests verify retry behavior
 - [x] Integration test passes (if LLAMA_SERVER_URL set)
 - [x] Committed as 7d32861
 
@@ -85,10 +85,10 @@ tests/test_llm.py::TestIntegration::test_real_server_response SKIPPED    [100%]
 - **Files**: `orchestrator/lib/state.py`, `tests/test_state.py`
 
 **Acceptance Criteria:**
-- [ ] `State.save()` writes atomically (tmp + rename)
-- [ ] `State.load()` tolerates missing file (returns defaults)
-- [ ] `State.load()` tolerates partial JSON (missing keys → defaults)
-- [ ] `read_file` / `write_file` use `project_dir`-relative paths
+- [x] `State.save()` writes atomically (tmp + rename)
+- [x] `State.load()` tolerates missing file (returns defaults)
+- [x] `State.load()` tolerates partial JSON (missing keys → defaults)
+- [x] `read_file` / `write_file` use `project_dir`-relative paths
 
 **Evidence Required:**
 - Run `pytest tests/test_state.py -v`
@@ -96,7 +96,7 @@ tests/test_llm.py::TestIntegration::test_real_server_response SKIPPED    [100%]
   file remains
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```============================= test session starts ==============================
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
 platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
 cachedir: .pytest_cache
 rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
@@ -130,17 +130,17 @@ tests/test_state.py::TestReadWriteFile::test_read_file_not_found PASSED [100%]
   `config.example.yaml`
 
 **Acceptance Criteria:**
-- [ ] Loads from YAML
-- [ ] Environment variables override YAML values
-- [ ] `expose_public` defaults to `False`
-- [ ] Invalid YAML raises clear error (not a bare exception)
+- [x] Loads from YAML
+- [x] Environment variables override YAML values
+- [x] `expose_public` defaults to `False`
+- [x] Invalid YAML raises clear error (not a bare exception)
 
 **Evidence Required:**
 - Run `pytest tests/test_config.py -v`
 - Round-trip: write YAML → load → compare struct
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```============================= test session starts ==============================
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
 platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
 cachedir: .pytest_cache
 rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
@@ -161,7 +161,7 @@ tests/test_config.py::TestFromEnv::test_missing_url PASSED               [ 71%]
 tests/test_config.py::TestFromEnv::test_env_overrides_defaults PASSED    [ 78%]
 tests/test_config.py::TestFromEnv::test_legacy_url_var PASSED            [ 85%]
 tests/test_config.py::TestFromEnv::test_primary_url_var PASSED           [ 92%]
-tests/test_config.py::TestFromEnv::test_primary_takes_precedence PASSED [100%]
+tests/test_config.py::TestFromEnv::test_primary_takes_precedence PASSED  [100%]
 
 ============================== 14 passed in 0.03s ==============================```
 - [x] Round-trip test passes
