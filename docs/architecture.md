@@ -28,8 +28,8 @@ phase specifications, see the individual phase files in `phases/`.
                    ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  llama.cpp server pool                                       │
-│  PRIMARY:  192.168.1.13:8080 (Q5 quant)                     │
-│  ALIEN:    192.168.1.70:8080 (Q6 quant)                     │
+│  PRIMARY:  127.0.0.1:8080 (Q5 quant)                     │
+│  ALIEN:    127.0.0.2:8080 (Q6 quant)                     │
 │  Same model, different quant — role-based routing            │
 └──────────────────────────────────────────────────────────────┘
 ```

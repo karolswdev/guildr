@@ -17,7 +17,7 @@ from starlette.responses import PlainTextResponse, JSONResponse
 logger = logging.getLogger(__name__)
 
 _DEFAULT_PRIMARY_URL = os.environ.get(
-    "LLAMA_PRIMARY_URL", "http://192.168.1.13:8080"
+    "LLAMA_PRIMARY_URL", "http://127.0.0.1:8080"
 )
 
 

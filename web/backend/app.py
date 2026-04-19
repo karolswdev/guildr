@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from web.backend.middleware import LanOnlyMiddleware
+
+_FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +58,28 @@ def create_app(store=None) -> FastAPI:
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    # PWA shell. Mounted last so /api/* and /healthz win on conflict.
+    # dist/ is the esbuild output; built by web/frontend/build.sh.
+    if _FRONTEND_DIR.is_dir():
+        dist_dir = _FRONTEND_DIR / "dist"
+        if dist_dir.is_dir():
+            app.mount("/dist", StaticFiles(directory=dist_dir), name="dist")
+
+        @app.get("/")
+        async def _index() -> FileResponse:
+            return FileResponse(_FRONTEND_DIR / "index.html")
+
+        @app.get("/manifest.json")
+        async def _manifest() -> FileResponse:
+            return FileResponse(_FRONTEND_DIR / "manifest.json")
+
+        @app.get("/sw.js")
+        async def _sw() -> FileResponse:
+            return FileResponse(
+                _FRONTEND_DIR / "sw.js",
+                media_type="application/javascript",
+            )
 
     return app
 

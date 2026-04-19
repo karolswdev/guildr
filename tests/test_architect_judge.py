@@ -23,7 +23,7 @@ def config(tmp_path):
     """Create a minimal Config."""
     from pathlib import Path
     return Config(
-        llama_server_url="http://192.168.1.13:8080",
+        llama_server_url="http://127.0.0.1:8080",
         project_dir=Path(tmp_path),
         architect_max_passes=3,
         architect_pass_threshold=4,

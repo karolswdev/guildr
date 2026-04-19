@@ -25,7 +25,7 @@ llama-server \
 Verify it's healthy:
 
 ```bash
-curl http://192.168.1.13:8080/health
+curl http://127.0.0.1:8080/health
 # Expected: {"status":"ok"}
 ```
 
@@ -72,7 +72,7 @@ Developers learning a new language, coding interview prep.
 ```bash
 # Set environment
 export PROJECT_DIR=/tmp/fizzbuzz-project
-export LLAMA_SERVER_URL=http://192.168.1.13:8080
+export LLAMA_SERVER_URL=http://127.0.0.1:8080
 
 # Run the orchestrator
 python -m orchestrator.cli main "$PROJECT_DIR"
@@ -136,7 +136,7 @@ from orchestrator.engine import Orchestrator
 from orchestrator.lib.config import Config
 
 config = Config(
-    llama_server_url='http://192.168.1.13:8080',
+    llama_server_url='http://127.0.0.1:8080',
     project_dir='/tmp/dry-run-project',
 )
 orch = Orchestrator(config=config, fake_llm=fake)

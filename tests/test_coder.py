@@ -78,7 +78,7 @@ def state(tmp_path):
 def config(tmp_path):
     """Create a minimal Config."""
     return Config(
-        llama_server_url="http://192.168.1.13:8080",
+        llama_server_url="http://127.0.0.1:8080",
         project_dir=Path(tmp_path),
     )
 

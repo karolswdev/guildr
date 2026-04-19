@@ -16,7 +16,7 @@ from orchestrator.lib.config import Config
 def yaml_config(tmp_path: Path) -> Path:
     """Write a minimal valid YAML config and return its path."""
     data = {
-        "llama_server_url": "http://192.168.1.13:8080",
+        "llama_server_url": "http://127.0.0.1:8080",
         "project_dir": str(tmp_path / "project"),
         "max_retries": 5,
         "architect_max_passes": 4,
@@ -35,7 +35,7 @@ def yaml_config(tmp_path: Path) -> Path:
 def minimal_yaml(tmp_path: Path) -> Path:
     """Write a YAML config with only required fields."""
     data = {
-        "llama_server_url": "http://192.168.1.13:8080",
+        "llama_server_url": "http://127.0.0.1:8080",
         "project_dir": str(tmp_path / "project"),
     }
     path = tmp_path / "config.yaml"
@@ -48,7 +48,7 @@ class TestFromYaml:
 
     def test_loads_full_config(self, yaml_config: Path):
         cfg = Config.from_yaml(yaml_config)
-        assert cfg.llama_server_url == "http://192.168.1.13:8080"
+        assert cfg.llama_server_url == "http://127.0.0.1:8080"
         assert cfg.max_retries == 5
         assert cfg.architect_max_passes == 4
         assert cfg.architect_pass_threshold == 5
@@ -59,7 +59,7 @@ class TestFromYaml:
 
     def test_loads_minimal_config(self, minimal_yaml: Path):
         cfg = Config.from_yaml(minimal_yaml)
-        assert cfg.llama_server_url == "http://192.168.1.13:8080"
+        assert cfg.llama_server_url == "http://127.0.0.1:8080"
         # Defaults for optional fields
         assert cfg.max_retries == 3
         assert cfg.max_total_iterations == 20
@@ -93,20 +93,20 @@ class TestFromYaml:
     def test_yaml_with_hyphenated_keys(self, tmp_path: Path):
         """YAML keys with hyphens should be mapped to snake_case."""
         data = {
-            "llama-server-url": "http://192.168.1.13:8080",
+            "llama-server-url": "http://127.0.0.1:8080",
             "project-dir": str(tmp_path / "project"),
             "max-retries": 7,
         }
         path = tmp_path / "hyphen.yaml"
         path.write_text(yaml.dump(data), encoding="utf-8")
         cfg = Config.from_yaml(path)
-        assert cfg.llama_server_url == "http://192.168.1.13:8080"
+        assert cfg.llama_server_url == "http://127.0.0.1:8080"
         assert cfg.max_retries == 7
 
     def test_round_trip(self, tmp_path: Path):
         """Write YAML → load → compare struct."""
         original = Config(
-            llama_server_url="http://192.168.1.13:8080",
+            llama_server_url="http://127.0.0.1:8080",
             project_dir=tmp_path / "project",
             max_retries=5,
             max_total_iterations=25,

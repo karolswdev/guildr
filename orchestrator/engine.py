@@ -199,8 +199,9 @@ class Orchestrator:
             raise PhaseFailure("architect")
 
         architect = Architect(llm, self.state, self.config)
-        plan_text = architect.execute()
-        self.state.write_file("sprint-plan.md", plan_text)
+        # Architect.execute() writes sprint-plan.md itself and returns the
+        # path. Don't overwrite the file with the returned string.
+        architect.execute()
 
     def _coder(self) -> None:
         """Run the Coder role."""

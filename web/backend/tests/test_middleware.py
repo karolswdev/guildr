@@ -15,9 +15,6 @@ from web.backend.middleware import LanOnlyMiddleware, _is_rfc1918
 
 
 def _make_app() -> FastAPI:
-    if os.environ.get("ORCHESTRATOR_EXPOSE_PUBLIC") == "1":
-        logging.warning("ORCHESTRATOR_EXPOSE_PUBLIC=1 — accepting non-RFC1918 connections")
-
     app = FastAPI()
     app.add_middleware(LanOnlyMiddleware)
 
@@ -129,14 +126,11 @@ async def test_no_forwarded_uses_client_host(app: FastAPI) -> None:
 
 
 def test_startup_warning_when_expose_public(caplog: pytest.LogCaptureFixture) -> None:
-    """Startup log contains WARNING when bypass enabled."""
+    """Constructing LanOnlyMiddleware with EXPOSE_PUBLIC=1 emits a WARNING."""
     os.environ["ORCHESTRATOR_EXPOSE_PUBLIC"] = "1"
     try:
-        from web.backend.app import create_app
-        import logging
-
-        caplog.set_level(logging.WARNING)
-        _make_app()
+        caplog.set_level(logging.WARNING, logger="web.backend.middleware")
+        LanOnlyMiddleware(MagicMock())
         warning_records = [
             r for r in caplog.records
             if r.levelno == logging.WARNING and "ORCHESTRATOR_EXPOSE_PUBLIC" in r.message

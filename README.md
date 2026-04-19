@@ -1,175 +1,262 @@
-# Orchestrator
+# guildr
 
-AI-powered SDLC automation driven by a single LLM instance. Takes a
-project description and drives it through planning, architecture,
-implementation, testing, review, and deployment — with human approval
-gates at key transitions.
+> **Status: alpha.** The dry-run pipeline is verified end-to-end (438 tests, 90% coverage).
+> The live llama-server path runs but hasn't been battle-tested on real projects.
+> Use it on a throwaway side project before trusting it with anything important.
+
+A single-model SDLC orchestrator. You write a one-paragraph project idea;
+guildr drives it through Architect → Coder → Tester → Reviewer → Deployer
+roles, all backed by **one** local LLM (Qwen3 via llama.cpp), pausing at
+human-approval gates between phases.
+
+---
+
+## Where this came from
+
+guildr started as a one-screen bash loop. The loop poked an opencode CLI
+session at a locally-hosted Qwen3 model, fed it a phase plan, watched for
+idleness, and ran a verifier. When the verifier failed, the loop stuffed the
+diff and the failure tail back into the next prompt. That was the whole
+trick. It worked surprisingly well — well enough that the loop kept growing
+features (idle/wall watchdogs, a retry coach that asks a *second* model to
+diagnose failures, structured handoff docs between phases), and at some
+point the bash scaffold was clearly trying to become a real framework.
+
+So we let it. The harness wrote the orchestrator. The orchestrator is what
+the harness wishes it were when it grows up. This repo is the result.
+
+### The models doing the work
+
+Everything runs locally on consumer-ish hardware behind a LAN, served by
+[llama.cpp](https://github.com/ggerganov/llama.cpp):
+
+| Role | Model | Quant | Job |
+|---|---|---|---|
+| **Primary** | Qwen3.6-35B-A3B (MoE, 3B active) | Q5\_K\_M | All five orchestrator roles — architect, coder, tester, reviewer, deployer |
+| **Coach** | Qwen3.6-35B-A3B | Q6\_K | Second-opinion diagnostic on failed phase retries |
+
+One model, five hats. The coach is just the same model on a second box,
+asked a different question (*"why did this verifier fail and what should the
+next attempt try differently?"*) so its answer doesn't pollute the primary's
+context window.
+
+### Dogfooding, visualized
+
+```mermaid
+flowchart LR
+    subgraph harness["bash harness (the scaffold)"]
+        BL[build-phase.sh<br/>idle + wall watchdogs<br/>verifier gate<br/>retry-context composer]
+    end
+
+    subgraph models["local llama.cpp"]
+        P[Qwen3 PRIMARY<br/>writes the code]
+        C[Qwen3 COACH<br/>diagnoses failures]
+    end
+
+    subgraph product["this repo (guildr)"]
+        OR[Orchestrator engine<br/>5 role prompts<br/>retry + gate logic<br/>web PWA]
+    end
+
+    BL -->|phase plan + retries| P
+    BL -.->|failure context| C
+    C -.->|hypothesis + next-attempt advice| BL
+    P -->|writes / edits| OR
+    OR -.->|future: replaces| BL
+
+    style harness fill:#2d2d44,color:#fff
+    style models fill:#1a3d2e,color:#fff
+    style product fill:#3d1a2e,color:#fff
+```
+
+The dotted arrow at the bottom is the punchline: the artifact built by the
+harness is itself a more polished, testable, web-driven version of the
+harness. The retry-coach module that lives in `bootstrap/lib/coach.sh` was
+itself proposed and added by the harness during one of its own retries.
+
+> 📜 **Want the receipts?** The actual phase plans and end-of-phase handoffs
+> the model worked from are checked in under
+> [`docs/methodology/`](docs/methodology/). Read those if you want to see
+> exactly what was fed to the LLM at each step, not the marketing version.
+
+---
 
 ## Architecture
 
-```
-PWA (phone/desktop) ──HTTP/SSE──► FastAPI ──► Orchestrator ──► llama-server
-                                    │              │
-                                    │         Qwen3.6-35B-A3B
-                                    │         (LAN-only, -np 1)
-                                    ▼
-                              Human gates
-                              (approve/reject)
+```mermaid
+flowchart TB
+    User([👤 You])
+    PWA[PWA / CLI<br/>guildr run]
+    API[FastAPI backend<br/>LAN-only middleware]
+    ORCH[Orchestrator engine<br/>phase state machine<br/>retry + validate]
+    Pool[Async upstream pool]
+    LLM[llama-server<br/>Qwen3.6-35B-A3B]
+    Gate{Human gate}
+    FS[(project-dir/<br/>sprint-plan.md<br/>TEST_REPORT.md<br/>REVIEW.md<br/>DEPLOY.md)]
+
+    User -->|HTTP / SSE| PWA
+    PWA --> API
+    API --> ORCH
+    ORCH --> Pool
+    Pool --> LLM
+    LLM --> Pool
+    Pool --> ORCH
+    ORCH --> Gate
+    Gate -->|approve| ORCH
+    Gate -->|reject| User
+    ORCH --> FS
 ```
 
-- **LAN-only by default**: rejects non-RFC1918 source IPs.
-- **Single LLM, multiple roles**: Architect, Coder, Tester, Reviewer,
-  Deployer — all backed by the same Qwen3.6-35B-A3B instance.
-- **Evidence-driven**: every task has verifiable evidence requirements;
-  the Tester re-runs them independently.
-- **Dry-run mode**: test the full pipeline without real LLM calls.
+```mermaid
+flowchart LR
+    Q[qwendea.md<br/>your idea] --> A[Architect]
+    A --> SP[sprint-plan.md]
+    SP --> G1{Human<br/>approve?}
+    G1 -->|yes| C[Coder]
+    C --> Src[source + tests]
+    Src --> T[Tester]
+    T --> TR[TEST_REPORT.md]
+    TR --> R[Reviewer]
+    R --> RV[REVIEW.md]
+    RV --> G2{Human<br/>approve?}
+    G2 -->|yes| D[Deployer]
+    D --> DP[DEPLOY.md]
+
+    style A fill:#2a4d6e,color:#fff
+    style C fill:#2a4d6e,color:#fff
+    style T fill:#2a4d6e,color:#fff
+    style R fill:#2a4d6e,color:#fff
+    style D fill:#2a4d6e,color:#fff
+    style G1 fill:#6e4d2a,color:#fff
+    style G2 fill:#6e4d2a,color:#fff
+```
+
+- **One model, many roles.** All five roles hit the same llama-server with
+  role-specific system prompts. No vendor lock, no API keys, no per-token
+  metering — your hardware, your tokens.
+- **Evidence-driven.** Every task in the sprint plan declares verifiable
+  evidence; the Tester re-runs that evidence independently of the Coder's
+  claims, so "I wrote it" never means "I tested it."
+- **Human gates.** Pipeline halts before implementation and before
+  deployment until you approve through the PWA (or pass `--no-gates`).
+- **LAN-only by default.** Web backend rejects non-RFC1918 source IPs unless
+  you explicitly opt in with `ORCHESTRATOR_EXPOSE_PUBLIC=1`.
+- **Dry-run mode.** Drive the full pipeline with a fake LLM to validate
+  wiring without burning tokens.
 
 ## Install
 
 ```bash
-# Clone the repo
-git clone <repo-url>
-cd orchestrator
+git clone https://github.com/karolswdev/guildr.git
+cd guildr
+./install.sh        # uses uv tool / pipx / pip --user, in that order
+```
 
-# Create and activate a virtual environment
-python -m venv .venv
-source .venv/bin/activate
+This installs the `guildr` binary on your `PATH`. Verify:
 
-# Install dependencies
-pip install -e ".[dev]"
+```bash
+guildr --help
 ```
 
 ### Prerequisites
 
 - Python 3.12+
-- A running llama.cpp server (Qwen3.6-35B-A3B, 131K context, `-np 1`)
-  See [`~/dev/llama.cpp/llm-server.md`](https://github.com/ggerganov/llama.cpp) for setup.
-
-### Environment variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `LLAMA_SERVER_URL` | `http://192.168.1.13:8080` | llama.cpp server endpoint |
-| `PROJECT_DIR` | `.` | Project working directory |
-| `ORCHESTRATOR_MAX_RETRIES` | `3` | Max retries per phase |
-| `EXPOSE_PUBLIC` | `false` | Allow non-LAN access (not recommended) |
+- (Optional, for live runs) A llama.cpp server. Tested with Qwen3.6-35B-A3B
+  at 131K context, `-np 1`. See [llama.cpp](https://github.com/ggerganov/llama.cpp).
+- (Optional, for the PWA) Node 18+ — the install script bundles the frontend
+  via `npx esbuild`.
 
 ## Quickstart
 
-### 1. Start the llama-server
+### Dry-run (no LLM required)
 
 ```bash
-llama-server -m path/to/Qwen3.6-35B-A3B.gguf -np 1 --host 0.0.0.0 --port 8080
+mkdir -p /tmp/demo && echo "# A tiny CLI that prints hello." > /tmp/demo/qwendea.md
+guildr run --from-env --dry-run --no-gates --project /tmp/demo
+ls /tmp/demo/   # sprint-plan.md, TEST_REPORT.md, REVIEW.md, DEPLOY.md
 ```
 
-Verify it's reachable:
+### Live run
+
+Start a llama.cpp server, then point guildr at it:
 
 ```bash
-curl http://192.168.1.13:8080/health
-# {"status":"ok"}
+llama-server -m path/to/Qwen3.6-35B-A3B.gguf -np 1 --host 127.0.0.1 --port 8080
 ```
-
-### 2. Create a project
 
 ```bash
-export PROJECT_DIR=/tmp/my-project
-mkdir -p "$PROJECT_DIR"
-
-# Run the orchestrator (or use the PWA)
-python -m orchestrator.cli main "$PROJECT_DIR"
+export LLAMA_SERVER_URL=http://127.0.0.1:8080
+export PROJECT_DIR=/path/to/your/project   # must contain qwendea.md
+guildr run --from-env
 ```
 
-Or via the PWA: open `http://<server-ip>:8000` in your browser, click
-"New Project", and enter your project idea.
-
-### 3. Run with dry-run (no LLM needed)
+Or with a config file (see `config.example.yaml`):
 
 ```bash
-python -c "
-from orchestrator.lib.llm_fake import FakeLLMClient
-from orchestrator.lib.llm import LLMResponse
-
-fake = FakeLLMClient(responses={
-    'user': LLMResponse(content='# Sprint Plan\n\n## Tasks\n\n### Task 1\n- **Priority**: P0\n**Evidence Log:**\n- [x] Done\n', reasoning='', prompt_tokens=0, completion_tokens=0, reasoning_tokens=0, finish_reason='stop'),
-    'default': LLMResponse(content='# Sprint Plan\n\n## Tasks\n\n### Task 1\n- **Priority**: P0\n**Evidence Log:**\n- [x] Done\n', reasoning='', prompt_tokens=0, completion_tokens=0, reasoning_tokens=0, finish_reason='stop'),
-})
-
-from orchestrator.engine import Orchestrator
-from orchestrator.lib.config import Config
-
-config = Config(
-    llama_server_url='http://192.168.1.13:8080',
-    project_dir='/tmp/dry-run-project',
-)
-orch = Orchestrator(config=config, fake_llm=fake)
-orch.run()
-print('Dry-run complete!')
-"
+guildr run --config config.yaml
 ```
 
-### 4. Inspect a project
+### Inspect a run
 
 ```bash
-# List phases and status
-python -m orchestrator.cli inspect /tmp/my-project
-
-# Dump a session transcript
-python -m orchestrator.cli inspect /tmp/my-project --phase architect
-
-# Show token usage
-python -m orchestrator.cli inspect /tmp/my-project --tokens
+guildr inspect /path/to/your/project              # phase + retry summary
+guildr inspect /path/to/your/project --phase architect
+guildr inspect /path/to/your/project --tokens
 ```
 
-## Project structure
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLAMA_SERVER_URL` | (required) | llama.cpp endpoint (e.g. `http://127.0.0.1:8080`) |
+| `PROJECT_DIR` | `.` | Project working directory |
+| `ORCHESTRATOR_MAX_RETRIES` | `3` | Max retries per phase |
+| `ORCHESTRATOR_EXPOSE_PUBLIC` | `0` | Set to `1` to allow non-RFC1918 web access (logs a WARNING) |
+
+CLI flags override env vars; env vars override `--config` YAML.
+
+## Project layout produced by a run
 
 ```
 <project-dir>/
-├── qwendea.md              # Source of truth — what we're building
-├── sprint-plan.md          # Architect's plan with tasks + evidence
-├── TEST_REPORT.md          # Tester's output
-├── REVIEW.md               # Reviewer's output
-├── DEPLOY.md               # Deployer's output
-├── .orchestrator/
-│   ├── state.json          # Phase, retries, session IDs
-│   ├── sessions/           # Exported session transcripts
-│   └── logs/               # Structured logs per phase (.jsonl)
-└── <source tree>
+├── qwendea.md              # Source of truth — what we're building (you write this)
+├── sprint-plan.md          # Architect: tasks + evidence requirements
+├── TEST_REPORT.md          # Tester: per-task PASS/FAIL with evidence
+├── REVIEW.md               # Reviewer: APPROVED / REJECTED + criterion checklist
+├── DEPLOY.md               # Deployer: target, env, manual steps, smoke tests
+└── .orchestrator/
+    ├── state.json          # Phase, retries, gate decisions
+    ├── sessions/           # Exported session transcripts
+    └── logs/               # Structured logs per phase (.jsonl)
 ```
 
-## Phases
-
-| Phase | Role | Output | Gate |
-|---|---|---|---|
-| Ingestion | — | `qwendea.md` | — |
-| Architect | Architect | `sprint-plan.md` | Human approve |
-| Coder | Coder | Source files | — |
-| Tester | Tester | `TEST_REPORT.md` | — |
-| Reviewer | Reviewer | `REVIEW.md` | Human approve |
-| Deployer | Deployer | `DEPLOY.md` | — |
-
-## Testing
+## Web UI (PWA)
 
 ```bash
-# All tests
-pytest tests/ -v
+uvicorn web.backend.app:app --host 0.0.0.0 --port 8000
+```
 
-# Dry-run tests specifically
-pytest tests/test_dry_run.py -v
+Then open `http://<your-lan-ip>:8000` from any device on the same LAN.
+The frontend bundle is built by `web/frontend/build.sh` (called automatically
+by `install.sh`).
 
-# Logger tests
-pytest tests/test_logger.py -v
+## Development
 
-# Integration tests (requires running llama-server)
-pytest tests/test_llm.py -v -m integration
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+pytest -q                                          # full suite (~20s, 438 tests)
+pytest tests/test_integration_dry_run.py -v        # full pipeline e2e (dry-run)
+pytest --cov=orchestrator --cov=web --cov-report=term-missing
 ```
 
 ## Security
 
-The PWA backend enforces LAN-only access by rejecting non-RFC1918
-source IPs. The llama-server upstream has **no authentication**.
-
-Override with `EXPOSE_PUBLIC=1` (log a warning at startup).
+guildr is designed for self-hosted single-user use on a trusted LAN. The web
+backend rejects non-RFC1918 source IPs by default; the llama-server upstream
+has no authentication. Do not expose this to the internet without adding
+your own auth layer.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

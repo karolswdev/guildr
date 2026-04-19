@@ -15,6 +15,13 @@ node_modules/
 dist/
 .cache/
 
+# Coverage
+.coverage
+htmlcov/
+
+# opencode harness state (live copies of plans live in docs/methodology/)
+.opencode/
+
 # Editor / OS
 .DS_Store
 .vscode/

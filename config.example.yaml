@@ -1,7 +1,7 @@
 # Orchestrator configuration example.
 # Copy to config.yaml and adjust values.
 
-llama_server_url: http://192.168.1.13:8080
+llama_server_url: http://127.0.0.1:8080
 project_dir: ./project
 
 # Maximum retries per phase before escalation
