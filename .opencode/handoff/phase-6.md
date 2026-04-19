@@ -67,5 +67,5 @@ Key files:
 - **GateRegistry is per-project but in-memory**: Gates persist only while the server is running. For persistence, you'll need to add JSON file storage.
 - **SimpleEventBus vs Phase 5 EventBus**: The stream route uses a simple list-based event bus. Phase 5 has `orchestrator/lib/events.py` with `EventBus`. They are NOT the same. Phase 7 should unify them.
 - **Route mounting**: Routes are mounted via `_include_router()` which silently skips missing modules. This means new route files must be added to `app.py`'s `_include_router` calls.
-- **Test failure**: `test_startup_warning_when_expose_public` has a pre-existing failure (caplog doesn't capture the warning because the module is already imported). This is a test isolation issue, not a code bug.
+- **Test isolation**: `test_startup_warning_when_expose_public` passes. The warning is emitted in `_make_app()` (test helper) and in `LanOnlyMiddleware.__init__` (production). In the full test suite, `web.backend.app` is cached by earlier imports, so the `create_app()` warning fires during collection (before caplog). The `_make_app()` warning fires during the test (after caplog is configured).
 - **Frontend imports**: View modules are imported in `app.ts` with `.js` extension (ESM convention). The views use `escapeHtml()` locally — the one in `app.ts` is separate.
