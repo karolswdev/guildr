@@ -267,8 +267,36 @@ tests/test_synthesize.py::TestSynthesisPrompt::test_retry_prompt_structure PASSE
 - End-to-end test with a scripted answer sequence
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```...```
-- [ ] Committed as <short-sha>
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /opt/homebrew/opt/python@3.14/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: respx-0.23.1, anyio-4.13.0
+collecting ... collected 18 items
+
+tests/test_ensure_qwendea.py::TestEnsureQwendeaExists::test_returns_content_when_valid PASSED [  5%]
+tests/test_ensure_qwendea.py::TestEnsureQwendeaExists::test_returns_content_with_extra_content PASSED [ 11%]
+tests/test_ensure_qwendea.py::TestEnsureQwendeaMissing::test_returns_quiz_session_when_missing PASSED [ 16%]
+tests/test_ensure_qwendea.py::TestEnsureQwendeaMissing::test_quiz_session_has_required_attributes PASSED [ 22%]
+tests/test_ensure_qwendea.py::TestEnsureQwendeaInvalid::test_raises_with_missing_headers PASSED [ 27%]
+tests/test_ensure_qwendea.py::TestEnsureQwendeaInvalid::test_raises_with_multiple_missing_headers PASSED [ 33%]
+tests/test_ensure_qwendea.py::TestEnsureQwendeaInvalid::test_error_message_lists_missing_headers PASSED [ 38%]
+tests/test_ensure_qwendea.py::TestCompleteQuiz::test_writes_qwendea_to_project_dir PASSED [ 44%]
+tests/test_ensure_qwendea.py::TestCompleteQuiz::test_returns_synthesized_content PASSED [ 50%]
+tests/test_ensure_qwendea.py::TestCompleteQuiz::test_raises_synthesis_error_on_failure PASSED [ 55%]
+tests/test_ensure_qwendea.py::TestQuizSessionAPI::test_next_question_delegates PASSED [ 61%]
+tests/test_ensure_qwendea.py::TestQuizSessionAPI::test_submit_answer_records PASSED [ 66%]
+tests/test_ensure_qwendea.py::TestQuizSessionAPI::test_is_complete_delegates PASSED [ 72%]
+tests/test_ensure_qwendea.py::TestCheckMissingHeaders::test_no_missing_headers PASSED [ 77%]
+tests/test_ensure_qwendea.py::TestCheckMissingHeaders::test_all_missing PASSED [ 83%]
+tests/test_ensure_qwendea.py::TestCheckMissingHeaders::test_one_missing PASSED [ 88%]
+tests/test_ensure_qwendea.py::TestCheckMissingHeaders::test_case_sensitive PASSED [ 94%]
+tests/test_ensure_qwendea.py::TestEndToEnd::test_full_quiz_flow PASSED   [100%]
+
+============================== 18 passed in 0.22s ==============================```
+- [x] End-to-end test with scripted answer sequence passes
+- [x] Committed as 0651a81
 
 
 ## Risks & Mitigations
