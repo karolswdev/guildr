@@ -319,8 +319,9 @@ tests/test_ensure_qwendea.py::TestEndToEnd::test_full_quiz_flow PASSED   [100%]
 - `grep "Evidence Required" orchestrator/roles/prompts/architect/generate.txt`
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```<actual output>```
-- [ ] Committed as <short-sha>  <!-- mandatory; filled after commit -->
+- [x] Visual inspection: all three template files exist with correct content
+- [x] `grep "Evidence Required" orchestrator/roles/prompts/architect/generate.txt` → found
+- [x] Committed as 485289f
 
 
 
