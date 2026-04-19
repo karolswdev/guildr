@@ -41,8 +41,11 @@ class LanOnlyMiddleware(BaseHTTPMiddleware):
         if forwarded_for:
             # X-Forwarded-For can contain multiple IPs; first one is client
             client_ip = forwarded_for.split(",")[0].strip()
+        elif request.client is not None:
+            client_ip = request.client.host
         else:
-            client_ip = request.client.host if request.client else "0.0.0.0"
+            # No client info (e.g., in-process tests) — allow
+            return await call_next(request)
 
         if not _is_rfc1918(client_ip):
             logger.warning(

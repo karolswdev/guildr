@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 
 from fastapi import FastAPI
 
@@ -13,8 +12,21 @@ from web.backend.middleware import LanOnlyMiddleware
 logger = logging.getLogger(__name__)
 
 
-def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
+def _include_router(app: FastAPI, module_name: str, prefix: str) -> None:
+    """Try to include a route module; log debug on failure."""
+    try:
+        mod = __import__(f"web.backend.routes.{module_name}", fromlist=["router"])
+        app.include_router(mod.router, prefix=prefix, tags=[module_name])
+    except ImportError:
+        logger.debug("Route module '%s' not yet available", module_name)
+
+
+def create_app(store=None) -> FastAPI:
+    """Create and configure the FastAPI application.
+
+    Args:
+        store: Optional ProjectStore override (for testing).
+    """
     app = FastAPI(
         title="Orchestrator",
         description="AI Orchestrator — single-user LAN-only control plane",
@@ -30,24 +42,12 @@ def create_app() -> FastAPI:
     # Mount LAN-only middleware BEFORE any routes
     app.add_middleware(LanOnlyMiddleware)
 
-    # Import and include routes (lazy to avoid import errors if routes
-    # modules don't exist yet during early phase development)
-    try:
-        from web.backend.routes import projects, quiz, gates, stream
-
-        app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
-        app.include_router(quiz.router, prefix="/api/projects", tags=["quiz"])
-        app.include_router(gates.router, prefix="/api/projects", tags=["gates"])
-        app.include_router(stream.router, prefix="/api/projects", tags=["stream"])
-    except ImportError:
-        logger.debug("Some route modules not yet available")
-
-    try:
-        from web.backend.routes import metrics
-
-        app.include_router(metrics.router, prefix="/api/llama", tags=["llama"])
-    except ImportError:
-        logger.debug("Metrics route module not yet available")
+    # Include route modules (each is independent; missing modules are logged)
+    _include_router(app, "projects", "/api/projects")
+    _include_router(app, "quiz", "/api/projects")
+    _include_router(app, "gates", "/api/projects")
+    _include_router(app, "stream", "/api/projects")
+    _include_router(app, "metrics", "/api/llama")
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
