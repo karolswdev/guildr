@@ -175,10 +175,10 @@ tests/test_config.py::TestFromEnv::test_primary_takes_precedence PASSED  [100%]
 - **Files**: `orchestrator/ingestion/quiz.py`, `tests/test_quiz.py`
 
 **Acceptance Criteria:**
-- [ ] Returns seed questions in order for the first 3 turns
-- [ ] Calls LLM for adaptive questions from turn 4 onward
-- [ ] Stops on `DONE` or `quiz_max_turns`
-- [ ] Answer history preserved in order
+- [x] Returns seed questions in order for the first 3 turns
+- [x] Calls LLM for adaptive questions from turn 4 onward
+- [x] Stops on `DONE` or `quiz_max_turns`
+- [x] Answer history preserved in order
 
 **Evidence Required:**
 - `pytest tests/test_quiz.py -v`
@@ -206,7 +206,7 @@ tests/test_quiz.py::TestAnswerHistory::test_is_complete_becomes_true PASSED [ 90
 tests/test_quiz.py::TestAnswerHistory::test_is_complete_false_during_quiz PASSED [100%]
 
 ============================== 11 passed in 0.22s ==============================```
-- [ ] Committed as <short-sha>
+- [x] Committed as 379779d
 
 
 ### Task 2: synthesize() + validator
