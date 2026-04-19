@@ -729,8 +729,23 @@ web/backend/tests/test_stream.py::TestSimpleEventBus::test_emit_to_removed_subsc
 - `pytest web/backend/tests/test_metrics.py -v`
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [ ] Test command run, output recorded: ```...```
-- [ ] Committed as <sha>
+- [x] Test command run, output recorded: ```============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0, /Users/karol/dev/projects/llm-projects/build/workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/karol/dev/projects/llm-projects/build/workspace
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, respx-0.23.1, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_fixture_loop_scope=None
+collecting ... collected 5 items
+
+web/backend/tests/test_metrics.py::test_metrics_passthrough PASSED       [ 20%]
+web/backend/tests/test_metrics.py::test_health_passthrough PASSED        [ 40%]
+web/backend/tests/test_metrics.py::test_metrics_upstream_error_returns_502 PASSED [ 60%]
+web/backend/tests/test_metrics.py::test_metrics_connection_refused_returns_502 PASSED [ 80%]
+web/backend/tests/test_metrics.py::test_health_upstream_error_returns_502 PASSED [100%]
+
+============================== 5 passed in 0.18s ==============================```
+- [x] Committed as 7416f8c
 
 
 ### Task 7: PWA shell + manifest + SW
