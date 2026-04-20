@@ -26,7 +26,8 @@ async def test_artifact_route_serves_nested_source_file() -> None:
         )
 
     assert response.status_code == 200
-    assert "export const ok" in response.json()
+    assert response.headers["content-type"].startswith("text/plain")
+    assert response.text == "export const ok = true;\n"
 
 
 @pytest.mark.asyncio

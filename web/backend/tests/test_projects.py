@@ -113,7 +113,11 @@ async def test_start_project(app: FastAPI) -> None:
         )
         project_id = create_resp.json()["id"]
 
-        response = await client.post(f"/api/projects/{project_id}/start")
+        async def _fake_start(project_id: str, initial_idea=None):
+            return True
+
+        with patch("web.backend.runner.start_run_async", side_effect=_fake_start):
+            response = await client.post(f"/api/projects/{project_id}/start")
         assert response.status_code == 200
         data = response.json()
         assert data["started"] is True
@@ -219,8 +223,8 @@ def test_project_store_list_refreshes_phase_from_state(
     assert listed.current_phase == "review"
 
 
-def test_project_store_recovers_legacy_project(tmp_path: Path) -> None:
-    """Existing project dirs without metadata should still load after restart."""
+def test_project_store_ignores_legacy_project_by_default(tmp_path: Path) -> None:
+    """Dirs without project metadata should not pollute the project list."""
     project_dir = tmp_path / "f7508af9776b"
     (project_dir / ".orchestrator").mkdir(parents=True)
     (project_dir / "initial_idea.txt").write_text("Recovered idea\nMore text\n")
@@ -230,6 +234,27 @@ def test_project_store_recovers_legacy_project(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
+    store = ProjectStore(base_dir=str(tmp_path))
+
+    assert store.get("f7508af9776b") is None
+    assert store.list_all() == []
+
+
+def test_project_store_recovers_legacy_project_when_enabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy recovery is explicit so production lists stay clean."""
+    project_dir = tmp_path / "f7508af9776b"
+    (project_dir / ".orchestrator").mkdir(parents=True)
+    (project_dir / "initial_idea.txt").write_text("Recovered idea\nMore text\n")
+    (project_dir / "qwendea.md").write_text("# Recovered qwendea\n")
+    (project_dir / ".orchestrator" / "state.json").write_text(
+        json.dumps({"current_phase": "architect"}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("ORCHESTRATOR_RECOVER_LEGACY_PROJECTS", "1")
     store = ProjectStore(base_dir=str(tmp_path))
     recovered = store.get("f7508af9776b")
 
@@ -244,6 +269,16 @@ async def test_recovered_project_can_start(tmp_path: Path) -> None:
     """Recovered projects are addressable through the API start route."""
     project_dir = tmp_path / "f7508af9776b"
     (project_dir / ".orchestrator").mkdir(parents=True)
+    (project_dir / ".orchestrator" / "project.json").write_text(
+        json.dumps({
+            "id": "f7508af9776b",
+            "name": "Recovered",
+            "needs_quiz": False,
+            "current_phase": None,
+            "created_at": "2026-04-20T00:00:00+00:00",
+        }),
+        encoding="utf-8",
+    )
     (project_dir / "qwendea.md").write_text("# Project\n\nBuild it.\n")
     store = ProjectStore(base_dir=str(tmp_path))
     app = create_app()

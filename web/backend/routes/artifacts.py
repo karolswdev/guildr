@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
+from fastapi.responses import PlainTextResponse
 
 logger = logging.getLogger(__name__)
 
@@ -115,10 +116,10 @@ def _setup_routes(router_obj: Any) -> Any:
         store = get_store()
         return store.get_tree(project_id)
 
-    @router_obj.get("/{project_id}/artifacts/{name:path}")
-    async def get_artifact(project_id: str, name: str) -> str:
+    @router_obj.get("/{project_id}/artifacts/{name:path}", response_class=PlainTextResponse)
+    async def get_artifact(project_id: str, name: str) -> PlainTextResponse:
         store = get_store()
-        return store.get_artifact(project_id, name)
+        return PlainTextResponse(store.get_artifact(project_id, name))
 
     return router_obj
 

@@ -34,8 +34,10 @@ export function renderArtifacts(container: Element, navigate: (route: string) =>
           <div
             id="file-content"
             style="background: #0a0a0a; border-radius: 8px; padding: 16px;
-                   overflow-x: auto; font-size: 14px; line-height: 1.6;
-                   white-space: pre-wrap; max-height: 60vh; overflow-y: auto;"
+                   overflow: auto; font-size: 14px; line-height: 1.6;
+                   white-space: pre; max-height: 60vh; tab-size: 2;
+                   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco,
+                   Consolas, 'Liberation Mono', monospace;"
           >
             <span style="color: #888;">Select a file to view.</span>
           </div>
@@ -116,7 +118,7 @@ export function renderArtifacts(container: Element, navigate: (route: string) =>
       if (!resp.ok) throw new Error(`Failed to load: ${resp.status}`);
 
       const content = await resp.text();
-      fileContent.textContent = content;
+      fileContent.textContent = decodeArtifactContent(content);
     } catch (err: unknown) {
       fileContent.innerHTML = `<span style="color: #e74c3c;">${err instanceof Error ? err.message : "Unknown error"}</span>`;
     }
@@ -130,6 +132,19 @@ export function renderArtifacts(container: Element, navigate: (route: string) =>
 
   function isSource(path: string): boolean {
     return /\.(ts|js|py|toml|yaml|yml|json|html|css|sh)$/.test(path);
+  }
+
+  function decodeArtifactContent(content: string): string {
+    const trimmed = content.trim();
+    if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === "string") return parsed;
+      } catch {
+        // Fall through to raw content.
+      }
+    }
+    return content;
   }
 
   loadTree();

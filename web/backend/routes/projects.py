@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import json
+import os
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -109,8 +110,12 @@ def _default_projects_base() -> Path:
     (and tests) can isolate runs in a tempdir without colliding with a
     user's real /tmp/orchestrator-projects state.
     """
-    import os
     return Path(os.environ.get("ORCHESTRATOR_PROJECTS_DIR", "/tmp/orchestrator-projects"))
+
+
+def _recover_legacy_projects_enabled() -> bool:
+    """Whether dirs without project.json should appear in the project list."""
+    return os.environ.get("ORCHESTRATOR_RECOVER_LEGACY_PROJECTS") == "1"
 
 
 class ProjectStore:
@@ -137,12 +142,16 @@ class ProjectStore:
     def _load_project_dir(self, project_dir: Path) -> Project | None:
         """Load metadata for one project directory.
 
-        New projects have ``.orchestrator/project.json``. Older dogfood
-        directories can still be recovered from their directory name,
-        qwendea/initial idea files, and orchestrator state.
+        New projects have ``.orchestrator/project.json``. Legacy dirs
+        without metadata are only recovered when explicitly enabled so
+        test debris and unrelated temp dirs do not pollute the PWA list.
         """
-        metadata: dict[str, Any] = {}
         meta_path = _metadata_path(project_dir)
+        if not meta_path.exists() and not _recover_legacy_projects_enabled():
+            logger.debug("Skipping project dir without metadata: %s", project_dir)
+            return None
+
+        metadata: dict[str, Any] = {}
         if meta_path.exists():
             try:
                 raw = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -150,6 +159,7 @@ class ProjectStore:
                     metadata = raw
             except (json.JSONDecodeError, OSError):
                 logger.warning("Ignoring unreadable project metadata: %s", meta_path)
+                return None
 
         project_id = metadata.get("id") if isinstance(metadata.get("id"), str) else project_dir.name
         name = metadata.get("name") if isinstance(metadata.get("name"), str) else _fallback_name(project_dir)
