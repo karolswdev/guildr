@@ -11,6 +11,7 @@ from typing import Any
 
 from orchestrator.lib.config import Config
 from orchestrator.lib.llm import LLMClient
+from orchestrator.lib.sprint_plan import parse_tasks
 from orchestrator.lib.state import State
 
 logger = logging.getLogger(__name__)
@@ -222,6 +223,7 @@ class Architect:
         raw = self._call_judge(messages)
         result = self._parse_json(raw)
         if result is not None:
+            self._apply_local_plan_checks(plan, result)
             return self._compute_score(result)
 
         # Try 2: re-prompt with correction
@@ -234,16 +236,58 @@ class Architect:
         raw = self._call_judge(messages)
         result = self._parse_json(raw)
         if result is not None:
+            self._apply_local_plan_checks(plan, result)
             return self._compute_score(result)
 
         # Try 3: regex fallback
         result = self._extract_json_regex(raw)
         if result is not None:
+            self._apply_local_plan_checks(plan, result)
             return self._compute_score(result)
 
         # Final failure: return score 0 with reason
         logger.warning("Architect self-eval: all JSON parsing attempts failed")
         return 0, {"reason": "malformed"}
+
+    @classmethod
+    def _apply_local_plan_checks(
+        cls,
+        plan: str,
+        evaluation: dict[str, Any],
+    ) -> None:
+        """Enforce verifier invariants even if the LLM judge misses them."""
+        issues: list[str] = []
+        for task in parse_tasks(plan):
+            for evidence in task.evidence_required:
+                issue = cls._evidence_issue(evidence)
+                if issue:
+                    issues.append(f"Task {task.id}: {issue}: {evidence}")
+
+        if not issues:
+            return
+
+        entry = evaluation.setdefault("evidence", {"score": 1, "issues": []})
+        if not isinstance(entry, dict):
+            entry = {"score": 1, "issues": []}
+            evaluation["evidence"] = entry
+        entry["score"] = 0
+        existing = entry.get("issues")
+        if not isinstance(existing, list):
+            existing = []
+        entry["issues"] = existing + issues
+
+    @staticmethod
+    def _evidence_issue(evidence: str) -> str | None:
+        """Return why an Evidence Required item is not verifier-safe."""
+        lowered = evidence.lower()
+        if re.search(
+            r"\b(npm|pnpm|yarn)\s+run\s+dev\b|\b(next|vite)\s+dev\b|\bwebpack\s+serve\b|\bpython\s+-m\s+http\.server\b|\buvicorn\b|^vite(?:\s|$)",
+            lowered,
+        ):
+            return "long-running dev-server command is not verifier-safe"
+        if re.search(r"\bobserve\b|\binspect\b|\bverify visually\b|\bbrowser\b|\bwindow\b", lowered):
+            return "browser/manual observation is not automated evidence"
+        return None
 
     def _call_judge(self, messages: list[dict]) -> str:
         """Send the judge prompt and return raw response content."""

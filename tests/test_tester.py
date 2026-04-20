@@ -277,6 +277,37 @@ class TestVerifyTask:
         assert result.status == "RERUN_FAILED"
         assert result.evidence[0]["result"] == "FAIL"
 
+    def test_long_running_dev_server_command_fails_without_running(self, tester, state):
+        """verify_task rejects non-finite dev server evidence commands."""
+        plan = """# Sprint Plan
+
+## Tasks
+
+### Task 1: Frontend
+- **Priority**: P0
+- **Dependencies**: none
+- **Files**: `package.json`
+
+**Acceptance Criteria:**
+- [ ] Starts
+
+**Evidence Required:**
+- Run `npm run dev` and observe the browser
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Pending
+
+## Risks & Mitigations
+1. Risk - Mitigation
+"""
+        state.write_file("sprint-plan.md", plan)
+
+        result = tester.verify_task("sprint-plan.md", 1)
+
+        assert result.status == "RERUN_FAILED"
+        assert result.evidence[0]["result"] == "FAIL"
+        assert "long-running dev server" in result.evidence[0]["output"]
+
 
 class TestExecute:
     """Test end-to-end execution."""
@@ -374,6 +405,11 @@ class TestExtractCommands:
     def test_ignores_manual_only_evidence(self):
         result = Tester._extract_commands(["Manual verification in browser"])
         assert result == []
+
+    def test_rejects_long_running_commands(self):
+        error = Tester._command_validation_error("npm run dev")
+        assert error is not None
+        assert "long-running dev server" in error
 
     def test_trims_long_output(self):
         output = Tester._trim_output("x" * 2100, limit=20)

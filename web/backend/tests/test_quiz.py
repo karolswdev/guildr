@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -153,6 +155,11 @@ async def test_commit_writes_qwendea(app: FastAPI) -> None:
     data = response.json()
     assert data["committed"] is True
     assert data["qwendea_length"] == len(qwendea_content)
+    assert (
+        Path(os.environ["ORCHESTRATOR_PROJECTS_DIR"])
+        / project_id
+        / "qwendea.md"
+    ).read_text(encoding="utf-8") == qwendea_content
 
 
 @pytest.mark.asyncio

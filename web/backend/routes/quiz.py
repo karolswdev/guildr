@@ -9,7 +9,9 @@ POST   /api/projects/{id}/quiz/commit     — finalize qwendea.md
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
@@ -159,6 +161,12 @@ def get_quiz_store() -> QuizStore:
     return _quiz_store
 
 
+def _project_dir(project_id: str) -> Path:
+    """Resolve the same project root used by ProjectStore and runner."""
+    base = Path(os.environ.get("ORCHESTRATOR_PROJECTS_DIR", "/tmp/orchestrator-projects"))
+    return base / project_id
+
+
 # -- routes ------------------------------------------------------------------
 
 
@@ -227,15 +235,14 @@ def _setup_routes(router_obj: Any) -> Any:
         if session is None:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        # Write qwendea.md to project directory
-        # (In a real implementation, this would use the ProjectStore)
-        qwendea_path = f"/tmp/orchestrator-projects/{project_id}/qwendea.md"
+        # Write qwendea.md to the configured project directory root.
+        qwendea_path = _project_dir(project_id) / "qwendea.md"
         try:
-            with open(qwendea_path, "w", encoding="utf-8") as f:
-                f.write(body.qwendea_md)
-        except FileNotFoundError:
-            # Project dir may not exist yet; that's okay
-            pass
+            qwendea_path.parent.mkdir(parents=True, exist_ok=True)
+            qwendea_path.write_text(body.qwendea_md, encoding="utf-8")
+        except OSError as exc:
+            logger.warning("Failed to write qwendea.md for %s: %s", project_id, exc)
+            raise HTTPException(status_code=500, detail="Failed to write qwendea.md")
 
         return QuizCommitResponse(
             committed=True,

@@ -15,6 +15,15 @@ future-fill placeholders such as `<actual output>` or `<short-sha>`;
 those are intentionally filled later by the Coder, Tester, and
 orchestrator after execution.
 
+Evidence MUST be executable by an automated verifier. Fail Evidence if
+any task relies on a long-running dev-server/watch command such as
+`npm run dev`, `vite`, `next dev`, `webpack serve`, `uvicorn`, or
+`python -m http.server`. Fail Evidence if a task asks a human to
+"observe", "inspect the browser", "verify visually", or otherwise make
+a judgment instead of checking finite command output. For frontend or
+Node projects, prefer finite commands such as `npm install`,
+`npm run build`, `npm test`, `npm run lint`, or a bounded smoke script.
+
 Return ONLY valid JSON matching this schema:
 {
   "specificity":  {"score": 0|1, "issues": ["..."]},

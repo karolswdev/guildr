@@ -116,6 +116,21 @@ class Tester(BaseRole):
 
         all_passed = True
         for item in commands:
+            validation_error = self._command_validation_error(item["command"])
+            if validation_error:
+                all_passed = False
+                label = f"{item['label']} (`{item['command']}`)"
+                evidence.append({
+                    "result": "FAIL",
+                    "output": validation_error,
+                })
+                evidence_entries.append({
+                    "check": label,
+                    "output": validation_error,
+                    "passed": False,
+                })
+                continue
+
             rc, output = self._run_cmd(item["command"], cwd=self.state.project_dir)
             passed = rc == 0
             all_passed = all_passed and passed
@@ -277,6 +292,20 @@ class Tester(BaseRole):
                 text,
             )
         )
+
+    @staticmethod
+    def _command_validation_error(command: str) -> str | None:
+        lowered = command.lower().strip()
+        if re.search(
+            r"\b(npm|pnpm|yarn)\s+run\s+dev\b|\b(next|vite)\s+dev\b|\bwebpack\s+serve\b|\bpython\s+-m\s+http\.server\b|\buvicorn\b|^vite(?:\s|$)",
+            lowered,
+        ):
+            return (
+                "Evidence command is a long-running dev server. "
+                "Use a finite verifier command such as install, build, lint, "
+                "test, or a bounded smoke script."
+            )
+        return None
 
     @staticmethod
     def _trim_output(output: str, limit: int = 2000) -> str:

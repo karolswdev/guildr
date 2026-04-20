@@ -62,20 +62,25 @@ class ArtifactStore:
 
     def get_artifact(self, project_id: str, name: str) -> str:
         """Read an artifact file from the project directory."""
-        project_dir = self._base / project_id
+        project_dir = (self._base / project_id).resolve()
 
-        # Only allow known artifacts and files within the project dir
-        if name not in KNOWN_ARTIFACTS:
-            # Allow source files too, but prevent directory traversal
-            safe_name = Path(name).name
-            file_path = project_dir / safe_name
-            if not file_path.exists() or not file_path.is_file():
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Artifact not found: {name}",
-                )
-        else:
-            file_path = project_dir / name
+        rel = Path(name)
+        if rel.is_absolute() or any(part in ("", ".", "..") for part in rel.parts):
+            raise HTTPException(status_code=400, detail="Invalid artifact path")
+        if rel.parts and rel.parts[0] in (".git", ".orchestrator", "__pycache__"):
+            raise HTTPException(status_code=404, detail=f"Artifact not found: {name}")
+
+        file_path = (project_dir / rel).resolve()
+        try:
+            file_path.relative_to(project_dir)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid artifact path")
+
+        if not file_path.exists() or not file_path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact not found: {name}",
+            )
 
         try:
             return file_path.read_text(encoding="utf-8")
@@ -110,7 +115,7 @@ def _setup_routes(router_obj: Any) -> Any:
         store = get_store()
         return store.get_tree(project_id)
 
-    @router_obj.get("/{project_id}/artifacts/{name}")
+    @router_obj.get("/{project_id}/artifacts/{name:path}")
     async def get_artifact(project_id: str, name: str) -> str:
         store = get_store()
         return store.get_artifact(project_id, name)

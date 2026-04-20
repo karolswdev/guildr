@@ -78,6 +78,35 @@ def test_judge_allows_future_filled_evidence_log_placeholders() -> None:
     assert "<short-sha>" in prompt
 
 
+def test_judge_rejects_interactive_dev_server_evidence() -> None:
+    """The judge rubric should reject commands the Tester cannot finish."""
+    prompt = (PROMPT_DIR / "judge.txt").read_text(encoding="utf-8")
+    assert "long-running dev-server" in prompt
+    assert "npm run dev" in prompt
+    assert "observe" in prompt
+
+
+def test_local_plan_checks_fail_interactive_evidence(state, config) -> None:
+    """Architect enforces verifier-safe evidence even if the LLM judge misses it."""
+    llm = MagicMock(spec=LLMClient)
+    llm.chat.return_value = LLMResponse(
+        content='{"specificity": {"score": 1, "issues": []}, "testability": {"score": 1, "issues": []}, "evidence": {"score": 1, "issues": []}, "completeness": {"score": 1, "issues": []}, "feasibility": {"score": 1, "issues": []}, "risk": {"score": 1, "issues": []}}',
+        reasoning="",
+        prompt_tokens=100,
+        completion_tokens=200,
+        reasoning_tokens=0,
+        finish_reason="stop",
+    )
+    architect = Architect(llm, state, config)
+    plan = "# Sprint Plan\n\n## Tasks\n\n### Task 1: Frontend\n- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `package.json`\n\n**Acceptance Criteria:**\n- [ ] Builds\n\n**Evidence Required:**\n- Run `npm run dev` and observe the browser.\n\n**Evidence Log:**\n- [ ] Done\n\n## Risks & Mitigations\n1. Risk - Mitigation"
+
+    score, evaluation = architect._self_evaluate("# Project: Test", plan)
+
+    assert score == 5
+    assert evaluation["evidence"]["score"] == 0
+    assert "long-running dev-server" in " ".join(evaluation["evidence"]["issues"])
+
+
 class TestReprompt:
     """Test re-prompt on malformed output."""
 

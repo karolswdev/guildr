@@ -100,6 +100,9 @@ class TestGenerate:
         messages = mock_llm.chat.call_args[0][0]
         system_prompt = messages[0]["content"]
         assert "automated verification command" in system_prompt
+        assert "finite" in system_prompt
+        assert "npm run dev" in system_prompt
+        assert "npm install" in system_prompt
         assert "MUST NOT be" in system_prompt
 
 

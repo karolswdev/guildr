@@ -25,9 +25,9 @@ The sprint-plan.md MUST follow this exact structure:
 - [ ] Criterion 2 (verifiable)
 
 **Evidence Required:**
-- Run `<exact test command>` and observe `<expected output>`
+- Run `<exact finite command>` and expect `<exact stdout/stderr substring or exit status>`
 - `git diff` should show changes in `<path>`
-- Manual verification: `<step>` (only if automation impossible)
+- Manual verification: `<step>` (only if automation impossible and never as the only evidence)
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
 - [ ] Test command run, output recorded: ```<actual output>```
@@ -50,6 +50,16 @@ Rules:
 - Every task MUST have Acceptance Criteria, Evidence Required, and Evidence Log sections.
 - Every task MUST include at least one automated verification command in
   Evidence Required with a concrete expected `PASS`/success output.
+- Evidence commands MUST be finite and CI-safe. Do NOT use long-running
+  dev-server/watch commands such as `npm run dev`, `vite`, `next dev`,
+  `webpack serve`, `uvicorn`, or `python -m http.server`.
+- Do NOT write browser-observation evidence such as "observe in the
+  browser" or "verify visually" as an automated command. Use build,
+  lint, typecheck, unit test, smoke script, or bounded CLI output checks
+  instead.
+- If a task introduces package dependencies, Evidence Required MUST
+  include the setup/install command before commands that rely on those
+  dependencies, e.g. `npm install` before `npm run build`.
 - Manual verification may supplement automated evidence, but it MUST NOT be
   the only Evidence Required for any task.
 - Acceptance Criteria must be verifiable without human judgment.
