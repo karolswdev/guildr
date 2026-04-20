@@ -1,5 +1,9 @@
 # guildr
 
+<p align="center">
+  <img src="docs/screenshots/demo.gif" alt="guildr PWA — create a project on iPhone-sized screen" width="320">
+</p>
+
 > **Status: alpha.** The dry-run pipeline is verified end-to-end (438 tests, 90% coverage).
 > The live llama-server path runs but hasn't been battle-tested on real projects.
 > Use it on a throwaway side project before trusting it with anything important.

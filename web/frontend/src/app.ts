@@ -32,6 +32,12 @@ function navigate(route: string): void {
   window.location.hash = route;
 }
 
+// Several view templates use inline onclick="navigate(...)" handlers, which
+// run in the global scope and can't see the module-local `navigate` symbol.
+// Expose it on window so those handlers actually work.
+(window as unknown as { navigate: typeof navigate }).navigate = navigate;
+(window as unknown as { _navigate: typeof navigate }) ._navigate = navigate;
+
 // -- API client --------------------------------------------------------------
 
 const API_BASE = "";
@@ -135,7 +141,7 @@ function renderNewProjectView(container: Element): void {
 function renderProjectsList(container: Element): void {
   container.innerHTML = `
     <header style="padding: 16px; border-bottom: 1px solid #333;">
-      <h1 style="font-size: 20px;">Orchestrator</h1>
+      <h1 style="font-size: 20px;">guildr</h1>
     </header>
     <main style="padding: 16px;">
       <button
@@ -160,9 +166,12 @@ function renderProjectsList(container: Element): void {
 async function loadProjectsList(container: Element): Promise<void> {
   const listEl = container.querySelector("#project-list") as HTMLDivElement;
   try {
-    const projects = await apiGet("/api/projects") as Array<{
-      id: string; name: string; current_phase: string | null; created_at: string;
-    }>;
+    const resp = await apiGet("/api/projects") as {
+      projects: Array<{
+        id: string; name: string; current_phase: string | null; created_at: string;
+      }>;
+    };
+    const projects = resp.projects;
 
     if (projects.length === 0) {
       listEl.innerHTML = `<p style="color: #888; text-align: center; padding: 32px 0;">
@@ -277,7 +286,7 @@ function escapeHtml(text: string): string {
 function renderNotFound(container: Element, view: string): void {
   container.innerHTML = `
     <header style="padding: 16px; border-bottom: 1px solid #333;">
-      <h1 style="font-size: 20px;">Orchestrator</h1>
+      <h1 style="font-size: 20px;">guildr</h1>
     </header>
     <main style="padding: 16px; text-align: center;">
       <h2 style="margin-bottom: 16px;">Not Found</h2>

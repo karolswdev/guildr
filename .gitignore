@@ -19,6 +19,11 @@ dist/
 .coverage
 htmlcov/
 
+# Demo recording intermediate artifacts (the final demo.gif is checked in)
+docs/screenshots/_raw/
+scripts/node_modules/
+scripts/package-lock.json
+
 # opencode harness state (live copies of plans live in docs/methodology/)
 .opencode/
 

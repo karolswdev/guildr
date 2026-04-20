@@ -1,0 +1,9 @@
+{
+  "name": "guildr-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Local scripts for guildr (demo recording, etc). Not shipped.",
+  "dependencies": {
+    "playwright": "^1.59.1"
+  }
+}

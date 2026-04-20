@@ -1,6 +1,6 @@
 {
-  "name": "Orchestrator",
-  "short_name": "Orchestrator",
+  "name": "guildr",
+  "short_name": "guildr",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1a1a2e",
