@@ -9,15 +9,16 @@ POST   /api/projects/{id}/start — begin orchestrator run
 from __future__ import annotations
 
 import logging
+import json
 import threading
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
-from starlette.responses import PlainTextResponse
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +48,45 @@ class StartResponse(BaseModel):
 
 
 def _now_iso() -> str:
-    import datetime
+    return datetime.now(timezone.utc).isoformat()
 
-    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+def _metadata_path(project_dir: Path) -> Path:
+    return project_dir / ".orchestrator" / "project.json"
+
+
+def _read_current_phase(project_dir: Path) -> str | None:
+    state_path = project_dir / ".orchestrator" / "state.json"
+    if not state_path.exists():
+        return None
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    phase = data.get("current_phase")
+    return phase if isinstance(phase, str) and phase else None
+
+
+def _fallback_name(project_dir: Path) -> str:
+    for filename in ("initial_idea.txt", "qwendea.md"):
+        path = project_dir / filename
+        if not path.exists():
+            continue
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip().lstrip("#").strip()
+                if line:
+                    return line[:80]
+        except OSError:
+            continue
+    return project_dir.name
+
+
+def _created_at_from_dir(project_dir: Path) -> str:
+    try:
+        return datetime.fromtimestamp(project_dir.stat().st_ctime, timezone.utc).isoformat()
+    except OSError:
+        return _now_iso()
 
 
 # -- in-memory store ---------------------------------------------------------
@@ -77,12 +114,83 @@ def _default_projects_base() -> Path:
 
 
 class ProjectStore:
-    """In-memory project store with directory creation."""
+    """Project store backed by project directories on disk."""
 
     def __init__(self, base_dir: str | None = None) -> None:
         self._base = Path(base_dir) if base_dir else _default_projects_base()
         self._projects: dict[str, Project] = {}
         self._lock = threading.Lock()
+        self._load_existing_projects()
+
+    def _load_existing_projects(self) -> None:
+        """Rebuild the in-memory index from existing project directories."""
+        if not self._base.exists():
+            return
+        for project_dir in sorted(self._base.iterdir()):
+            if not project_dir.is_dir():
+                continue
+            project = self._load_project_dir(project_dir)
+            if project is None:
+                continue
+            self._projects[project.id] = project
+
+    def _load_project_dir(self, project_dir: Path) -> Project | None:
+        """Load metadata for one project directory.
+
+        New projects have ``.orchestrator/project.json``. Older dogfood
+        directories can still be recovered from their directory name,
+        qwendea/initial idea files, and orchestrator state.
+        """
+        metadata: dict[str, Any] = {}
+        meta_path = _metadata_path(project_dir)
+        if meta_path.exists():
+            try:
+                raw = json.loads(meta_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    metadata = raw
+            except (json.JSONDecodeError, OSError):
+                logger.warning("Ignoring unreadable project metadata: %s", meta_path)
+
+        project_id = metadata.get("id") if isinstance(metadata.get("id"), str) else project_dir.name
+        name = metadata.get("name") if isinstance(metadata.get("name"), str) else _fallback_name(project_dir)
+        created_at = (
+            metadata.get("created_at")
+            if isinstance(metadata.get("created_at"), str)
+            else _created_at_from_dir(project_dir)
+        )
+        current_phase = _read_current_phase(project_dir)
+        if current_phase is None and isinstance(metadata.get("current_phase"), str):
+            current_phase = metadata["current_phase"]
+
+        has_seed = (project_dir / "qwendea.md").exists() or (project_dir / "initial_idea.txt").exists()
+        needs_quiz = metadata.get("needs_quiz") if isinstance(metadata.get("needs_quiz"), bool) else not has_seed
+
+        return Project(
+            id=project_id,
+            name=name,
+            project_dir=project_dir,
+            needs_quiz=needs_quiz,
+            current_phase=current_phase,
+            created_at=created_at,
+        )
+
+    def _write_metadata(self, project: Project) -> None:
+        meta_path = _metadata_path(project.project_dir)
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta_path.write_text(
+            json.dumps(
+                {
+                    "id": project.id,
+                    "name": project.name,
+                    "needs_quiz": project.needs_quiz,
+                    "current_phase": project.current_phase,
+                    "created_at": project.created_at,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     def create(self, name: str, initial_idea: str | None = None) -> Project:
         pid = uuid.uuid4().hex[:12]
@@ -105,6 +213,7 @@ class ProjectStore:
 
         with self._lock:
             self._projects[pid] = project
+            self._write_metadata(project)
 
         logger.info("Created project '%s' (%s) at %s", name, pid, project_dir)
         return project
@@ -115,7 +224,11 @@ class ProjectStore:
 
     def list_all(self) -> list[Project]:
         with self._lock:
-            return list(self._projects.values())
+            return sorted(
+                self._projects.values(),
+                key=lambda p: p.created_at,
+                reverse=True,
+            )
 
     def update_phase(self, project_id: str, phase: str) -> None:
         with self._lock:
@@ -123,6 +236,7 @@ class ProjectStore:
             if proj is None:
                 raise HTTPException(status_code=404, detail="Project not found")
             proj.current_phase = phase
+            self._write_metadata(proj)
 
     def start_run(self, project_id: str) -> bool:
         """Enqueue orchestrator run. Returns True if started."""

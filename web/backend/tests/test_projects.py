@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -162,3 +164,62 @@ async def test_initial_idea_written_to_disk(app: FastAPI) -> None:
         get_resp = await client.get(f"/api/projects/{project_id}")
         assert get_resp.status_code == 200
         assert get_resp.json()["name"] == "Idea Test"
+
+
+def test_project_store_persists_metadata(fresh_store: ProjectStore) -> None:
+    """Creating a project writes metadata that a new store can reload."""
+    project = fresh_store.create("Persistent Project", "Build it.")
+
+    reloaded = ProjectStore(base_dir=str(fresh_store._base))
+    recovered = reloaded.get(project.id)
+
+    assert recovered is not None
+    assert recovered.name == "Persistent Project"
+    assert recovered.needs_quiz is False
+    assert recovered.created_at == project.created_at
+
+
+def test_project_store_recovers_legacy_project(tmp_path: Path) -> None:
+    """Existing project dirs without metadata should still load after restart."""
+    project_dir = tmp_path / "f7508af9776b"
+    (project_dir / ".orchestrator").mkdir(parents=True)
+    (project_dir / "initial_idea.txt").write_text("Recovered idea\nMore text\n")
+    (project_dir / "qwendea.md").write_text("# Recovered qwendea\n")
+    (project_dir / ".orchestrator" / "state.json").write_text(
+        json.dumps({"current_phase": "architect"}),
+        encoding="utf-8",
+    )
+
+    store = ProjectStore(base_dir=str(tmp_path))
+    recovered = store.get("f7508af9776b")
+
+    assert recovered is not None
+    assert recovered.name == "Recovered idea"
+    assert recovered.needs_quiz is False
+    assert recovered.current_phase == "architect"
+
+
+@pytest.mark.asyncio
+async def test_recovered_project_can_start(tmp_path: Path) -> None:
+    """Recovered projects are addressable through the API start route."""
+    project_dir = tmp_path / "f7508af9776b"
+    (project_dir / ".orchestrator").mkdir(parents=True)
+    (project_dir / "qwendea.md").write_text("# Project\n\nBuild it.\n")
+    store = ProjectStore(base_dir=str(tmp_path))
+    app = create_app()
+
+    async def _fake_start(project_id: str, initial_idea=None):
+        return True
+
+    with (
+        patch("web.backend.routes.projects.get_store", return_value=store),
+        patch("web.backend.runner.start_run_async", side_effect=_fake_start),
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post("/api/projects/f7508af9776b/start")
+            get_resp = await client.get("/api/projects/f7508af9776b")
+
+    assert response.status_code == 200
+    assert response.json()["started"] is True
+    assert get_resp.json()["current_phase"] == "architect"
