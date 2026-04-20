@@ -104,6 +104,7 @@ class TestRunOrder:
         )
 
         # Create TEST_REPORT.md and REVIEW.md so validators pass
+        (config.project_dir / "a.py").write_text("# code\n", encoding="utf-8")
         (config.project_dir / "TEST_REPORT.md").write_text("All tests passed.", encoding="utf-8")
         (config.project_dir / "REVIEW.md").write_text("APPROVED", encoding="utf-8")
 
@@ -165,6 +166,7 @@ class TestRunOrder:
             "## Risks & Mitigations\n1. Risk — Mitigation\n",
             encoding="utf-8",
         )
+        (config.project_dir / "a.py").write_text("# code\n", encoding="utf-8")
         (config.project_dir / "TEST_REPORT.md").write_text("All tests passed.", encoding="utf-8")
         (config.project_dir / "REVIEW.md").write_text("APPROVED", encoding="utf-8")
 
@@ -198,6 +200,7 @@ class TestRunOrder:
             "## Risks & Mitigations\n1. Risk — Mitigation\n",
             encoding="utf-8",
         )
+        (config.project_dir / "a.py").write_text("# code\n", encoding="utf-8")
         (config.project_dir / "TEST_REPORT.md").write_text("All tests passed.", encoding="utf-8")
         (config.project_dir / "REVIEW.md").write_text("APPROVED", encoding="utf-8")
 
@@ -546,7 +549,7 @@ class TestValidate:
         assert orchestrator._validate("deployment") is True
 
     def test_implementation_validator_passes(self, config, qwendea, mock_git_ops, mock_pool):
-        """validate_implementation returns True when all tasks have evidence."""
+        """validate_implementation returns True when all declared files exist."""
         plan = config.project_dir / "sprint-plan.md"
         plan.write_text(
             "# Sprint Plan\n\n"
@@ -560,6 +563,7 @@ class TestValidate:
             "## Risks & Mitigations\n1. Risk — Mitigation\n",
             encoding="utf-8",
         )
+        (config.project_dir / "a.py").write_text("# code\n", encoding="utf-8")
         orchestrator = Orchestrator(
             config=config,
             pool=mock_pool,
@@ -567,8 +571,8 @@ class TestValidate:
         )
         assert orchestrator._validate("implementation") is True
 
-    def test_implementation_validator_fails_unfilled_evidence(self, config, qwendea, mock_git_ops, mock_pool):
-        """validate_implementation returns False when tasks lack filled evidence."""
+    def test_implementation_validator_fails_missing_declared_file(self, config, qwendea, mock_git_ops, mock_pool):
+        """validate_implementation returns False when declared files are missing."""
         plan = config.project_dir / "sprint-plan.md"
         plan.write_text(
             "# Sprint Plan\n\n"

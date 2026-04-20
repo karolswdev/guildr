@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from orchestrator.lib.llm import LLMClient, LLMResponse
+from orchestrator.lib.llm import LLMClient
 from orchestrator.lib.state import State
 from orchestrator.roles.tester import (
     TaskResult,
@@ -15,9 +14,6 @@ from orchestrator.roles.tester import (
     TesterError,
 )
 
-# ---------------------------------------------------------------------------
-# Sample sprint plan with filled evidence logs
-# ---------------------------------------------------------------------------
 
 SAMPLE_SPRINT_PLAN = """# Sprint Plan
 
@@ -39,11 +35,10 @@ Test plan.
 - [ ] Module imports
 
 **Evidence Required:**
-- Run `python -c "import app"`
+- Run `python -c "from pathlib import Path; assert Path('app/__init__.py').exists(); print('import-ready')"`
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [x] Test command run, output recorded: ```success```
-- [x] Module imported
+- [ ] Test command run
 
 
 ### Task 2: API
@@ -55,80 +50,38 @@ Test plan.
 - [ ] Endpoint returns 200
 
 **Evidence Required:**
-- Run `pytest tests/test_api.py -v`
-
-**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [x] Test command run, output recorded: ```1 passed```
-
-
-## Risks & Mitigations
-1. Risk — Mitigation
-"""
-
-# Sprint plan where Coder's evidence is wrong (for mismatch testing)
-SAMPLE_SPRINT_PLAN_MISMATCH = """# Sprint Plan
-
-## Overview
-Test plan with mismatched evidence.
-
-## Architecture Decisions
-- Use FastAPI
-
-## Tasks
-
-### Task 1: Setup
-- **Priority**: P0
-- **Dependencies**: none
-- **Files**: `app/__init__.py`
-
-**Acceptance Criteria:**
-- [ ] Module imports
-
-**Evidence Required:**
-- Run `python -c "import app"`
-
-**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
-- [x] Test command run, output recorded: ```should not match```
-
-
-## Risks & Mitigations
-1. Risk — Mitigation
-"""
-
-# Sprint plan with empty evidence log (should be skipped)
-SAMPLE_SPRINT_PLAN_EMPTY = """# Sprint Plan
-
-## Overview
-Test plan.
-
-## Architecture Decisions
-- Use FastAPI
-
-## Tasks
-
-### Task 1: Setup
-- **Priority**: P0
-- **Dependencies**: none
-- **Files**: `app/__init__.py`
-
-**Acceptance Criteria:**
-- [ ] Module imports
-
-**Evidence Required:**
-- Run `python -c "import app"`
+- Run `python -c "from pathlib import Path; assert Path('app/api.py').exists(); print('api-ready')"`
 
 **Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
 - [ ] Test command run
 
 
 ## Risks & Mitigations
-1. Risk — Mitigation
+1. Risk - Mitigation
 """
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+SAMPLE_SPRINT_PLAN_EMPTY = """# Sprint Plan
+
+## Tasks
+
+### Task 1: Setup
+- **Priority**: P0
+- **Dependencies**: none
+- **Files**: `app/__init__.py`
+
+**Acceptance Criteria:**
+- [ ] Module imports
+
+**Evidence Required:**
+- Manually inspect the interface
+
+**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)
+- [ ] Manual check
+
+## Risks & Mitigations
+1. Risk - Mitigation
+"""
 
 
 @pytest.fixture
@@ -147,11 +100,6 @@ def llm_mock():
 def tester(llm_mock, state):
     """Create a Tester instance."""
     return Tester(llm_mock, state)
-
-
-# ---------------------------------------------------------------------------
-# Tests: _format_evidence_log
-# ---------------------------------------------------------------------------
 
 
 class TestFormatEvidenceLog:
@@ -193,44 +141,24 @@ class TestFormatEvidenceLog:
         assert "output recorded:" not in result
 
 
-# ---------------------------------------------------------------------------
-# Tests: _parse_result
-# ---------------------------------------------------------------------------
-
-
 class TestParseResult:
-    """Test parsing the Tester's markdown output."""
+    """Test parsing legacy markdown output."""
 
     def test_parse_verified(self, tester):
         """VERIFIED status is parsed correctly."""
         raw = """### Task 1: Setup
 - Status: VERIFIED
-- Evidence 1: PASS — import succeeded
+- Evidence 1: PASS - import succeeded
 - Notes: All good
 """
         from orchestrator.lib.sprint_plan import parse_tasks
-        tasks = parse_tasks(SAMPLE_SPRINT_PLAN)
-        result = tester._parse_result(raw, tasks[0])
+
+        task = parse_tasks(SAMPLE_SPRINT_PLAN)[0]
+        result = tester._parse_result(raw, task)
         assert result.status == "VERIFIED"
         assert result.task_id == 1
         assert result.task_name == "Setup"
-        assert len(result.evidence) == 1
-        assert result.evidence[0]["result"] == "PASS"
-        assert "import succeeded" in result.evidence[0]["output"]
         assert "All good" in result.notes
-
-    def test_parse_mismatch(self, tester):
-        """MISMATCH status is parsed correctly."""
-        raw = """### Task 1: Setup
-- Status: MISMATCH
-- Evidence 1: FAIL — expected 'success', got 'error'
-"""
-        from orchestrator.lib.sprint_plan import parse_tasks
-        tasks = parse_tasks(SAMPLE_SPRINT_PLAN)
-        result = tester._parse_result(raw, tasks[0])
-        assert result.status == "MISMATCH"
-        assert len(result.evidence) == 1
-        assert result.evidence[0]["result"] == "FAIL"
 
     def test_parse_rerun_failed(self, tester):
         """RERUN_FAILED status is parsed correctly."""
@@ -239,39 +167,22 @@ class TestParseResult:
 - Notes: Command not found
 """
         from orchestrator.lib.sprint_plan import parse_tasks
-        tasks = parse_tasks(SAMPLE_SPRINT_PLAN)
-        result = tester._parse_result(raw, tasks[0])
+
+        task = parse_tasks(SAMPLE_SPRINT_PLAN)[0]
+        result = tester._parse_result(raw, task)
         assert result.status == "RERUN_FAILED"
         assert "Command not found" in result.notes
 
     def test_parse_missing_status_defaults_to_rerun_failed(self, tester):
         """Missing status defaults to RERUN_FAILED."""
         raw = """### Task 1: Setup
-- Evidence 1: PASS — ok
+- Evidence 1: PASS - ok
 """
         from orchestrator.lib.sprint_plan import parse_tasks
-        tasks = parse_tasks(SAMPLE_SPRINT_PLAN)
-        result = tester._parse_result(raw, tasks[0])
+
+        task = parse_tasks(SAMPLE_SPRINT_PLAN)[0]
+        result = tester._parse_result(raw, task)
         assert result.status == "RERUN_FAILED"
-
-    def test_parse_multiple_evidence(self, tester):
-        """Multiple evidence items are parsed."""
-        raw = """### Task 1: Setup
-- Status: VERIFIED
-- Evidence 1: PASS — test 1 ok
-- Evidence 2: PASS — test 2 ok
-"""
-        from orchestrator.lib.sprint_plan import parse_tasks
-        tasks = parse_tasks(SAMPLE_SPRINT_PLAN)
-        result = tester._parse_result(raw, tasks[0])
-        assert len(result.evidence) == 2
-        assert result.evidence[0]["result"] == "PASS"
-        assert result.evidence[1]["result"] == "PASS"
-
-
-# ---------------------------------------------------------------------------
-# Tests: _write_report
-# ---------------------------------------------------------------------------
 
 
 class TestWriteReport:
@@ -303,67 +214,43 @@ class TestWriteReport:
             TaskResult(
                 task_id=1,
                 task_name="Setup",
-                status="MISMATCH",
+                status="RERUN_FAILED",
                 evidence=[{"result": "FAIL", "output": "expected ok"}],
-                notes="Output differs from Coder's record",
+                notes="Command failed.",
             ),
         ]
         tester._write_report("sprint-plan.md", results)
 
         report = state.read_file("TEST_REPORT.md")
-        assert "MISMATCH" in report
-        assert "Output differs from Coder's record" in report
+        assert "RERUN_FAILED" in report
+        assert "Command failed." in report
 
-    def test_updates_sprint_plan_on_verified(self, tester, state):
-        """Sprint plan is updated with verification status for VERIFIED tasks."""
+    def test_does_not_mutate_sprint_plan(self, tester, state):
+        """Report writing itself does not alter sprint-plan.md."""
         state.write_file("sprint-plan.md", SAMPLE_SPRINT_PLAN)
-
-        results = [
-            TaskResult(
-                task_id=1,
-                task_name="Setup",
-                status="VERIFIED",
-                evidence=[{"result": "PASS", "output": "ok"}],
-            ),
-        ]
-        tester._write_report("sprint-plan.md", results)
-
-        plan = state.read_file("sprint-plan.md")
-        assert "Verified by Tester" in plan
-
-
-# ---------------------------------------------------------------------------
-# Tests: verify_task
-# ---------------------------------------------------------------------------
+        before = state.read_file("sprint-plan.md")
+        tester._write_report("sprint-plan.md", [])
+        assert state.read_file("sprint-plan.md") == before
 
 
 class TestVerifyTask:
     """Test single task verification."""
 
-    def test_calls_llm_with_correct_prompt(self, tester, llm_mock, state):
-        """verify_task calls LLM with task + evidence log."""
+    def test_runs_evidence_commands_without_llm(self, tester, llm_mock, state):
+        """verify_task runs Evidence Required commands in the project dir."""
         state.write_file("sprint-plan.md", SAMPLE_SPRINT_PLAN)
-
-        llm_mock.chat.return_value = LLMResponse(
-            content="### Task 1: Setup\n- Status: VERIFIED\n- Evidence 1: PASS — ok\n",
-            reasoning="",
-            prompt_tokens=100,
-            completion_tokens=200,
-            reasoning_tokens=0,
-            finish_reason="stop",
-        )
+        state.write_file("app/__init__.py", "# app\n")
 
         result = tester.verify_task("sprint-plan.md", 1)
 
-        assert llm_mock.chat.call_count == 1
-        messages = llm_mock.chat.call_args[0][0]
-        assert messages[0]["role"] == "system"
-        assert messages[1]["role"] == "user"
-        assert "Task 1: Setup" in messages[1]["content"]
-        assert "should not match" not in messages[1]["content"]  # from filled log
-
+        assert llm_mock.chat.call_count == 0
         assert result.status == "VERIFIED"
         assert result.task_id == 1
+        assert result.evidence[0]["result"] == "PASS"
+        assert "import-ready" in result.evidence[0]["output"]
+        plan = state.read_file("sprint-plan.md")
+        assert "- [x]" in plan
+        assert "import-ready" in plan
 
     def test_raises_on_missing_task(self, tester, state):
         """verify_task raises TesterError for non-existent task."""
@@ -372,67 +259,33 @@ class TestVerifyTask:
         with pytest.raises(TesterError, match="Task 99 not found"):
             tester.verify_task("sprint-plan.md", 99)
 
-    def test_raises_on_empty_evidence_log(self, tester, state):
-        """verify_task raises TesterError when evidence log is empty."""
+    def test_no_runnable_evidence_returns_failed_result(self, tester, state):
+        """verify_task fails closed when Evidence Required has no command."""
         state.write_file("sprint-plan.md", SAMPLE_SPRINT_PLAN_EMPTY)
 
-        with pytest.raises(TesterError, match="no Evidence Log"):
-            tester.verify_task("sprint-plan.md", 1)
+        result = tester.verify_task("sprint-plan.md", 1)
 
-    def test_handles_llm_failure(self, tester, llm_mock, state):
-        """verify_task raises TesterError on LLM failure."""
+        assert result.status == "RERUN_FAILED"
+        assert "No runnable Evidence Required command" in result.evidence[0]["output"]
+
+    def test_failed_command_returns_failed_result(self, tester, state):
+        """verify_task returns RERUN_FAILED when a command exits non-zero."""
         state.write_file("sprint-plan.md", SAMPLE_SPRINT_PLAN)
 
-        llm_mock.chat.side_effect = Exception("Connection refused")
+        result = tester.verify_task("sprint-plan.md", 1)
 
-        with pytest.raises(TesterError, match="LLM call failed"):
-            tester.verify_task("sprint-plan.md", 1)
-
-
-# ---------------------------------------------------------------------------
-# Tests: execute
-# ---------------------------------------------------------------------------
+        assert result.status == "RERUN_FAILED"
+        assert result.evidence[0]["result"] == "FAIL"
 
 
 class TestExecute:
     """Test end-to-end execution."""
 
     def test_processes_all_tasks_with_evidence(self, tester, llm_mock, state):
-        """execute processes all tasks that have evidence logs."""
+        """execute processes all tasks and writes TEST_REPORT.md."""
         state.write_file("sprint-plan.md", SAMPLE_SPRINT_PLAN)
-
-        llm_mock.chat.side_effect = [
-            LLMResponse(
-                content="### Task 1: Setup\n- Status: VERIFIED\n- Evidence 1: PASS — ok\n",
-                reasoning="",
-                prompt_tokens=100,
-                completion_tokens=200,
-                reasoning_tokens=0,
-                finish_reason="stop",
-            ),
-            LLMResponse(
-                content="### Task 2: API\n- Status: VERIFIED\n- Evidence 1: PASS — ok\n",
-                reasoning="",
-                prompt_tokens=100,
-                completion_tokens=200,
-                reasoning_tokens=0,
-                finish_reason="stop",
-            ),
-        ]
-
-        result_path = tester.execute("sprint-plan.md")
-
-        assert result_path == "TEST_REPORT.md"
-        assert llm_mock.chat.call_count == 2
-
-        report = state.read_file("TEST_REPORT.md")
-        assert "Task 1: Setup" in report
-        assert "Task 2: API" in report
-        assert "VERIFIED" in report
-
-    def test_skips_tasks_without_evidence(self, tester, llm_mock, state):
-        """execute skips tasks with empty evidence logs."""
-        state.write_file("sprint-plan.md", SAMPLE_SPRINT_PLAN_EMPTY)
+        state.write_file("app/__init__.py", "# app\n")
+        state.write_file("app/api.py", "# api\n")
 
         result_path = tester.execute("sprint-plan.md")
 
@@ -440,49 +293,35 @@ class TestExecute:
         assert llm_mock.chat.call_count == 0
 
         report = state.read_file("TEST_REPORT.md")
-        assert "Tasks verified: 0" in report
+        assert "Task 1: Setup" in report
+        assert "Task 2: API" in report
+        assert "VERIFIED" in report
+        plan = state.read_file("sprint-plan.md")
+        assert "import-ready" in plan
+        assert "api-ready" in plan
 
     def test_no_tasks_returns_immediately(self, tester, llm_mock, state):
         """execute returns immediately if no tasks found."""
         plan = """# Sprint Plan
 
-## Overview
-No tasks.
-
-## Architecture Decisions
-- None
-
 ## Tasks
 
 ## Risks & Mitigations
-1. Risk — Mitigation
+1. Risk - Mitigation
 """
         state.write_file("sprint-plan.md", plan)
         result_path = tester.execute("sprint-plan.md")
 
         assert result_path == "TEST_REPORT.md"
         assert llm_mock.chat.call_count == 0
+        assert "Tasks verified: 0" in state.read_file("TEST_REPORT.md")
 
-    def test_mismatch_detected(self, tester, llm_mock, state):
-        """Mismatch is detected and flagged in report."""
+    def test_failed_command_reported(self, tester, state):
+        """Failed Evidence Required commands are flagged in report."""
         state.write_file("sprint-plan.md", SAMPLE_SPRINT_PLAN)
 
-        llm_mock.chat.return_value = LLMResponse(
-            content="### Task 1: Setup\n- Status: MISMATCH\n- Evidence 1: FAIL — expected 'success', got 'error'\n",
-            reasoning="",
-            prompt_tokens=100,
-            completion_tokens=200,
-            reasoning_tokens=0,
-            finish_reason="stop",
-        )
-
         result = tester.verify_task("sprint-plan.md", 1)
-        assert result.status == "MISMATCH"
-
-
-# ---------------------------------------------------------------------------
-# Tests: _run_cmd
-# ---------------------------------------------------------------------------
+        assert result.status == "RERUN_FAILED"
 
 
 class TestRunCmd:
@@ -499,6 +338,13 @@ class TestRunCmd:
         rc, out = Tester._run_cmd("false")
         assert rc != 0
 
+    def test_command_uses_cwd(self, tmp_path):
+        """Command runs in the supplied working directory."""
+        (tmp_path / "marker.txt").write_text("ok", encoding="utf-8")
+        rc, out = Tester._run_cmd("ls marker.txt", cwd=tmp_path)
+        assert rc == 0
+        assert "marker.txt" in out
+
     def test_timeout(self):
         """Timed-out command returns -1."""
         rc, out = Tester._run_cmd("sleep 5", timeout=1)
@@ -509,3 +355,26 @@ class TestRunCmd:
         """Nonexistent command returns non-zero rc."""
         rc, out = Tester._run_cmd("nonexistent_command_xyz")
         assert rc != 0
+
+
+class TestExtractCommands:
+    """Test Evidence Required command extraction."""
+
+    def test_extracts_run_backtick_command(self):
+        result = Tester._extract_commands(["Run `python -c \"print('ok')\"`"])
+        assert result == [{
+            "label": "Run `python -c \"print('ok')\"`",
+            "command": "python -c \"print('ok')\"",
+        }]
+
+    def test_extracts_bare_command_in_backticks(self):
+        result = Tester._extract_commands(["Verify with `pytest -q`"])
+        assert result[0]["command"] == "pytest -q"
+
+    def test_ignores_manual_only_evidence(self):
+        result = Tester._extract_commands(["Manual verification in browser"])
+        assert result == []
+
+    def test_trims_long_output(self):
+        output = Tester._trim_output("x" * 2100, limit=20)
+        assert output == "x" * 20 + "\n...<truncated>"

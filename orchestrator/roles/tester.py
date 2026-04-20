@@ -1,8 +1,7 @@
-"""Tester role — independently re-verifies Coder's Evidence Log."""
+"""Tester role — independently runs sprint-plan evidence commands."""
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import subprocess
@@ -14,7 +13,6 @@ from orchestrator.lib.sprint_plan import (
     Task,
     apply_evidence_patch,
     parse_tasks,
-    slice_task,
 )
 from orchestrator.lib.state import State
 from orchestrator.roles.base import BaseRole
@@ -38,7 +36,7 @@ class TaskResult:
 
 
 class Tester(BaseRole):
-    """Independently re-verifies Coder's Evidence Log entries."""
+    """Runs Evidence Required commands and records actual outputs."""
 
     _phase: str = "testing"
     _role: str = "tester"
@@ -54,7 +52,7 @@ class Tester(BaseRole):
     # -- public API ----------------------------------------------------------
 
     def execute(self, sprint_plan_path: str = "sprint-plan.md") -> str:
-        """Execute verification on all tasks with filled Evidence Logs.
+        """Execute verification on all tasks.
 
         Returns the path to TEST_REPORT.md.
         Raises TesterError on fatal failure.
@@ -69,9 +67,6 @@ class Tester(BaseRole):
 
         results: list[TaskResult] = []
         for task in tasks:
-            # Only verify tasks with at least one [x] (checked) evidence entry
-            if not any(e.get("passed", False) for e in task.evidence_log):
-                continue
             logger.info("Tester: verifying task %d: %s", task.id, task.name)
             result = self._verify_task(plan_text, task, sprint_plan_path)
             results.append(result)
@@ -95,11 +90,6 @@ class Tester(BaseRole):
 
         if target is None:
             raise TesterError(f"Task {task_id} not found in sprint plan")
-        if not any(e.get("passed", False) for e in target.evidence_log):
-            raise TesterError(
-                f"Task {task_id} has no Evidence Log to verify"
-            )
-
         return self._verify_task(plan_text, target, sprint_plan_path)
 
     # -- task verification ---------------------------------------------------
@@ -107,30 +97,54 @@ class Tester(BaseRole):
     def _verify_task(
         self, plan_text: str, task: Task, sprint_plan_path: str
     ) -> TaskResult:
-        """Verify a single task: call LLM, parse result, write report."""
-        sliced = slice_task(plan_text, task.id)
-        evidence_log_text = self._format_evidence_log(task.evidence_log)
+        """Verify a single task by running commands from Evidence Required."""
+        commands = self._extract_commands(task.evidence_required)
+        evidence: list[dict[str, str]] = []
+        evidence_entries: list[dict[str, Any]] = []
 
-        system_prompt = self._load_prompt("tester", "generate")
-        user_prompt = system_prompt.format(
-            task=sliced,
-            evidence_log=evidence_log_text,
+        if not commands:
+            return TaskResult(
+                task_id=task.id,
+                task_name=task.name,
+                status="RERUN_FAILED",
+                evidence=[{
+                    "result": "FAIL",
+                    "output": "No runnable Evidence Required command found",
+                }],
+                notes="Each task must include at least one shell-runnable evidence command.",
+            )
+
+        all_passed = True
+        for item in commands:
+            rc, output = self._run_cmd(item["command"], cwd=self.state.project_dir)
+            passed = rc == 0
+            all_passed = all_passed and passed
+            clean_output = self._trim_output(output)
+            label = f"{item['label']} (`{item['command']}`)"
+            evidence.append({
+                "result": "PASS" if passed else "FAIL",
+                "output": clean_output,
+            })
+            evidence_entries.append({
+                "check": label,
+                "output": clean_output,
+                "passed": passed,
+            })
+
+        plan_text = self.state.read_file(sprint_plan_path)
+        plan_text = apply_evidence_patch(
+            plan_text,
+            {"task_id": task.id, "entries": evidence_entries},
         )
+        self.state.write_file(sprint_plan_path, plan_text)
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-
-        try:
-            response = self._chat(messages)
-        except Exception as exc:
-            raise TesterError(
-                f"LLM call failed for task {task.id}: {exc}"
-            ) from exc
-
-        result = self._parse_result(response.content, task)
-        return result
+        return TaskResult(
+            task_id=task.id,
+            task_name=task.name,
+            status="VERIFIED" if all_passed else "RERUN_FAILED",
+            evidence=evidence,
+            notes="" if all_passed else "One or more evidence commands failed.",
+        )
 
     # -- evidence log formatting ---------------------------------------------
 
@@ -209,29 +223,10 @@ class Tester(BaseRole):
         report = "\n".join(lines)
         self.state.write_file("TEST_REPORT.md", report)
 
-        # Also update the sprint plan with verification status
-        plan_text = self.state.read_file(sprint_plan_path)
-        for r in results:
-            if r.status == "VERIFIED":
-                # Mark evidence log entries as verified
-                patch = {
-                    "task_id": r.task_id,
-                    "entries": [
-                        {
-                            "check": f"Verified by Tester",
-                            "output": r.status,
-                            "passed": True,
-                        },
-                    ],
-                }
-                plan_text = apply_evidence_patch(plan_text, patch)
-
-        self.state.write_file(sprint_plan_path, plan_text)
-
     # -- helper: run shell command -------------------------------------------
 
     @staticmethod
-    def _run_cmd(cmd: str, timeout: int = 120) -> tuple[int, str]:
+    def _run_cmd(cmd: str, timeout: int = 120, cwd=None) -> tuple[int, str]:
         """Run a shell command and return (returncode, stdout)."""
         try:
             result = subprocess.run(
@@ -240,9 +235,52 @@ class Tester(BaseRole):
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                cwd=cwd,
             )
             return result.returncode, result.stdout + result.stderr
         except subprocess.TimeoutExpired:
             return -1, f"Command timed out after {timeout}s"
         except Exception as exc:
             return -1, str(exc)
+
+    @staticmethod
+    def _extract_commands(evidence_required: list[str]) -> list[dict[str, str]]:
+        """Extract shell-runnable commands from Evidence Required lines."""
+        commands: list[dict[str, str]] = []
+        for line in evidence_required:
+            lowered = line.lower()
+            if "manual verification" in lowered and "run `" not in lowered:
+                continue
+
+            command = None
+            run_match = re.search(r"\bRun\s+`([^`]+)`", line, re.IGNORECASE)
+            if run_match:
+                command = run_match.group(1).strip()
+            elif lowered.startswith("git diff"):
+                command = line.strip()
+            else:
+                backtick_match = re.search(r"`([^`]+)`", line)
+                if backtick_match:
+                    candidate = backtick_match.group(1).strip()
+                    if Tester._looks_like_command(candidate):
+                        command = candidate
+
+            if command:
+                commands.append({"label": line, "command": command})
+        return commands
+
+    @staticmethod
+    def _looks_like_command(text: str) -> bool:
+        return bool(
+            re.match(
+                r"^(npm|node|python|python3|pytest|uv|curl|git|ls|test|npx|pnpm|yarn)\b",
+                text,
+            )
+        )
+
+    @staticmethod
+    def _trim_output(output: str, limit: int = 2000) -> str:
+        output = output.strip()
+        if len(output) <= limit:
+            return output
+        return output[:limit] + "\n...<truncated>"

@@ -160,6 +160,7 @@ class TestDryRunIntegration:
             "## Risks & Mitigations\n1. Risk — Mitigation\n",
             encoding="utf-8",
         )
+        (config.project_dir / "a.py").write_text("# code\n", encoding="utf-8")
         (config.project_dir / "TEST_REPORT.md").write_text(
             "All tests passed.", encoding="utf-8"
         )
@@ -222,6 +223,7 @@ class TestDryRunIntegration:
             "## Risks & Mitigations\n1. Risk — Mitigation\n",
             encoding="utf-8",
         )
+        (config.project_dir / "a.py").write_text("# code\n", encoding="utf-8")
         (config.project_dir / "TEST_REPORT.md").write_text(
             "All tests passed.", encoding="utf-8"
         )
@@ -330,6 +332,7 @@ class TestZeroRealCalls:
             "## Risks & Mitigations\n1. Risk — Mitigation\n",
             encoding="utf-8",
         )
+        (config.project_dir / "a.py").write_text("# code\n", encoding="utf-8")
         (config.project_dir / "TEST_REPORT.md").write_text(
             "All tests passed.", encoding="utf-8"
         )

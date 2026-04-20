@@ -192,6 +192,14 @@ class ProjectStore:
             encoding="utf-8",
         )
 
+    def _refresh_project_locked(self, project: Project) -> Project:
+        """Refresh volatile fields from orchestrator state on disk."""
+        current_phase = _read_current_phase(project.project_dir)
+        if current_phase is not None and current_phase != project.current_phase:
+            project.current_phase = current_phase
+            self._write_metadata(project)
+        return project
+
     def create(self, name: str, initial_idea: str | None = None) -> Project:
         pid = uuid.uuid4().hex[:12]
         project_dir = self._base / pid
@@ -220,10 +228,15 @@ class ProjectStore:
 
     def get(self, project_id: str) -> Project | None:
         with self._lock:
-            return self._projects.get(project_id)
+            project = self._projects.get(project_id)
+            if project is None:
+                return None
+            return self._refresh_project_locked(project)
 
     def list_all(self) -> list[Project]:
         with self._lock:
+            for project in self._projects.values():
+                self._refresh_project_locked(project)
             return sorted(
                 self._projects.values(),
                 key=lambda p: p.created_at,

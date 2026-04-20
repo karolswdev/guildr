@@ -62,22 +62,44 @@ class TestValidateArchitect:
 class TestValidateImplementation:
     """Test validate_implementation."""
 
-    def test_passes_with_filled_evidence(self, tmp_project, state):
-        """Returns (True, ...) when all tasks have [x] evidence."""
+    def test_passes_when_declared_files_exist(self, tmp_project, state):
+        """Returns (True, ...) when all task-declared files exist."""
         (tmp_project / "sprint-plan.md").write_text(
             "# Sprint Plan\n\n"
             "## Tasks\n\n"
-            "### Task 1: Setup\n\n"
-            "**Evidence Log:**\n- [x] Done\n\n"
-            "### Task 2: Test\n\n"
-            "**Evidence Log:**\n- [x] Passed\n\n",
+            "### Task 1: Setup\n"
+            "- **Files**: `app/__init__.py`\n\n"
+            "**Evidence Required:**\n- Run `python -c \"import app\"`\n\n"
+            "**Evidence Log:**\n- [ ] Done\n\n"
+            "### Task 2: Test\n"
+            "- **Files**: `tests/test_app.py`\n\n"
+            "**Evidence Required:**\n- Run `pytest`\n\n"
+            "**Evidence Log:**\n- [ ] Passed\n\n",
             encoding="utf-8",
         )
+        (tmp_project / "app").mkdir()
+        (tmp_project / "app" / "__init__.py").write_text("", encoding="utf-8")
+        (tmp_project / "tests").mkdir()
+        (tmp_project / "tests" / "test_app.py").write_text("", encoding="utf-8")
         passed, reason = validate_implementation(state)
         assert passed is True
 
-    def test_fails_unfilled_evidence(self, tmp_project, state):
-        """Returns (False, ...) when tasks have [ ] evidence."""
+    def test_fails_missing_declared_file(self, tmp_project, state):
+        """Returns (False, ...) when a declared file is missing."""
+        (tmp_project / "sprint-plan.md").write_text(
+            "# Sprint Plan\n\n"
+            "## Tasks\n\n"
+            "### Task 1: Setup\n"
+            "- **Files**: `app/__init__.py`\n\n"
+            "**Evidence Log:**\n- [ ] Not done\n\n",
+            encoding="utf-8",
+        )
+        passed, reason = validate_implementation(state)
+        assert passed is False
+        assert "missing files" in reason
+
+    def test_fails_no_declared_files(self, tmp_project, state):
+        """Returns (False, ...) when a task declares no files."""
         (tmp_project / "sprint-plan.md").write_text(
             "# Sprint Plan\n\n"
             "## Tasks\n\n"
@@ -87,6 +109,7 @@ class TestValidateImplementation:
         )
         passed, reason = validate_implementation(state)
         assert passed is False
+        assert "declares no files" in reason
 
     def test_fails_missing_file(self, tmp_project, state):
         """Returns (False, ...) when sprint-plan.md is missing."""

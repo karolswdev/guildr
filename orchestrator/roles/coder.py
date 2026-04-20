@@ -10,7 +10,6 @@ from typing import Any
 from orchestrator.lib.llm import LLMClient
 from orchestrator.lib.sprint_plan import (
     Task,
-    apply_evidence_patch,
     parse_tasks,
     slice_task,
 )
@@ -68,7 +67,7 @@ class Coder(BaseRole):
     def _execute_task(
         self, plan_text: str, task: Task, sprint_plan_path: str
     ) -> str:
-        """Execute a single task: call LLM, parse patch, apply patch."""
+        """Execute a single task: call LLM, parse patch, apply file writes."""
         context = slice_task(plan_text, task.id)
 
         system_prompt = self._load_prompt("coder", "generate")
@@ -93,8 +92,12 @@ class Coder(BaseRole):
                 f"Failed to parse JSON patch for task {task.id}"
             )
 
-        plan_text = apply_evidence_patch(plan_text, patch)
-        self.state.write_file(sprint_plan_path, plan_text)
+        if int(patch.get("task_id", -1)) != task.id:
+            raise CoderError(
+                f"Patch task_id {patch.get('task_id')} does not match task {task.id}"
+            )
+
+        self._apply_file_patch(patch)
 
         return plan_text
 
@@ -138,7 +141,7 @@ class Coder(BaseRole):
         """Try strict JSON parse. Returns None on failure."""
         try:
             data = json.loads(raw)
-            if isinstance(data, dict) and "task_id" in data and "entries" in data:
+            if Coder._is_valid_file_patch(data):
                 return data
         except (json.JSONDecodeError, ValueError):
             pass
@@ -151,11 +154,54 @@ class Coder(BaseRole):
         if match:
             try:
                 data = json.loads(match.group())
-                if isinstance(data, dict) and "task_id" in data and "entries" in data:
+                if Coder._is_valid_file_patch(data):
                     return data
             except (json.JSONDecodeError, ValueError):
                 pass
         return None
+
+    @staticmethod
+    def _is_valid_file_patch(data: object) -> bool:
+        """Return True when data follows the Coder file patch schema."""
+        if not isinstance(data, dict):
+            return False
+        if "task_id" not in data or "files" not in data:
+            return False
+        files = data.get("files")
+        if not isinstance(files, list) or not files:
+            return False
+        for entry in files:
+            if not isinstance(entry, dict):
+                return False
+            if not isinstance(entry.get("path"), str):
+                return False
+            if not isinstance(entry.get("content"), str):
+                return False
+        return True
+
+    def _apply_file_patch(self, patch: dict[str, Any]) -> None:
+        """Apply Coder file writes under project_dir."""
+        for entry in patch["files"]:
+            rel = entry["path"]
+            self._validate_project_relative_path(rel)
+            self.state.write_file(rel, entry["content"])
+
+    def _validate_project_relative_path(self, path: str) -> None:
+        """Reject absolute paths, traversal, and orchestrator internals."""
+        from pathlib import Path
+
+        rel = Path(path)
+        if rel.is_absolute():
+            raise CoderError(f"Refusing absolute path: {path}")
+        if any(part in ("", ".", "..") for part in rel.parts):
+            raise CoderError(f"Refusing unsafe path: {path}")
+        if rel.parts[0] in (".git", ".orchestrator"):
+            raise CoderError(f"Refusing internal path: {path}")
+        target = (self.state.project_dir / rel).resolve()
+        try:
+            target.relative_to(self.state.project_dir)
+        except ValueError as exc:
+            raise CoderError(f"Refusing path outside project: {path}") from exc
 
     # -- helpers -------------------------------------------------------------
 

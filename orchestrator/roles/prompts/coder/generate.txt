@@ -7,23 +7,26 @@ ARCHITECTURE DECISIONS:
 TASK:
 {task}
 
-AFTER implementing:
-1. Run the commands from "Evidence Required" and capture output.
-2. Emit a JSON patch (ONLY, no prose) with this schema:
+Implement the task by producing file writes only. Do NOT claim that you
+ran tests, do NOT fill Evidence Log entries, and do NOT invent command
+outputs. The Tester will run the Evidence Required commands independently
+after your files are written.
+
+Emit a JSON patch (ONLY, no prose) with this schema:
 
 {{
   "task_id": <N>,
-  "entries": [
-    {{"check": "<what was checked>", "output": "<actual output>", "passed": <bool>}},
+  "files": [
+    {{"path": "<project-relative path>", "content": "<complete file content>"}},
     ...
-  ]
+  ],
+  "notes": ["<brief implementation note>", ...]
 }}
 
-Note: `commit_sha` is NOT set by Coder. The orchestrator commits after
-Tester returns VERIFIED and amends the Evidence Log with the SHA.
-
-If a step failed, set passed=false and put the failure in `output`. Do
-NOT mark something passed that you could not verify.
+Every file entry must be the complete replacement content for that file.
+Use only project-relative paths. Do not write outside the project. If the
+task needs package scripts for Evidence Required, include package.json with
+those scripts.
 
 IMPORTANT: Return ONLY the JSON object. No markdown fences, no prose,
 no explanation. Just the raw JSON.

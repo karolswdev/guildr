@@ -5,11 +5,8 @@ Full implementation in Task 3.
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
-from typing import Any
-
 from orchestrator.lib.state import State
+from orchestrator.lib.sprint_plan import parse_tasks
 
 
 def validate_architect(state: State) -> tuple[bool, str]:
@@ -25,29 +22,25 @@ def validate_architect(state: State) -> tuple[bool, str]:
 
 
 def validate_implementation(state: State) -> tuple[bool, str]:
-    """Every task has filled Evidence Log."""
+    """Every task's declared files exist after Coder runs."""
     path = state.project_dir / "sprint-plan.md"
     if not path.exists():
         return False, "sprint-plan.md not written"
     content = path.read_text()
-    # Parse tasks and check each has at least one [x] evidence entry
-    task_pattern = re.compile(r"### Task (\d+): (.+)$", re.MULTILINE)
-    matches = list(task_pattern.finditer(content))
-    if not matches:
+    tasks = parse_tasks(content)
+    if not tasks:
         # No tasks defined — trivially passes
         return True, ""
-    for i, match in enumerate(matches):
-        task_id = int(match.group(1))
-        start = match.start()
-        if i + 1 < len(matches):
-            end = matches[i + 1].start()
-        else:
-            risks = re.search(r"## Risks", content, re.MULTILINE)
-            end = risks.start() if risks else len(content)
-        task_body = content[start:end]
-        # Check for at least one filled evidence checkbox
-        if "[x]" not in task_body:
-            return False, f"task-{task_id} has no filled evidence entries"
+    for task in tasks:
+        if not task.files:
+            return False, f"task-{task.id} declares no files"
+        missing = [
+            file
+            for file in task.files
+            if not (state.project_dir / file).exists()
+        ]
+        if missing:
+            return False, f"task-{task.id} missing files: {', '.join(missing)}"
     return True, ""
 
 

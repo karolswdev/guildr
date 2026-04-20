@@ -88,15 +88,21 @@ def _load_config(args: argparse.Namespace) -> Config:
 
 _DRY_RUN_SPRINT_PLAN = (
     "# Sprint Plan (dry-run)\n\n"
+    "## Architecture Decisions\n"
+    "- Keep dry-run self-contained.\n\n"
+    "## Tasks\n\n"
     "### Task 1: bootstrap\n"
-    "- Files: README.md\n"
-    "- Tests: none\n"
-    "- Acceptance: README exists\n"
-    "- Evidence Required: ls README.md\n"
-    "- Evidence Log:\n"
-    "  - [x] README.md created\n"
-    "\n## Risks\n"
-    "- None.\n"
+    "- **Priority**: P0\n"
+    "- **Dependencies**: none\n"
+    "- **Files**: `README.md`\n\n"
+    "**Acceptance Criteria:**\n"
+    "- [ ] README exists\n\n"
+    "**Evidence Required:**\n"
+    "- Run `ls README.md`\n\n"
+    "**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)\n"
+    "- [ ] README.md check pending\n\n"
+    "## Risks & Mitigations\n"
+    "1. None - dry-run fixture only.\n"
 )
 
 _DRY_RUN_JUDGE_JSON = (
@@ -109,9 +115,9 @@ _DRY_RUN_JUDGE_JSON = (
 )
 
 _DRY_RUN_CODER_JSON = (
-    '{"task_id": 1, "entries": ['
-    '{"check": "ls README.md", "output": "README.md", "passed": true}'
-    "]}"
+    '{"task_id": 1, "files": ['
+    '{"path": "README.md", "content": "# Dry run\\\\n"}'
+    '], "notes": ["created README"]}'
 )
 
 _DRY_RUN_TESTER_REPORT = (

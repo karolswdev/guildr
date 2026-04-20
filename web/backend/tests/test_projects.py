@@ -179,6 +179,46 @@ def test_project_store_persists_metadata(fresh_store: ProjectStore) -> None:
     assert recovered.created_at == project.created_at
 
 
+def test_project_store_get_refreshes_phase_from_state(
+    fresh_store: ProjectStore,
+) -> None:
+    """get() reflects the latest orchestrator state.json phase."""
+    project = fresh_store.create("Live Project", "Build it.")
+    state_path = project.project_dir / ".orchestrator" / "state.json"
+    state_path.write_text(
+        json.dumps({"current_phase": "testing"}),
+        encoding="utf-8",
+    )
+
+    refreshed = fresh_store.get(project.id)
+
+    assert refreshed is not None
+    assert refreshed.current_phase == "testing"
+    metadata = json.loads(
+        (project.project_dir / ".orchestrator" / "project.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert metadata["current_phase"] == "testing"
+
+
+def test_project_store_list_refreshes_phase_from_state(
+    fresh_store: ProjectStore,
+) -> None:
+    """list_all() reflects phase changes written by the engine."""
+    project = fresh_store.create("Listed Project", "Build it.")
+    state_path = project.project_dir / ".orchestrator" / "state.json"
+    state_path.write_text(
+        json.dumps({"current_phase": "review"}),
+        encoding="utf-8",
+    )
+
+    projects = fresh_store.list_all()
+
+    listed = next(p for p in projects if p.id == project.id)
+    assert listed.current_phase == "review"
+
+
 def test_project_store_recovers_legacy_project(tmp_path: Path) -> None:
     """Existing project dirs without metadata should still load after restart."""
     project_dir = tmp_path / "f7508af9776b"
