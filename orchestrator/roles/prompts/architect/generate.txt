@@ -48,6 +48,10 @@ The sprint-plan.md MUST follow this exact structure:
 
 Rules:
 - Every task MUST have Acceptance Criteria, Evidence Required, and Evidence Log sections.
+- Every task MUST include at least one automated verification command in
+  Evidence Required with a concrete expected `PASS`/success output.
+- Manual verification may supplement automated evidence, but it MUST NOT be
+  the only Evidence Required for any task.
 - Acceptance Criteria must be verifiable without human judgment.
   Bad: "The API is fast". Good: "`curl /healthz` returns in < 50 ms (p95 over 100 requests)".
 - Priority: P0 blocks everything, P1 core feature, P2 deferrable, P3 polish.

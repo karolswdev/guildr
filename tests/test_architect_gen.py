@@ -93,6 +93,15 @@ class TestGenerate:
         call_kwargs = mock_llm.chat.call_args[1]
         assert call_kwargs.get("max_tokens") == 16384
 
+    def test_generate_prompt_requires_automated_evidence(self, architect, mock_llm):
+        """The Architect prompt should not allow manual-only task evidence."""
+        architect._generate("# Project: Test\n\n## Description\nTest.")
+
+        messages = mock_llm.chat.call_args[0][0]
+        system_prompt = messages[0]["content"]
+        assert "automated verification command" in system_prompt
+        assert "MUST NOT be" in system_prompt
+
 
 class TestRefine:
     """Test _refine strips reasoning and injects targeted feedback."""

@@ -153,6 +153,7 @@ def _run_orchestrator(
         config = Config(
             llama_server_url=llama_url,
             project_dir=project_dir,
+            architect_max_passes=5,
             require_human_approval=False,  # PWA gate flow not wired yet — see TODO in projects.py
         )
         llm = _build_llm(dry_run, llama_url)
