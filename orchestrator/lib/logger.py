@@ -89,6 +89,8 @@ def setup_phase_logger(
     level: int = logging.INFO,
     task_id: str = "",
     session_id: str | None = None,
+    *,
+    console: bool = True,
 ) -> logging.Logger:
     """Set up a structured logger for a specific phase.
 
@@ -122,13 +124,13 @@ def setup_phase_logger(
     )
     logger.addHandler(handler)
 
-    # Also add a stream handler for console output (non-JSON)
-    console = logging.StreamHandler()
-    console.setLevel(level)
-    console.setFormatter(logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    ))
-    logger.addHandler(console)
+    if console:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(level)
+        console_handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        ))
+        logger.addHandler(console_handler)
 
     return logger
 

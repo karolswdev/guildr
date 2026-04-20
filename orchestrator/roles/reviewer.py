@@ -76,6 +76,7 @@ class Reviewer(BaseRole):
             test_report=test_report,
             git_diff_summary=git_diff_summary,
         )
+        user_prompt = self._augment_prompt(user_prompt)
 
         messages = [
             {"role": "system", "content": system_prompt},

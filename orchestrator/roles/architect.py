@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.lib.config import Config
+from orchestrator.lib.control import append_operator_context
 from orchestrator.lib.llm import LLMClient
 from orchestrator.lib.sprint_plan import parse_tasks
 from orchestrator.lib.state import State
@@ -113,6 +114,7 @@ class Architect:
             f"```\n{qwendea}\n```\n\n"
             f"Produce a sprint-plan.md following the structure specification."
         )
+        user_prompt = append_operator_context(self.state.project_dir, self._phase, user_prompt)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -162,6 +164,7 @@ class Architect:
 
         current_plan_text = f"Here is your previous sprint-plan.md:\n\n```\n{prior}\n```"
         failures_text = refine_template.format(failures=failures, current_plan=current_plan_text)
+        failures_text = append_operator_context(self.state.project_dir, self._phase, failures_text)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -213,6 +216,7 @@ class Architect:
             f"Here is the sprint plan to evaluate:\n\n"
             f"```\n{plan}\n```"
         )
+        user_prompt = append_operator_context(self.state.project_dir, self._phase, user_prompt)
 
         messages = [
             {"role": "system", "content": judge_prompt},

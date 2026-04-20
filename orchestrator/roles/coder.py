@@ -75,6 +75,7 @@ class Coder(BaseRole):
             architecture=self._extract_architecture(plan_text),
             task=context,
         )
+        user_prompt = self._augment_prompt(user_prompt)
 
         messages = [
             {"role": "system", "content": system_prompt},

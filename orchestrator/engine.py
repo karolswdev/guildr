@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import inspect
 from pathlib import Path
 from typing import Any, Callable
 
 from orchestrator.lib.config import Config
+from orchestrator.lib.control import RUN_STEPS
+from orchestrator.lib.logger import setup_phase_logger
 from orchestrator.lib.state import State
 
 logger = logging.getLogger(__name__)
@@ -71,17 +74,31 @@ class Orchestrator:
 
     # -- public API ----------------------------------------------------------
 
-    def run(self) -> None:
-        """Execute the full SDLC pipeline. May pause at gates."""
+    def run(self, *, start_at: str | None = None) -> None:
+        """Execute the full SDLC pipeline, optionally resuming at one step."""
         self._ensure_git_repo()
         self._ensure_qwendea()
-        self._run_phase("architect", self._architect)
-        self._gate("approve_sprint_plan")
-        self._run_phase("implementation", self._coder)
-        self._run_phase("testing", self._tester)
-        self._run_phase("review", self._reviewer)
-        self._gate("approve_review")
-        self._run_phase("deployment", self._deployer)
+        steps: list[tuple[str, str, Callable[..., None]]] = [
+            ("architect", "phase", self._architect),
+            ("approve_sprint_plan", "gate", self._gate),
+            ("implementation", "phase", self._coder),
+            ("testing", "phase", self._tester),
+            ("review", "phase", self._reviewer),
+            ("approve_review", "gate", self._gate),
+            ("deployment", "phase", self._deployer),
+        ]
+        start_index = 0
+        if start_at is not None:
+            if start_at not in RUN_STEPS:
+                allowed = ", ".join(RUN_STEPS)
+                raise ValueError(f"Unknown run step '{start_at}'. Expected one of: {allowed}")
+            start_index = next(i for i, (name, _, _) in enumerate(steps) if name == start_at)
+
+        for name, kind, fn in steps[start_index:]:
+            if kind == "phase":
+                self._run_phase(name, fn)
+            else:
+                fn(name)
 
     # -- phase execution -----------------------------------------------------
 
@@ -95,22 +112,54 @@ class Orchestrator:
             self.state.current_phase = name
             self.state.save()
             self._events_obj.emit("phase_start", name=name, attempt=attempt)
+            phase_logger = self._make_phase_logger(name)
+            self._log_phase_event(
+                phase_logger,
+                logging.INFO,
+                "phase_start",
+                f"Starting phase '{name}' (attempt {attempt + 1}/{self.config.max_retries})",
+                attempt=attempt,
+            )
             try:
-                fn()
+                if self._accepts_phase_logger(fn):
+                    fn(phase_logger=phase_logger)
+                else:
+                    fn()
             except Exception as e:
                 self._events_obj.emit("phase_error", name=name, error=str(e))
+                self._log_phase_event(
+                    phase_logger,
+                    logging.ERROR,
+                    "phase_error",
+                    f"Phase '{name}' failed: {e}",
+                    error=str(e),
+                )
                 if attempt == self.config.max_retries - 1:
                     raise PhaseFailure(name) from e
                 continue
 
             if self._validate(name):
                 self._events_obj.emit("phase_done", name=name)
+                self._log_phase_event(
+                    phase_logger,
+                    logging.INFO,
+                    "phase_done",
+                    f"Phase '{name}' completed",
+                )
                 self.state.retries[name] = attempt + 1
                 self.state.save()
                 return
 
             # Validator failed — retry with failure context
             self._events_obj.emit("phase_retry", name=name, attempt=attempt + 1)
+            next_attempt = min(attempt + 2, self.config.max_retries)
+            self._log_phase_event(
+                phase_logger,
+                logging.WARNING,
+                "phase_retry",
+                f"Phase '{name}' validator failed; scheduling retry {next_attempt}",
+                attempt=attempt + 1,
+            )
             logger.warning(
                 "Phase '%s' validator failed (attempt %d/%d), retrying",
                 name, attempt + 1, self.config.max_retries,
@@ -190,7 +239,49 @@ class Orchestrator:
 
     # -- role phase functions ------------------------------------------------
 
-    def _architect(self) -> None:
+    def _make_phase_logger(self, phase: str) -> logging.Logger:
+        return setup_phase_logger(
+            self.config.project_dir,
+            phase,
+            console=False,
+        )
+
+    @staticmethod
+    def _accepts_phase_logger(fn: Callable[..., Any]) -> bool:
+        try:
+            sig = inspect.signature(fn)
+        except (TypeError, ValueError):
+            return False
+        for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                return True
+            if param.name == "phase_logger":
+                return True
+        return False
+
+    @staticmethod
+    def _log_phase_event(
+        phase_logger: logging.Logger,
+        level: int,
+        event: str,
+        message: str,
+        **fields: Any,
+    ) -> None:
+        record = phase_logger.makeRecord(
+            phase_logger.name,
+            level,
+            "",
+            0,
+            message,
+            (),
+            None,
+        )
+        setattr(record, "event", event)
+        for key, value in fields.items():
+            setattr(record, key, value)
+        phase_logger.handle(record)
+
+    def _architect(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run the Architect role."""
         from orchestrator.roles.architect import Architect
 
@@ -198,12 +289,12 @@ class Orchestrator:
         if llm is None:
             raise PhaseFailure("architect")
 
-        architect = Architect(llm, self.state, self.config)
+        architect = Architect(llm, self.state, self.config, _phase_logger=phase_logger)
         # Architect.execute() writes sprint-plan.md itself and returns the
         # path. Don't overwrite the file with the returned string.
         architect.execute()
 
-    def _coder(self) -> None:
+    def _coder(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run the Coder role."""
         from orchestrator.roles.coder import Coder
 
@@ -211,10 +302,10 @@ class Orchestrator:
         if llm is None:
             raise PhaseFailure("implementation")
 
-        coder = Coder(llm, self.state)
+        coder = Coder(llm, self.state, phase_logger=phase_logger)
         coder.execute("sprint-plan.md")
 
-    def _tester(self) -> None:
+    def _tester(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run the Tester role."""
         from orchestrator.roles.tester import Tester
 
@@ -222,10 +313,10 @@ class Orchestrator:
         if llm is None:
             raise PhaseFailure("testing")
 
-        tester = Tester(llm, self.state)
+        tester = Tester(llm, self.state, phase_logger=phase_logger)
         tester.execute("sprint-plan.md")
 
-    def _reviewer(self) -> None:
+    def _reviewer(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run the Reviewer role."""
         from orchestrator.roles.reviewer import Reviewer
 
@@ -233,10 +324,10 @@ class Orchestrator:
         if llm is None:
             raise PhaseFailure("review")
 
-        reviewer = Reviewer(llm, self.state)
+        reviewer = Reviewer(llm, self.state, phase_logger=phase_logger)
         reviewer.execute("sprint-plan.md")
 
-    def _deployer(self) -> None:
+    def _deployer(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run the Deployer role."""
         from orchestrator.roles.deployer import Deployer
 
@@ -244,7 +335,7 @@ class Orchestrator:
         if llm is None:
             raise PhaseFailure("deployment")
 
-        deployer = Deployer(llm, self.state)
+        deployer = Deployer(llm, self.state, phase_logger=phase_logger)
         deployer.execute("REVIEW.md")
 
     # -- pool access ---------------------------------------------------------

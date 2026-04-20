@@ -75,6 +75,7 @@ class Deployer(BaseRole):
             env_vars=env_vars,
             review_verdict=review_text,
         )
+        user_prompt = self._augment_prompt(user_prompt)
 
         messages = [
             {"role": "system", "content": system_prompt},

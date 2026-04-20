@@ -69,3 +69,12 @@ class BaseRole:
         """Load a prompt template from roles/prompts/<role>/<name>.txt."""
         path = _PROMPT_DIR / role / f"{name}.txt"
         return path.read_text(encoding="utf-8")
+
+    def _augment_prompt(self, prompt: str) -> str:
+        """Append durable operator context for the current phase."""
+        phase = getattr(self, "_phase", "")
+        if not phase:
+            return prompt
+        from orchestrator.lib.control import append_operator_context
+
+        return append_operator_context(self.state.project_dir, phase, prompt)

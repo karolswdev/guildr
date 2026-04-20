@@ -19,9 +19,16 @@ function parseHash(hash: string): Route {
   const parts = path.split("/").filter(Boolean);
 
   if (parts[0] === "project" && parts.length >= 2) {
+    const params: Record<string, string> = { id: parts[1] };
+    if (parts[2]) {
+      params.sub = parts[2];
+    }
+    if (parts.length > 3) {
+      params.rest = parts.slice(3).join("/");
+    }
     return {
       view: `project/${parts[1]}`,
-      params: { id: parts[1], ...(parts[2] ? { sub: parts[2] } : {}) },
+      params,
     };
   }
 
@@ -126,7 +133,7 @@ function renderProjectView(container: Element, view: string, params: Record<stri
       renderGate(container, navigate, projectId, params.id || "");
       break;
     case "artifacts":
-      renderArtifacts(container, navigate, projectId, params.sub ? params.sub : undefined);
+      renderArtifacts(container, navigate, projectId, params.rest ? params.rest : undefined);
       break;
     default:
       renderProjectDetail(container, params);

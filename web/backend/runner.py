@@ -142,6 +142,8 @@ def _run_orchestrator(
     bus: SimpleEventBus,
     dry_run: bool,
     llama_url: str,
+    *,
+    start_at: str | None = None,
 ) -> None:
     """Run the engine to completion in this thread, mirroring events to ``bus``.
 
@@ -158,8 +160,8 @@ def _run_orchestrator(
         )
         llm = _build_llm(dry_run, llama_url)
         orch = Orchestrator(config=config, fake_llm=llm, events=bridge)
-        bus.emit("run_started", project_id=project_id, dry_run=dry_run)
-        orch.run()
+        bus.emit("run_started", project_id=project_id, dry_run=dry_run, start_at=start_at)
+        orch.run(start_at=start_at)
         bus.emit("run_complete", project_id=project_id)
     except PhaseFailure as e:
         logger.warning("Run failed for %s: %s", project_id, e)
@@ -176,6 +178,7 @@ def start_run(
     dry_run: bool | None = None,
     llama_url: str | None = None,
     event_store: EventStore | None = None,
+    start_at: str | None = None,
 ) -> bool:
     """Schedule a background orchestrator run for ``project_id``.
 
@@ -202,6 +205,7 @@ def start_run(
     thread = threading.Thread(
         target=_run_orchestrator,
         args=(project_id, project_dir, bus, dry_run, llama_url),
+        kwargs={"start_at": start_at},
         name=f"guildr-run-{project_id[:8]}",
         daemon=True,
     )
