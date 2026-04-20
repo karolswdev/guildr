@@ -76,6 +76,18 @@ class TestLLMClientParsing:
         assert result.content == "hello"
         assert result.reasoning == ""
 
+    def test_disables_qwen_thinking_template(self):
+        client = LLMClient("http://127.0.0.1:8080")
+        mock_resp = _make_response(content="ok", reasoning="")
+        client._client.chat.completions.create = MagicMock(return_value=mock_resp)
+
+        client.chat([{"role": "user", "content": "hi"}])
+
+        kwargs = client._client.chat.completions.create.call_args.kwargs
+        assert kwargs["extra_body"] == {
+            "chat_template_kwargs": {"enable_thinking": False}
+        }
+
 
 class TestThinkingTruncation:
     """Test mid-thinking truncation detection."""

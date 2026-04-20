@@ -23,7 +23,11 @@ _DEFAULT_PRIMARY_URL = os.environ.get(
 
 def _get_upstream_url() -> str:
     """Get the primary llama-server URL."""
-    return _DEFAULT_PRIMARY_URL
+    return (
+        os.environ.get("LLAMA_SERVER_URL")
+        or os.environ.get("LLAMA_PRIMARY_URL")
+        or _DEFAULT_PRIMARY_URL
+    )
 
 
 # -- routes ------------------------------------------------------------------
@@ -40,7 +44,7 @@ def _setup_routes(router_obj: Any) -> Any:
         """Passthrough to llama-server /metrics endpoint."""
         upstream = _get_upstream_url()
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
                 resp = await client.get(f"{upstream}/metrics")
                 resp.raise_for_status()
                 return PlainTextResponse(
@@ -71,7 +75,7 @@ def _setup_routes(router_obj: Any) -> Any:
         """Passthrough to llama-server /health endpoint."""
         upstream = _get_upstream_url()
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
                 resp = await client.get(f"{upstream}/health")
                 resp.raise_for_status()
                 return JSONResponse(content=resp.json())

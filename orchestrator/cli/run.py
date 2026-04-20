@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
 from orchestrator.engine import Orchestrator, PhaseFailure
 from orchestrator.lib.config import Config
+
+
+_DRY_RUN_LLAMA_URL = "http://dry-run.invalid"
 
 
 def add_run_subparser(subparsers: argparse._SubParsersAction) -> None:
@@ -61,6 +65,18 @@ def _load_config(args: argparse.Namespace) -> Config:
     if args.config is not None:
         cfg = Config.from_yaml(args.config)
         cfg = cfg.with_env_overrides()
+    elif args.dry_run and not (
+        os.environ.get("LLAMA_SERVER_URL")
+        or os.environ.get("LLAMA_URL")
+        or os.environ.get("LLAMA_PRIMARY_URL")
+    ):
+        project_dir = os.environ.get(
+            "PROJECT_DIR", os.environ.get("ORCHESTRATOR_PROJECT_DIR", ".")
+        )
+        cfg = Config(
+            llama_server_url=_DRY_RUN_LLAMA_URL,
+            project_dir=Path(project_dir),
+        ).with_env_overrides()
     else:
         cfg = Config.from_env()
     if args.project is not None:

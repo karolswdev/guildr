@@ -91,7 +91,7 @@ class Architect:
                 self.state.write_file("sprint-plan.md", plan)
                 return "sprint-plan.md"
 
-            if score > best_score:
+            if best_eval is None or score > best_score:
                 best_plan = plan
                 best_score = score
                 best_eval = evaluation

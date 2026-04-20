@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from orchestrator.lib.config import Config
-from orchestrator.lib.llm import LLMClient
+from orchestrator.lib.llm import LLMClient, LLMResponse
 from orchestrator.lib.state import State
 from orchestrator.roles.architect import Architect
 
@@ -149,3 +149,65 @@ class TestPassFailLogic:
         }
         # Score would be 5 but evidence is missing → treated as 0
         assert architect._passes(5, eval_) is False
+
+
+class TestRetryDraftTracking:
+    """Regression tests for Architect's internal refine loop."""
+
+    def test_zero_score_first_draft_can_be_refined(self, state, config):
+        """A malformed/zero-score first eval should still become best_eval."""
+        (state.project_dir / "qwendea.md").write_text("# Project\n\nBuild x.\n")
+        llm = MagicMock(spec=LLMClient)
+        llm.chat.side_effect = [
+            LLMResponse(
+                content="# Sprint Plan\n\n## Tasks\n\n### Task 1: vague\n",
+                reasoning="",
+                prompt_tokens=1,
+                completion_tokens=1,
+                reasoning_tokens=0,
+                finish_reason="stop",
+            ),
+            LLMResponse(
+                content="not json",
+                reasoning="",
+                prompt_tokens=1,
+                completion_tokens=1,
+                reasoning_tokens=0,
+                finish_reason="stop",
+            ),
+            LLMResponse(
+                content="still not json",
+                reasoning="",
+                prompt_tokens=1,
+                completion_tokens=1,
+                reasoning_tokens=0,
+                finish_reason="stop",
+            ),
+            LLMResponse(
+                content="# Sprint Plan\n\n## Overview\nRefined.\n",
+                reasoning="",
+                prompt_tokens=1,
+                completion_tokens=1,
+                reasoning_tokens=0,
+                finish_reason="stop",
+            ),
+            LLMResponse(
+                content='{"specificity":{"score":1,"issues":[]},'
+                '"testability":{"score":1,"issues":[]},'
+                '"evidence":{"score":1,"issues":[]},'
+                '"completeness":{"score":1,"issues":[]},'
+                '"feasibility":{"score":1,"issues":[]},'
+                '"risk":{"score":1,"issues":[]}}',
+                reasoning="",
+                prompt_tokens=1,
+                completion_tokens=1,
+                reasoning_tokens=0,
+                finish_reason="stop",
+            ),
+        ]
+        architect = Architect(llm, state, config)
+
+        result = architect.execute()
+
+        assert result == "sprint-plan.md"
+        assert (state.project_dir / "sprint-plan.md").exists()

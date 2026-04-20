@@ -160,4 +160,4 @@ class Config:
                 if v is not None:
                     overrides[f.name] = v
 
-        return cls(**{**data, **overrides})  # type: ignore[arg-type]
+        return type(self)(**{**data, **overrides})  # type: ignore[arg-type]

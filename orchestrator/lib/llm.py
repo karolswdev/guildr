@@ -63,6 +63,10 @@ class LLMClient:
             "model": "qwen36",
             "max_tokens": max_tokens,
             "messages": messages,
+            # Qwen thinking can consume the entire completion budget before
+            # emitting artifact content. llama.cpp accepts this OpenAI extra
+            # body field and disables that reasoning channel at the template.
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
         }
         if temperature is not None:
             kwargs["temperature"] = temperature

@@ -57,6 +57,19 @@ def test_load_config_applies_overrides(project: Path, monkeypatch: pytest.Monkey
     assert cfg.require_human_approval is False
 
 
+def test_load_config_allows_dry_run_without_llama_url(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("LLAMA_SERVER_URL", raising=False)
+    monkeypatch.delenv("LLAMA_URL", raising=False)
+    monkeypatch.delenv("LLAMA_PRIMARY_URL", raising=False)
+    monkeypatch.setenv("PROJECT_DIR", str(project))
+    args = _make_args(project)
+    cfg = _load_config(args)
+    assert cfg.project_dir == project
+    assert cfg.llama_server_url == "http://dry-run.invalid"
+
+
 def test_cmd_run_dry_run_succeeds(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

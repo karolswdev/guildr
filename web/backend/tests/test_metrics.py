@@ -11,6 +11,7 @@ from httpx import AsyncClient, ASGITransport
 from fastapi import FastAPI
 
 from web.backend.app import create_app
+from web.backend.routes.metrics import _get_upstream_url
 
 
 @pytest.fixture
@@ -22,6 +23,13 @@ def app() -> FastAPI:
 def mock_upstream_url() -> str:
     """Override the upstream URL to point at the mock server."""
     return "http://mock-llama:8080"
+
+
+def test_upstream_url_prefers_llama_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Metrics passthrough should use the same env var as live runs."""
+    monkeypatch.setenv("LLAMA_SERVER_URL", "http://server-url:8080")
+    monkeypatch.setenv("LLAMA_PRIMARY_URL", "http://primary-url:8080")
+    assert _get_upstream_url() == "http://server-url:8080"
 
 
 @respx.mock
