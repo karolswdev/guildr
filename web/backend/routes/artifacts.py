@@ -25,21 +25,35 @@ KNOWN_ARTIFACTS = frozenset([
 ])
 
 
+def _default_projects_base() -> Path:
+    """Same env-driven default as ProjectStore — must agree or artifacts
+    are read from a different directory than they were written to."""
+    import os
+    return Path(os.environ.get("ORCHESTRATOR_PROJECTS_DIR", "/tmp/orchestrator-projects"))
+
+
 class ArtifactStore:
     """Reads artifacts from project directories on disk."""
 
-    def __init__(self, base_dir: str = "/tmp/orchestrator-projects") -> None:
-        self._base = Path(base_dir)
+    def __init__(self, base_dir: str | None = None) -> None:
+        self._base = Path(base_dir) if base_dir else _default_projects_base()
 
     def get_tree(self, project_id: str) -> list[dict[str, Any]]:
-        """Return a file tree for the project directory."""
+        """Return a file tree for the project directory.
+
+        Skips ``.git/`` and ``.orchestrator/`` since those are bookkeeping
+        the user doesn't want to scroll through in the PWA.
+        """
         project_dir = self._base / project_id
         if not project_dir.exists():
             return []
 
+        skip_prefixes = (".git", ".orchestrator", "__pycache__")
         result: list[dict[str, Any]] = []
         for item in sorted(project_dir.rglob("*")):
             rel = item.relative_to(project_dir)
+            if rel.parts and rel.parts[0] in skip_prefixes:
+                continue
             result.append({
                 "path": str(rel),
                 "is_dir": item.is_dir(),

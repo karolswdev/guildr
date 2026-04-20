@@ -67,14 +67,32 @@ export function renderProgress(container: Element, navigate: (route: string) => 
 
   // -- SSE connection --------------------------------------------------------
 
-  let abortCtrl: AbortController | null = null;
+  // evtSource is hoisted so the hashchange cleanup handler can close it.
+  let evtSource: EventSource | null = null;
+
+  function describeEvent(data: Record<string, unknown>): string {
+    // The engine and runner emit several event shapes. Build a readable
+    // line for the log instead of dumping the raw JSON.
+    const t = String(data.type ?? "event");
+    const name = data.name ?? data.phase ?? "";
+    const attempt = data.attempt;
+    const error = data.error;
+    if (t === "run_started") return `▶ run started (${data.dry_run ? "dry-run" : "live"})`;
+    if (t === "run_complete") return "✔ run complete";
+    if (t === "run_error") return `✖ ${error ?? "run failed"}`;
+    if (t === "phase_start") return `→ ${name}${attempt ? ` (retry ${attempt})` : ""}`;
+    if (t === "phase_done") return `✔ ${name}`;
+    if (t === "phase_retry") return `↻ ${name} retry ${attempt ?? "?"}`;
+    if (t === "phase_error") return `✖ ${name}: ${error ?? "error"}`;
+    if (t === "gate_opened") return `⏸ gate: ${data.gate ?? ""}`;
+    if (t === "gate_decided") return `${data.decision === "approved" ? "✔" : "✖"} gate: ${data.gate ?? ""}`;
+    return data.message ? String(data.message) : t;
+  }
 
   function connectStream(): void {
-    abortCtrl?.abort();
-    abortCtrl = new AbortController();
-
+    evtSource?.close();
     const url = `/api/projects/${projectId}/stream`;
-    const evtSource = new EventSource(url);
+    evtSource = new EventSource(url);
 
     evtSource.onmessage = (event: MessageEvent): void => {
       if (event.data.startsWith(":")) return; // skip comments/keepalive
@@ -88,17 +106,15 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       }
 
       const eventType = (data.type as string) || "unknown";
-      const phase = (data.phase as string) || "";
-      const message = (data.message as string) || (data.event as string) || "";
+      // Engine events use `name`; older payloads might use `phase`.
+      const phase = (data.name as string) || (data.phase as string) || "";
 
-      appendEvent(eventType, message);
+      appendEvent(eventType, describeEvent(data));
 
-      // Update phase indicator
-      if (phase) {
+      if (phase && phases.includes(phase)) {
         updatePhase(phase);
       }
 
-      // Update metrics if present
       if (data.tok_s !== undefined) {
         tokS.textContent = typeof data.tok_s === "number" ? `${data.tok_s.toFixed(1)}` : String(data.tok_s);
       }
@@ -109,8 +125,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
 
     evtSource.onerror = (): void => {
       appendEvent("error", "Connection lost. Reconnecting...");
-      evtSource.close();
-      // Reconnect after delay
+      evtSource?.close();
       setTimeout(connectStream, 3000);
     };
   }
@@ -163,7 +178,6 @@ export function renderProgress(container: Element, navigate: (route: string) => 
 
   // Cleanup on navigation away
   window.addEventListener("hashchange", () => {
-    abortCtrl?.abort();
     evtSource?.close();
   }, { once: true });
 }

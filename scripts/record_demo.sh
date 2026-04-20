@@ -15,7 +15,7 @@ PORT="${PORT:-8765}"
 STORE_DIR="$(mktemp -d -t guildr-demo-XXXXXX)"
 OUT_DIR="docs/screenshots"
 RAW_DIR="$OUT_DIR/_raw"
-GIF="$OUT_DIR/demo.gif"
+GIF="${GIF:-$OUT_DIR/demo.gif}"
 
 mkdir -p "$RAW_DIR"
 rm -f "$RAW_DIR"/*.webm 2>/dev/null || true

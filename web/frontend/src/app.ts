@@ -187,7 +187,7 @@ async function loadProjectsList(container: Element): Promise<void> {
       div.innerHTML = `
         <div style="font-size: 15px; font-weight: 600; margin-bottom: 4px;">${escapeHtml(proj.name)}</div>
         <div style="font-size: 13px; color: #888;">
-          ${proj.current_phase ? "Phase: " + proj.current_phase : "No phase"} · ${proj.created_at}
+          ${proj.current_phase ? "Phase: " + proj.current_phase : "Not started"} · ${formatRelative(proj.created_at)}
         </div>
       `;
       div.addEventListener("click", () => navigate(`#project/${proj.id}`));
@@ -281,6 +281,17 @@ function escapeHtml(text: string): string {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+function formatRelative(iso: string): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  const diffSec = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (diffSec < 60) return "just now";
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  return new Date(t).toLocaleDateString();
 }
 
 function renderNotFound(container: Element, view: string): void {
