@@ -8,6 +8,13 @@ Evidence.
 
 Score only 0 or 1 per criterion — no partial credit.
 
+For Evidence, grade whether each task's **Evidence Required** section
+contains concrete commands, expected outputs, diffs, or explicit manual
+verification steps. Do NOT fail a plan because **Evidence Log** contains
+future-fill placeholders such as `<actual output>` or `<short-sha>`;
+those are intentionally filled later by the Coder, Tester, and
+orchestrator after execution.
+
 Return ONLY valid JSON matching this schema:
 {
   "specificity":  {"score": 0|1, "issues": ["..."]},

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, call
 
 import pytest
@@ -10,6 +11,9 @@ from orchestrator.lib.config import Config
 from orchestrator.lib.llm import LLMClient, LLMResponse
 from orchestrator.lib.state import State
 from orchestrator.roles.architect import Architect
+
+
+PROMPT_DIR = Path(__file__).resolve().parent.parent / "orchestrator" / "roles" / "prompts" / "architect"
 
 
 @pytest.fixture
@@ -63,6 +67,15 @@ class TestStrictJsonParse:
         """_parse_json returns None for empty string."""
         result = Architect._parse_json('')
         assert result is None
+
+
+def test_judge_allows_future_filled_evidence_log_placeholders() -> None:
+    """The judge rubric should not contradict the Architect template."""
+    prompt = (PROMPT_DIR / "judge.txt").read_text(encoding="utf-8")
+    assert "Evidence Required" in prompt
+    assert "Do NOT fail" in prompt
+    assert "<actual output>" in prompt
+    assert "<short-sha>" in prompt
 
 
 class TestReprompt:
