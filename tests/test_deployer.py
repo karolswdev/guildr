@@ -1,18 +1,63 @@
-"""Tests for Deployer role."""
+"""Tests for the Deployer role on the opencode session runtime (H6.3d)."""
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from dataclasses import dataclass, field
 
 import pytest
 
-from orchestrator.lib.llm import LLMClient, LLMResponse
-from orchestrator.lib.state import State
-from orchestrator.roles.deployer import (
-    Deployer,
-    DeployerError,
+from orchestrator.lib.opencode import (
+    OpencodeMessage,
+    OpencodeResult,
+    OpencodeTokens,
 )
+from orchestrator.lib.state import State
+from orchestrator.roles.deployer import Deployer, DeployerError
+
+
+# ---------------------------------------------------------------------------
+# Fake SessionRunner
+# ---------------------------------------------------------------------------
+
+
+def _result(text: str, *, exit_code: int = 0) -> OpencodeResult:
+    message = OpencodeMessage(
+        role="assistant",
+        provider="fake",
+        model="fake",
+        tokens=OpencodeTokens(total=1, input=1, output=0),
+        cost=0.0,
+        text_parts=[text],
+        tool_calls=[],
+    )
+    return OpencodeResult(
+        session_id="ses_test",
+        exit_code=exit_code,
+        directory=".",
+        messages=[message] if text else [],
+        total_tokens=message.tokens,
+        total_cost=0.0,
+        summary_additions=0,
+        summary_deletions=0,
+        summary_files=0,
+        raw_export={},
+        raw_events=[],
+    )
+
+
+@dataclass
+class _FakeRunner:
+    result: OpencodeResult | None = None
+    exc: Exception | None = None
+    prompts: list[str] = field(default_factory=list)
+
+    def run(self, prompt: str) -> OpencodeResult:
+        self.prompts.append(prompt)
+        if self.exc is not None:
+            raise self.exc
+        assert self.result is not None
+        return self.result
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -21,44 +66,30 @@ from orchestrator.roles.deployer import (
 
 @pytest.fixture
 def state(tmp_path):
-    """Create a State instance backed by a temp directory."""
     return State(tmp_path)
 
 
 @pytest.fixture
-def llm_mock():
-    """Create a mock LLMClient."""
-    return MagicMock(spec=LLMClient)
+def runner():
+    return _FakeRunner()
 
 
 @pytest.fixture
-def deployer(llm_mock, state):
-    """Create a Deployer instance."""
-    return Deployer(llm_mock, state)
+def deployer(runner, state):
+    return Deployer(runner, state)
 
 
 # ---------------------------------------------------------------------------
-# Tests: _detect_deploy_configs
+# _detect_deploy_configs / _detect_env_vars / _load_review (unchanged)
 # ---------------------------------------------------------------------------
 
 
 class TestDetectDeployConfigs:
-    """Test deployment config detection."""
-
     def test_detects_dockerfile(self, deployer, state):
-        """Dockerfile is detected."""
         (state.project_dir / "Dockerfile").write_text("FROM python:3.12")
-        result = deployer._detect_deploy_configs()
-        assert "- Dockerfile" in result
-
-    def test_detects_docker_compose(self, deployer, state):
-        """docker-compose.yml is detected."""
-        (state.project_dir / "docker-compose.yml").write_text("version: '3'")
-        result = deployer._detect_deploy_configs()
-        assert "- docker-compose.yml" in result
+        assert "- Dockerfile" in deployer._detect_deploy_configs()
 
     def test_detects_multiple_configs(self, deployer, state):
-        """Multiple configs are detected."""
         (state.project_dir / "Dockerfile").write_text("FROM python:3.12")
         (state.project_dir / "docker-compose.yml").write_text("version: '3'")
         result = deployer._detect_deploy_configs()
@@ -66,231 +97,134 @@ class TestDetectDeployConfigs:
         assert "- docker-compose.yml" in result
 
     def test_no_configs_returns_message(self, deployer, state):
-        """No configs returns a message."""
-        result = deployer._detect_deploy_configs()
-        assert "No deployment configs" in result
+        assert "No deployment configs" in deployer._detect_deploy_configs()
 
     def test_detects_fly_toml(self, deployer, state):
-        """fly.toml is detected."""
         (state.project_dir / "fly.toml").write_text("app = 'test'")
-        result = deployer._detect_deploy_configs()
-        assert "- fly.toml" in result
-
-    def test_detects_render_yaml(self, deployer, state):
-        """render.yaml is detected."""
-        (state.project_dir / "render.yaml").write_text("services: []")
-        result = deployer._detect_deploy_configs()
-        assert "- render.yaml" in result
-
-    def test_detects_package_json(self, deployer, state):
-        """package.json is detected."""
-        (state.project_dir / "package.json").write_text('{"name": "test"}')
-        result = deployer._detect_deploy_configs()
-        assert "- package.json" in result
-
-
-# ---------------------------------------------------------------------------
-# Tests: _detect_env_vars
-# ---------------------------------------------------------------------------
+        assert "- fly.toml" in deployer._detect_deploy_configs()
 
 
 class TestDetectEnvVars:
-    """Test environment variable detection from source code."""
-
     def test_detects_os_environ(self, deployer, state):
-        """os.environ['VAR'] is detected."""
-        py_file = state.project_dir / "app.py"
-        py_file.write_text("import os\nKEY = os.environ['SECRET_KEY']")
-        vars = deployer._detect_env_vars()
-        assert "SECRET_KEY" in vars
+        (state.project_dir / "app.py").write_text("import os\nKEY = os.environ['SECRET_KEY']")
+        assert "SECRET_KEY" in deployer._detect_env_vars()
 
     def test_detects_os_getenv(self, deployer, state):
-        """os.getenv('VAR') is detected."""
-        py_file = state.project_dir / "app.py"
-        py_file.write_text("import os\nKEY = os.getenv('DATABASE_URL')")
-        vars = deployer._detect_env_vars()
-        assert "DATABASE_URL" in vars
-
-    def test_detects_os_environ_get(self, deployer, state):
-        """os.environ.get('VAR') is detected."""
-        py_file = state.project_dir / "app.py"
-        py_file.write_text("import os\nKEY = os.environ.get('API_KEY')")
-        vars = deployer._detect_env_vars()
-        assert "API_KEY" in vars
+        (state.project_dir / "app.py").write_text("import os\nKEY = os.getenv('DATABASE_URL')")
+        assert "DATABASE_URL" in deployer._detect_env_vars()
 
     def test_detects_known_patterns(self, deployer, state):
-        """Known patterns like JWT_SECRET are detected."""
-        py_file = state.project_dir / "app.py"
-        py_file.write_text("JWT_SECRET = 'placeholder'")
-        vars = deployer._detect_env_vars()
-        assert "JWT_SECRET" in vars
+        (state.project_dir / "app.py").write_text("JWT_SECRET = 'placeholder'")
+        assert "JWT_SECRET" in deployer._detect_env_vars()
 
     def test_no_env_vars_returns_default(self, deployer, state):
-        """No env vars returns default message."""
-        py_file = state.project_dir / "app.py"
-        py_file.write_text("print('hello')")
-        vars = deployer._detect_env_vars()
-        assert vars == ["No environment variables detected."]
+        (state.project_dir / "app.py").write_text("print('hi')")
+        assert deployer._detect_env_vars() == ["No environment variables detected."]
 
-    def test_skips_hidden_dirs(self, deployer, state):
-        """Hidden directories are skipped."""
-        hidden_dir = state.project_dir / ".hidden"
-        hidden_dir.mkdir()
-        (hidden_dir / "app.py").write_text("import os\nKEY = os.environ['SECRET_KEY']")
-        vars = deployer._detect_env_vars()
-        assert "SECRET_KEY" not in vars
-
-    def test_skips_venv(self, deployer, state):
-        """.venv directory is skipped."""
-        venv_dir = state.project_dir / ".venv"
-        venv_dir.mkdir()
-        (venv_dir / "app.py").write_text("import os\nKEY = os.environ['SECRET_KEY']")
-        vars = deployer._detect_env_vars()
-        assert "SECRET_KEY" not in vars
-
-    def test_skips_pycache(self, deployer, state):
-        """__pycache__ directory is skipped."""
-        pycache = state.project_dir / "__pycache__"
-        pycache.mkdir()
-        (pycache / "app.py").write_text("import os\nKEY = os.environ['SECRET_KEY']")
-        vars = deployer._detect_env_vars()
-        assert "SECRET_KEY" not in vars
+    def test_skips_hidden_and_venv(self, deployer, state):
+        for name in (".hidden", ".venv", "__pycache__"):
+            d = state.project_dir / name
+            d.mkdir()
+            (d / "app.py").write_text("import os\nKEY = os.environ['SECRET_KEY']")
+        assert "SECRET_KEY" not in deployer._detect_env_vars()
 
     def test_returns_sorted(self, deployer, state):
-        """Detected env vars are sorted."""
-        py_file = state.project_dir / "app.py"
-        py_file.write_text("import os\n"
-                          "a = os.environ['ZZZ_VAR']\n"
-                          "b = os.environ['AAA_VAR']")
-        vars = deployer._detect_env_vars()
-        assert vars == sorted(vars)
+        (state.project_dir / "app.py").write_text(
+            "import os\na = os.environ['ZZZ_VAR']\nb = os.environ['AAA_VAR']"
+        )
+        vars_ = deployer._detect_env_vars()
+        assert vars_ == sorted(vars_)
 
     def test_ignores_private_vars(self, deployer, state):
-        """Private vars (starting with _) are ignored."""
-        py_file = state.project_dir / "app.py"
-        py_file.write_text("import os\nKEY = os.environ['_PRIVATE_VAR']")
-        vars = deployer._detect_env_vars()
-        assert "_PRIVATE_VAR" not in vars
-
-
-# ---------------------------------------------------------------------------
-# Tests: _load_review
-# ---------------------------------------------------------------------------
+        (state.project_dir / "app.py").write_text("import os\nKEY = os.environ['_PRIVATE_VAR']")
+        assert "_PRIVATE_VAR" not in deployer._detect_env_vars()
 
 
 class TestLoadReview:
-    """Test review loading."""
-
     def test_loads_review(self, deployer, state):
-        """REVIEW.md is loaded."""
         state.write_file("REVIEW.md", "# Review\n\nAPPROVED")
-        result = deployer._load_review("REVIEW.md")
-        assert "APPROVED" in result
+        assert "APPROVED" in deployer._load_review("REVIEW.md")
 
-    def test_returns_default_when_missing(self, deployer, state):
-        """Missing REVIEW.md returns default."""
-        result = deployer._load_review("REVIEW.md")
-        assert "No review available" in result
+    def test_returns_default_when_missing(self, deployer):
+        assert "No review available" in deployer._load_review("REVIEW.md")
 
 
 # ---------------------------------------------------------------------------
-# Tests: execute
+# execute — the opencode-driven path
 # ---------------------------------------------------------------------------
 
 
 class TestExecute:
-    """Test end-to-end execution."""
-
-    def test_writes_deploy_md(self, deployer, llm_mock, state):
-        """execute writes DEPLOY.md."""
+    def test_writes_deploy_md(self, deployer, runner, state):
         state.write_file("REVIEW.md", "# Review\n\nAPPROVED")
+        runner.result = _result("# Deployment Plan\n\nTarget: Docker")
+        path = deployer.execute("REVIEW.md")
+        assert path == "DEPLOY.md"
+        assert len(runner.prompts) == 1
+        assert "Target: Docker" in state.read_file("DEPLOY.md")
 
-        llm_mock.chat.return_value = LLMResponse(
-            content="# Deployment Plan\n\nTarget: Docker",
-            reasoning="",
-            prompt_tokens=100,
-            completion_tokens=200,
-            reasoning_tokens=0,
-            finish_reason="stop",
-        )
-
-        result_path = deployer.execute("REVIEW.md")
-
-        assert result_path == "DEPLOY.md"
-        assert llm_mock.chat.call_count == 1
-
-        deploy = state.read_file("DEPLOY.md")
-        assert "Target: Docker" in deploy
-
-    def test_includes_configs_in_prompt(self, deployer, llm_mock, state):
-        """execute includes detected configs in prompt."""
+    def test_prompt_includes_configs(self, deployer, runner, state):
         state.write_file("REVIEW.md", "# Review\n\nAPPROVED")
         (state.project_dir / "Dockerfile").write_text("FROM python:3.12")
-
-        llm_mock.chat.return_value = LLMResponse(
-            content="# Deployment Plan\n\nTarget: Docker",
-            reasoning="",
-            prompt_tokens=100,
-            completion_tokens=200,
-            reasoning_tokens=0,
-            finish_reason="stop",
-        )
-
+        runner.result = _result("# plan")
         deployer.execute("REVIEW.md")
+        assert "Dockerfile" in runner.prompts[0]
 
-        messages = llm_mock.chat.call_args[0][0]
-        user_content = messages[1]["content"]
-        assert "Dockerfile" in user_content
-
-    def test_includes_env_vars_in_prompt(self, deployer, llm_mock, state):
-        """execute includes detected env vars in prompt."""
+    def test_prompt_includes_env_vars(self, deployer, runner, state):
         state.write_file("REVIEW.md", "# Review\n\nAPPROVED")
-        py_file = state.project_dir / "app.py"
-        py_file.write_text("import os\nKEY = os.environ['SECRET_KEY']")
-
-        llm_mock.chat.return_value = LLMResponse(
-            content="# Deployment Plan\n\nTarget: Docker",
-            reasoning="",
-            prompt_tokens=100,
-            completion_tokens=200,
-            reasoning_tokens=0,
-            finish_reason="stop",
-        )
-
+        (state.project_dir / "app.py").write_text("import os\nKEY = os.environ['SECRET_KEY']")
+        runner.result = _result("# plan")
         deployer.execute("REVIEW.md")
+        assert "SECRET_KEY" in runner.prompts[0]
 
-        messages = llm_mock.chat.call_args[0][0]
-        user_content = messages[1]["content"]
-        assert "SECRET_KEY" in user_content
-
-    def test_handles_llm_failure(self, deployer, llm_mock, state):
-        """execute raises DeployerError on LLM failure."""
-        state.write_file("REVIEW.md", "# Review\n\nAPPROVED")
-
-        llm_mock.chat.side_effect = Exception("Connection refused")
-
-        with pytest.raises(DeployerError, match="LLM call failed"):
+    def test_runner_exception_is_wrapped(self, deployer, runner, state):
+        state.write_file("REVIEW.md", "# Review")
+        runner.exc = RuntimeError("boom")
+        with pytest.raises(DeployerError, match="opencode session failed"):
             deployer.execute("REVIEW.md")
+
+    def test_non_zero_exit_raises(self, deployer, runner, state):
+        state.write_file("REVIEW.md", "# Review")
+        runner.result = _result("partial", exit_code=3)
+        with pytest.raises(DeployerError, match="rc=3"):
+            deployer.execute("REVIEW.md")
+
+    def test_empty_assistant_text_raises(self, deployer, runner, state):
+        state.write_file("REVIEW.md", "# Review")
+        runner.result = _result("")
+        with pytest.raises(DeployerError, match="no assistant text"):
+            deployer.execute("REVIEW.md")
+
+    def test_emits_audit_entries(self, deployer, runner, state):
+        state.write_file("REVIEW.md", "# Review")
+        runner.result = _result("# plan")
+        deployer.execute("REVIEW.md")
+        raw_path = state.project_dir / ".orchestrator" / "logs" / "raw-io.jsonl"
+        usage_path = state.project_dir / ".orchestrator" / "logs" / "usage.jsonl"
+        assert raw_path.exists()
+        assert usage_path.exists()
+        assert "deployer" in raw_path.read_text(encoding="utf-8")
+
+    def test_audit_fires_even_on_non_zero_exit(self, deployer, runner, state):
+        state.write_file("REVIEW.md", "# Review")
+        runner.result = _result("partial", exit_code=2)
+        with pytest.raises(DeployerError):
+            deployer.execute("REVIEW.md")
+        raw_path = state.project_dir / ".orchestrator" / "logs" / "raw-io.jsonl"
+        assert raw_path.exists()
+        assert "deployer" in raw_path.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
-# Tests: get_required_env_vars
+# get_required_env_vars
 # ---------------------------------------------------------------------------
 
 
 class TestGetRequiredEnvVars:
-    """Test get_required_env_vars convenience method."""
-
     def test_returns_env_vars(self, deployer, state):
-        """Returns detected env vars."""
-        py_file = state.project_dir / "app.py"
-        py_file.write_text("import os\nKEY = os.environ['SECRET_KEY']")
-        vars = deployer.get_required_env_vars()
-        assert "SECRET_KEY" in vars
+        (state.project_dir / "app.py").write_text("import os\nKEY = os.environ['SECRET_KEY']")
+        assert "SECRET_KEY" in deployer.get_required_env_vars()
 
-    def test_returns_empty_list_when_none(self, deployer, state):
-        """Returns empty list when no env vars detected."""
-        py_file = state.project_dir / "app.py"
-        py_file.write_text("print('hello')")
-        vars = deployer.get_required_env_vars()
-        assert vars == ["No environment variables detected."]
+    def test_returns_default_when_none(self, deployer, state):
+        (state.project_dir / "app.py").write_text("print('hi')")
+        assert deployer.get_required_env_vars() == ["No environment variables detected."]

@@ -1,4 +1,12 @@
-"""Deployer role — produces DEPLOY.md with deployment plan."""
+"""Deployer role — produces DEPLOY.md via opencode (H6.3d).
+
+One opencode session per deployment-planning pass. Input is the
+detected deploy configs, the env vars we grepped out of the source
+tree, and the Reviewer's verdict. Output is the canonical DEPLOY.md
+text — the role writes it deterministically from
+``result.assistant_text`` rather than trusting an agent tool call,
+because downstream readers assume an exact file path and structure.
+"""
 
 from __future__ import annotations
 
@@ -8,18 +16,20 @@ import re
 from pathlib import Path
 from typing import Any
 
-from orchestrator.lib.llm import LLMClient
+from orchestrator.lib.control import append_operator_context
+from orchestrator.lib.opencode import SessionRunner
+from orchestrator.lib.opencode_audit import emit_session_audit
 from orchestrator.lib.state import State
-from orchestrator.roles.base import BaseRole
 
 logger = logging.getLogger(__name__)
 
+_PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+
 
 class DeployerError(Exception):
-    """Raised when the Deployer encounters a fatal error."""
+    """Raised when the Deployer cannot complete its session."""
 
 
-# Deployment config files to detect
 _DEPLOY_CONFIGS = [
     "Dockerfile",
     "docker-compose.yml",
@@ -43,80 +53,85 @@ _DEPLOY_CONFIGS = [
 ]
 
 
-class Deployer(BaseRole):
-    """Produces DEPLOY.md with deployment plan and environment requirements."""
+class Deployer:
+    """Produces DEPLOY.md via one opencode session."""
 
     _phase: str = "deployment"
     _role: str = "deployer"
 
     def __init__(
         self,
-        llm: LLMClient,
+        runner: SessionRunner,
         state: State,
         phase_logger: Any = None,
     ) -> None:
-        super().__init__(llm, state, phase_logger=phase_logger)
+        self.runner = runner
+        self.state = state
+        self._phase_logger = phase_logger
 
     # -- public API ----------------------------------------------------------
 
     def execute(self, review_path: str = "REVIEW.md") -> str:
-        """Execute deployment planning.
-
-        Returns the path to DEPLOY.md.
-        Raises DeployerError on fatal failure.
-        """
         review_text = self._load_review(review_path)
         configs = self._detect_deploy_configs()
         env_vars = self._detect_env_vars()
 
-        system_prompt = self._load_prompt("deployer", "generate")
-        user_prompt = system_prompt.format(
+        template = self._load_prompt("deployer", "generate")
+        prompt = template.format(
             configs=configs,
             env_vars=env_vars,
             review_verdict=review_text,
         )
-        user_prompt = self._augment_prompt(user_prompt)
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        prompt = self._augment_prompt(prompt)
 
         try:
-            response = self._chat(messages)
+            result = self.runner.run(prompt)
         except Exception as exc:
-            raise DeployerError(f"LLM call failed: {exc}") from exc
+            raise DeployerError(f"opencode session failed: {exc}") from exc
 
-        # The LLM produces DEPLOY.md content; write it directly
-        deploy_content = response.content.strip()
+        emit_session_audit(
+            self.state,
+            result,
+            role=self._role,
+            phase=self._phase,
+            step=self._phase,
+            prompt=prompt,
+        )
+
+        if result.exit_code != 0:
+            raise DeployerError(
+                f"opencode session exited with rc={result.exit_code}: "
+                f"{result.assistant_text[:200]!r}"
+            )
+
+        deploy_content = result.assistant_text.strip()
+        if not deploy_content:
+            raise DeployerError(
+                "opencode session returned no assistant text — nothing to write"
+            )
         self.state.write_file("DEPLOY.md", deploy_content)
         return "DEPLOY.md"
 
     # -- data detection ------------------------------------------------------
 
     def _detect_deploy_configs(self) -> str:
-        """Detect deployment config files in the project directory."""
         found = []
         for config_file in _DEPLOY_CONFIGS:
             path = self.state.project_dir / config_file
             if path.exists():
                 found.append(config_file)
-
         if found:
             return "\n".join(f"- {f}" for f in found)
         return "No deployment configs detected."
 
     def _detect_env_vars(self) -> list[str]:
-        """Detect required environment variables from source code.
+        """Grep the source tree for env var access.
 
-        Grep for os.environ, os.getenv, os.environ.get patterns.
-        Only returns variable NAMES, never values.
+        Returns variable *names* only — values are never read or recorded.
         """
         env_vars: set[str] = set()
         project_dir = self.state.project_dir
 
-        # Patterns to match environment variable access
-        # Named-group patterns (capture group named 'var')
         named_patterns = [
             r"os\.environ\[[\'\"](?P<var>\w+)[\'\"]\]",
             r"os\.getenv\([\'\"](?P<var>\w+)[\'\"]",
@@ -124,7 +139,6 @@ class Deployer(BaseRole):
             r"getenv\([\'\"](?P<var>\w+)[\'\"]",
             r"env\.get\([\'\"](?P<var>\w+)[\'\"]",
         ]
-        # Simple word patterns (match the whole thing)
         word_patterns = [
             r"(?:^|[^a-zA-Z0-9_])(?P<var>SECRET_KEY)(?:[^a-zA-Z0-9_]|$)",
             r"(?:^|[^a-zA-Z0-9_])(?P<var>API_KEY)(?:[^a-zA-Z0-9_]|$)",
@@ -149,7 +163,6 @@ class Deployer(BaseRole):
         ]
 
         for root, dirs, files in os.walk(project_dir):
-            # Skip hidden dirs and venv
             dirs[:] = [
                 d for d in dirs
                 if not d.startswith(".") and d not in ("__pycache__", ".venv", "node_modules")
@@ -171,18 +184,21 @@ class Deployer(BaseRole):
         return sorted(env_vars) if env_vars else ["No environment variables detected."]
 
     def _load_review(self, path: str) -> str:
-        """Load REVIEW.md content."""
         try:
             return self.state.read_file(path)
         except FileNotFoundError:
             return "No review available."
 
+    # -- helpers -------------------------------------------------------------
+
+    @staticmethod
+    def _load_prompt(role: str, name: str) -> str:
+        return (_PROMPT_DIR / role / f"{name}.txt").read_text(encoding="utf-8")
+
+    def _augment_prompt(self, prompt: str) -> str:
+        return append_operator_context(self.state.project_dir, self._phase, prompt)
+
     # -- convenience ---------------------------------------------------------
 
     def get_required_env_vars(self) -> list[str]:
-        """Return detected required environment variables.
-
-        This is a convenience method for the orchestrator to use
-        when setting up the deployment environment.
-        """
         return self._detect_env_vars()

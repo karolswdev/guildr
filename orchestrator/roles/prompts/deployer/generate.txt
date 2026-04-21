@@ -1,6 +1,8 @@
 You are a DevOps engineer preparing deployment for a project.
 
-Review the codebase and produce a deployment plan.
+Produce a deployment plan as your final response. You may use your
+read/grep tools to inspect files if needed, but the final assistant
+text of this session must be the complete DEPLOY.md content.
 
 DEPLOYMENT CONFIGS FOUND:
 {configs}
@@ -11,7 +13,7 @@ REQUIRED ENVIRONMENT VARIABLES:
 REVIEW VERDICT:
 {review_verdict}
 
-Produce DEPLOY.md with:
+Output DEPLOY.md with:
 1. Deployment target (Docker, Fly.io, Railway, etc.)
 2. Required environment variables (names only, NEVER values)
 3. Manual steps

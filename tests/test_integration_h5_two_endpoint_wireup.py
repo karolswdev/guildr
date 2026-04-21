@@ -28,6 +28,7 @@ from orchestrator.lib.endpoints import RouteEntry
 from orchestrator.lib.pool import Endpoint, UpstreamPool
 from orchestrator.lib.pool_log import pool_log_path
 from orchestrator.roles.coder_dryrun import DryRunCoderRunner
+from orchestrator.roles.deployer_dryrun import DryRunDeployerRunner
 from orchestrator.roles.reviewer_dryrun import DryRunReviewerRunner
 
 
@@ -100,6 +101,7 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
     runners = {
         "coder": DryRunCoderRunner(state_for_runners),
         "reviewer": DryRunReviewerRunner(state_for_runners),
+        "deployer": DryRunDeployerRunner(state_for_runners),
     }
     Orchestrator(config=cfg, pool=pool, session_runners=runners).run()
 
@@ -107,10 +109,11 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
     for required in ("sprint-plan.md", "TEST_REPORT.md", "REVIEW.md", "DEPLOY.md"):
         assert (project_dir / required).exists(), f"{required} missing — pipeline halted"
 
-    # Both endpoints received work (architect → big; judge/tester/reviewer/
-    # deployer → small). Coder runs via opencode now, not the pool.
+    # Architect is now the only role that lands on the pool in dry-run
+    # (coder/reviewer/deployer → opencode sessions; tester → shell-only;
+    # judge rides architect's LLM handle). So we assert at least one
+    # endpoint saw traffic rather than both.
     assert big.call_count >= 1, "big-model endpoint never reached"
-    assert small.call_count >= 1, "small-model endpoint never reached"
 
     # Every routing decision landed in pool.jsonl with the expected label.
     decisions = [
@@ -129,9 +132,6 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
     # session now (H6.3a), not the sync pool facade.
     role_to_expected = {
         "architect": "big-model",
-        "judge": "small-model",
-        "tester": "small-model",
-        "deployer": "small-model",
     }
     assert "coder" not in by_role, (
         "coder was expected to bypass the pool (opencode session, H6.3a), "
@@ -139,6 +139,10 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
     )
     assert "reviewer" not in by_role, (
         "reviewer was expected to bypass the pool (opencode session, H6.3c), "
+        f"but appeared in pool.jsonl"
+    )
+    assert "deployer" not in by_role, (
+        "deployer was expected to bypass the pool (opencode session, H6.3d), "
         f"but appeared in pool.jsonl"
     )
     seen_roles = set(by_role) & set(role_to_expected)
@@ -195,6 +199,7 @@ def test_fallback_when_preferred_endpoint_raises(project_dir: Path) -> None:
     runners = {
         "coder": DryRunCoderRunner(state_for_runners),
         "reviewer": DryRunReviewerRunner(state_for_runners),
+        "deployer": DryRunDeployerRunner(state_for_runners),
     }
     Orchestrator(config=cfg, pool=pool, session_runners=runners).run()
 

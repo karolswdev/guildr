@@ -129,8 +129,6 @@ def test_dry_run_llm_dispatches_by_role() -> None:
     tester = fake.chat([{"role": "system", "content": "You are a QA engineer."}])
     assert "VERIFIED" in tester.content
 
-    # Reviewer no longer goes through fake_llm — it's driven by a SessionRunner
-    # (see orchestrator/roles/reviewer_dryrun.py) after H6.3c.
-
-    deployer = fake.chat([{"role": "system", "content": "You are a DevOps engineer."}])
-    assert "DEPLOY" in deployer.content
+    # Reviewer / Deployer no longer go through fake_llm — they're driven by
+    # SessionRunners (see reviewer_dryrun.py / deployer_dryrun.py) after
+    # H6.3c / H6.3d.

@@ -115,6 +115,11 @@ class Orchestrator:
             runner = DryRunReviewerRunner(self.state)
             self._session_runners[role] = runner
             return runner
+        if self._fake_llm is not None and role == "deployer":
+            from orchestrator.roles.deployer_dryrun import DryRunDeployerRunner
+            runner = DryRunDeployerRunner(self.state)
+            self._session_runners[role] = runner
+            return runner
         return None
 
     def _llm_for(self, role: str) -> Any:
@@ -532,14 +537,14 @@ class Orchestrator:
         reviewer.execute("sprint-plan.md")
 
     def _deployer(self, *, phase_logger: logging.Logger | None = None) -> None:
-        """Run the Deployer role."""
+        """Run the Deployer via an opencode session runner (H6.3d)."""
         from orchestrator.roles.deployer import Deployer
 
-        llm = self._llm_for("deployer")
-        if llm is None:
+        runner = self._session_runner_for("deployer")
+        if runner is None:
             raise PhaseFailure("deployment")
 
-        deployer = Deployer(llm, self.state, phase_logger=phase_logger)
+        deployer = Deployer(runner, self.state, phase_logger=phase_logger)
         deployer.execute("REVIEW.md")
 
     # -- pool access ---------------------------------------------------------
