@@ -32,7 +32,7 @@ review / follow / intervene" — the claim has never been executed.
 
 ## Task H2.1 - Dry-Run Rehearsal With Real Capture
 
-Status: Not started
+Status: Programmatic half done 2026-04-21 (commit 6fbd055). Manual PWA walk-through pending.
 
 Actions:
 
@@ -42,6 +42,19 @@ Actions:
   shipped.
 - Verify `raw-io.jsonl` line count matches expected role calls.
 - Verify each gate can be approved from the PWA.
+
+Pick-up notes for the manual half:
+
+- Programmatic guard: `tests/test_integration_h2_1_rehearsal.py` drives the
+  same `_run_orchestrator` + HTTP-decide code path a human hits from the
+  PWA. Keep it green before/after the manual walk.
+- Manual walk still required: `./web/frontend/build.sh` → start the PWA on
+  `0.0.0.0` on LAN → create a project with the JSON-formatter qwendea →
+  toggle "Gate my approval at each phase" ON → Start → approve each gate
+  as it surfaces → confirm run_complete and inspect
+  `<project>/.orchestrator/logs/raw-io.jsonl`.
+- Capture evidence: screenshot of each gate prompt, `wc -l` of
+  `raw-io.jsonl`, and the final phase event timeline.
 
 Acceptance:
 

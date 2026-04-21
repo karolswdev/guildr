@@ -53,7 +53,7 @@ honest.
 | --- | --- | --- | --- |
 | **H0 Capture Everything** | Done | Claude | All tasks shipped 2026-04-21. Raw LLM I/O now lands on disk with a guarding end-to-end test |
 | **H1 Single Gate Registry** | Done | Claude | H1.1 + H1.2 + H1.3 done 2026-04-21. `require_human_approval` is now a per-run opt-in end-to-end (PWA toggle, HTTP body, CLI `--gate`). Idle-RPG default preserved |
-| **H2 Live-Path Battle Test** | In progress | Claude | H2.1 programmatic rehearsal done 2026-04-21 (gated dry-run via PWA code path, raw-io captured). Manual PWA walk-through + H2.2 live run against PRIMARY next |
+| **H2 Live-Path Battle Test** | In progress | Claude | H2.1 programmatic rehearsal done 2026-04-21 (commit 6fbd055). **Pick-up item: manual PWA walk-through** (deferred — requires human at the device). H2.2/H2.3 require live PRIMARY/ALIEN endpoints. All remaining H2 work is manual/hardware-gated |
 | 0 Baseline And Invariants | In progress | Claude | Task 0.1 done 2026-04-21; 0.2 and 0.3 pending. Resumes after H2 |
 | 1 Flow Foundation | In progress | Codex | FlowTypes, FlowPath, first FlowDirector mapping landed. Paused after H0-H2 |
 | 2 Orbital Loop Layout | Not started | Unassigned | Paused until harness ships |
@@ -66,12 +66,21 @@ honest.
 
 ## Next Recommended Task
 
-Start with `phases/harness-0-capture-everything.md`, Task H0.1.
+**When a human is at the device:** Resume H2.1 manual PWA walk-through
+(see `phases/harness-2-live-path-battle-test.md`, Task H2.1 pick-up notes),
+then H2.2 live run against PRIMARY.
 
-Reason: every other improvement — visual, UX, performance — compounds on
-top of the logs we capture today. If those logs are lying about what the
-engine did, every downstream decision is built on sand. Fix the audit trail
-first, then control, then prove the live path.
+**When working headless (no device, no live endpoints):** H2 is blocked on
+manual/hardware. Pick a scriptable parallel track instead — candidates
+that don't violate the "harness before visual phases" rule:
+
+- A new harness phase (e.g. live-pool routing guardrail, cost/usage
+  roundtrip guardrail) — agree scope with the operator first.
+- Phase 0 Task 0.2 (Ultimate Space Kit asset test guardrails) or 0.3
+  (mobile smoke procedure docs). These were paused pending H2 but are
+  safe to land in parallel because they don't touch harness surfaces.
+
+Do not resume Phase 1+ visual-map work until H2 is fully green.
 
 ## Current Verification Commands
 
