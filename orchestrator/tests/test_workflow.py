@@ -8,6 +8,7 @@ from unittest.mock import patch
 from orchestrator.lib.workflow import load_workflow, save_workflow, valid_start_steps
 from orchestrator.lib.state import State
 from orchestrator.roles.guru_escalation import GuruEscalation
+from orchestrator.roles.memory_refresh import MemoryRefresh
 from orchestrator.roles.micro_task_breaker import MicroTaskBreaker
 from orchestrator.roles.persona_forum import PersonaForum
 
@@ -15,10 +16,22 @@ from orchestrator.roles.persona_forum import PersonaForum
 def test_default_workflow_contains_persona_microtask_and_guru_steps(tmp_path: Path) -> None:
     steps = load_workflow(tmp_path)
     ids = [step["id"] for step in steps]
+    assert "memory_refresh" in ids
     assert "persona_forum" in ids
     assert "micro_task_breakdown" in ids
     assert "guru_escalation" in ids
-    assert "persona_forum" in valid_start_steps(tmp_path)
+    assert "memory_refresh" in valid_start_steps(tmp_path)
+
+
+def test_memory_refresh_returns_wakeup_artifact(tmp_path: Path) -> None:
+    state = State(tmp_path)
+    memory_dir = tmp_path / ".orchestrator" / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    with patch("orchestrator.roles.memory_refresh.sync_project_memory", return_value={"wake_up": "L0"}):
+        result = MemoryRefresh(state).execute()
+
+    assert result == ".orchestrator/memory/wake-up.md"
+    assert (tmp_path / ".orchestrator" / "control" / "context.compact.md").exists()
 
 
 def test_persona_forum_writes_roster_and_forum_artifacts(tmp_path: Path) -> None:
@@ -117,5 +130,7 @@ def test_legacy_workflow_is_migrated_with_new_persona_forum_step(tmp_path: Path)
     steps = load_workflow(tmp_path)
 
     ids = [step["id"] for step in steps]
+    assert "memory_refresh" in ids
     assert "persona_forum" in ids
+    assert ids.index("memory_refresh") < ids.index("persona_forum")
     assert ids.index("persona_forum") < ids.index("architect")

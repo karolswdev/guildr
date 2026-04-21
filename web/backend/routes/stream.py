@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from fastapi import HTTPException
@@ -30,9 +33,10 @@ class SimpleEventBus:
     because the dry-run already completed.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, project_id: str | None = None) -> None:
         self._subscribers: list[list] = []
         self._history: list[str] = []
+        self._project_id = project_id
 
     def emit(self, event_type: str, **fields: Any) -> None:
         """Emit an event to every live subscriber and record it for replay.
@@ -42,11 +46,12 @@ class SimpleEventBus:
         doesn't match — that's what made the Progress view sit on
         "Connecting..." while the run completed in the background.
         """
-        event = {"type": event_type, **fields}
+        event = {"type": event_type, "ts": _now_iso(), **fields}
         data = f"data: {json.dumps(event)}\n\n"
         self._history.append(data)
         if len(self._history) > _REPLAY_LIMIT:
             del self._history[: len(self._history) - _REPLAY_LIMIT]
+        self._persist_event(event)
         for subscriber in self._subscribers:
             try:
                 subscriber.append(data)
@@ -64,6 +69,17 @@ class SimpleEventBus:
         if subscriber in self._subscribers:
             self._subscribers.remove(subscriber)
 
+    def _persist_event(self, event: dict[str, Any]) -> None:
+        if not self._project_id:
+            return
+        path = event_log_path(self._project_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(event) + "\n")
+        except OSError:
+            logger.debug("Failed to persist event log for %s", self._project_id, exc_info=True)
+
 
 class EventStore:
     """Per-project event bus store."""
@@ -73,7 +89,7 @@ class EventStore:
 
     def get_or_create(self, project_id: str) -> SimpleEventBus:
         if project_id not in self._buses:
-            self._buses[project_id] = SimpleEventBus()
+            self._buses[project_id] = SimpleEventBus(project_id=project_id)
         return self._buses[project_id]
 
     def has(self, project_id: str) -> bool:
@@ -87,6 +103,18 @@ _event_store = EventStore()
 
 def get_event_store() -> EventStore:
     return _event_store
+
+
+def _projects_base() -> Path:
+    return Path(os.environ.get("ORCHESTRATOR_PROJECTS_DIR", "/tmp/orchestrator-projects"))
+
+
+def event_log_path(project_id: str) -> Path:
+    return _projects_base() / project_id / ".orchestrator" / "events.jsonl"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 # -- routes ------------------------------------------------------------------

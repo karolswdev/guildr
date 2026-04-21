@@ -1,18 +1,31 @@
 /**
- * Progress view — live run console, controls, and durable agent logs.
+ * Progress view - mission control for live runs, workflow editing, and logs.
  */
+
+type JsonRecord = Record<string, unknown>;
 
 type PhaseSummary = {
   phase: string;
   exists: boolean;
   count: number;
-  entries: Array<Record<string, unknown>>;
-  last_event: Record<string, unknown> | null;
+  entries: JsonRecord[];
+  last_event: JsonRecord | null;
 };
 
 type LogResponse = {
   project_id: string;
   phases: PhaseSummary[];
+};
+
+type PhaseLogResponse = {
+  project_id: string;
+  phase: string;
+  entries: JsonRecord[];
+};
+
+type EventListResponse = {
+  project_id: string;
+  events: JsonRecord[];
 };
 
 type WorkflowStep = {
@@ -22,7 +35,7 @@ type WorkflowStep = {
   handler: string;
   enabled: boolean;
   description?: string;
-  config?: Record<string, unknown>;
+  config?: JsonRecord;
 };
 
 type WorkflowResponse = {
@@ -30,128 +43,325 @@ type WorkflowResponse = {
   steps: WorkflowStep[];
 };
 
+type Persona = {
+  name: string;
+  perspective: string;
+  mandate: string;
+  turn_order: number;
+  veto_scope: string;
+};
+
 type PersonaSynthesisResponse = {
   project_id: string;
-  personas: Array<Record<string, unknown>>;
+  personas: Persona[];
   steps: WorkflowStep[];
 };
 
-const PIPELINE_PHASES = ["persona_forum", "architect", "micro_task_breakdown", "implementation", "testing", "guru_escalation", "review", "deployment"];
+type MemoryResponse = {
+  project_id: string;
+  available: boolean;
+  command: string | null;
+  initialized: boolean;
+  wing: string;
+  cached_wakeup: string;
+  cached_status: string;
+  last_search: string;
+  metadata: JsonRecord;
+  wake_up?: string;
+  output?: string;
+};
+
+type StepRunState = "idle" | "active" | "done" | "waiting" | "error" | "disabled";
+
+const PHASE_ORDER = [
+  "memory_refresh",
+  "persona_forum",
+  "architect",
+  "micro_task_breakdown",
+  "implementation",
+  "testing",
+  "guru_escalation",
+  "review",
+  "deployment",
+];
 
 export function renderProgress(container: Element, navigate: (route: string) => void, projectId: string): void {
   container.innerHTML = `
-    <header style="padding: 16px; border-bottom: 1px solid #333;">
+    <header style="padding: 16px; border-bottom: 1px solid #262626; background: #050505;">
       <button
         onclick="navigate('#project/${projectId}')"
-        style="background: none; border: none; color: #4fc3f7;
-               font-size: 14px; cursor: pointer; padding: 8px 0;"
+        style="background: none; border: none; color: #8fd3ff; font-size: 14px; cursor: pointer; padding: 8px 0;"
       >
-        ← Back
+        <- Back
       </button>
-      <h1 style="font-size: 18px; margin-top: 8px;">Run Console</h1>
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-end; margin-top: 8px;">
+        <div>
+          <h1 style="font-size: 22px; margin: 0 0 6px;">Mission Control</h1>
+          <div style="font-size: 13px; color: #8c8c8c;">Live workflow, founding team, event timeline, and terminal peeks.</div>
+        </div>
+        <div id="dirty-indicator" style="font-size: 12px; color: #8c8c8c;">Workflow synced</div>
+      </div>
     </header>
     <main style="padding: 16px; display: grid; gap: 16px;">
-      <section style="padding: 12px; background: #141414; border: 1px solid #2d2d2d; border-radius: 8px;">
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
-          <div id="phase-dot" style="width: 16px; height: 16px; border-radius: 50%; background: #555;"></div>
-          <span id="phase-name" style="font-size: 16px; font-weight: 600;">Loading...</span>
-        </div>
-        <div style="display: flex; gap: 4px;">
-          ${PIPELINE_PHASES.map(() => `<div class="phase-step" style="flex: 1; height: 6px; background: #333; border-radius: 3px;"></div>`).join("")}
-        </div>
-        <div style="display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: 13px;">
-          <span style="color: #888;">Tokens/sec <span id="tok-s" style="color: #4fc3f7;">—</span></span>
-          <span style="color: #888;">VRAM <span id="vram" style="color: #4fc3f7;">—</span></span>
-        </div>
-      </section>
-
-      <section style="padding: 12px; background: #141414; border: 1px solid #2d2d2d; border-radius: 8px;">
-        <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">Run Control</div>
-        <label style="display: block; font-size: 12px; color: #888; margin-bottom: 6px;">Resume From</label>
-        <select id="resume-step" style="width: 100%; padding: 10px; margin-bottom: 10px; background: #0b0b0b; color: #f1f1f1; border: 1px solid #333; border-radius: 6px;"></select>
-        <label style="display: block; font-size: 12px; color: #888; margin-bottom: 6px;">Instruction</label>
-        <textarea
-          id="operator-instruction"
-          rows="5"
-          placeholder="Inject a directive for the next relevant model call."
-          style="width: 100%; padding: 10px; margin-bottom: 10px; background: #0b0b0b; color: #f1f1f1; border: 1px solid #333; border-radius: 6px; resize: vertical; box-sizing: border-box;"
-        ></textarea>
-        <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 13px; color: #cfcfcf;">
-          <input id="compact-before-resume" type="checkbox" />
-          Compact context before resume
-        </label>
-        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
-          <button id="btn-inject" style="padding: 12px; background: #0f3460; color: white; border: none; border-radius: 6px; cursor: pointer;">Inject</button>
-          <button id="btn-compact" style="padding: 12px; background: #184b35; color: white; border: none; border-radius: 6px; cursor: pointer;">Compact</button>
-          <button id="btn-resume" style="padding: 12px; background: #4fc3f7; color: #0a0a0a; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Resume</button>
-        </div>
-        <div id="control-status" style="margin-top: 10px; min-height: 20px; font-size: 13px; color: #888;"></div>
-      </section>
-
-      <section style="padding: 12px; background: #141414; border: 1px solid #2d2d2d; border-radius: 8px;">
-        <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
-          <div style="font-size: 14px; font-weight: 600;">Workflow</div>
-          <div style="display: flex; gap: 8px;">
-            <button id="btn-build-team" style="padding: 8px 10px; background: #5c2f8b; color: white; border: none; border-radius: 6px; cursor: pointer;">Build Team</button>
-            <button id="btn-reload-workflow" style="padding: 8px 10px; background: #0f3460; color: white; border: none; border-radius: 6px; cursor: pointer;">Reload</button>
-            <button id="btn-save-workflow" style="padding: 8px 10px; background: #184b35; color: white; border: none; border-radius: 6px; cursor: pointer;">Save</button>
+      <section style="padding: 14px; background: linear-gradient(180deg, #121826 0%, #0c0f16 100%); border: 1px solid #273148; border-radius: 8px;">
+        <div style="display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 14px;">
+          <div style="padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
+            <div style="font-size: 11px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Current Focus</div>
+            <div id="focus-step" style="font-size: 18px; font-weight: 600; color: #f3f7ff;">Loading...</div>
+            <div id="focus-detail" style="font-size: 13px; color: #b7c1d8; margin-top: 6px;">Waiting for run state.</div>
+          </div>
+          <div style="padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
+            <div style="font-size: 11px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Next Step</div>
+            <div id="focus-next" style="font-size: 18px; font-weight: 600; color: #f3f7ff;">-</div>
+            <div id="focus-next-detail" style="font-size: 13px; color: #b7c1d8; margin-top: 6px;">Workflow ready.</div>
+          </div>
+          <div style="padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
+            <div style="font-size: 11px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Live Telemetry</div>
+            <div style="display: flex; justify-content: space-between; gap: 12px;">
+              <div>
+                <div style="font-size: 12px; color: #7f8aa3;">Tokens/sec</div>
+                <div id="tok-s" style="font-size: 18px; font-weight: 600; color: #7de5b1;">-</div>
+              </div>
+              <div>
+                <div style="font-size: 12px; color: #7f8aa3;">VRAM</div>
+                <div id="vram" style="font-size: 18px; font-weight: 600; color: #7de5b1;">-</div>
+              </div>
+            </div>
+          </div>
+          <div style="padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
+            <div style="font-size: 11px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Latest Signal</div>
+            <div id="latest-signal" style="font-size: 14px; font-weight: 600; color: #f3f7ff;">Connecting...</div>
+            <div id="latest-signal-detail" style="font-size: 12px; color: #b7c1d8; margin-top: 6px;">Event stream is starting.</div>
           </div>
         </div>
-        <div style="font-size: 12px; color: #888; margin-bottom: 8px;">Edit the live workflow JSON. Add checkpoints, enable guru escalation, or reorder supported steps.</div>
-        <textarea
-          id="workflow-editor"
-          rows="14"
-          style="width: 100%; padding: 10px; background: #0b0b0b; color: #f1f1f1; border: 1px solid #333; border-radius: 6px; resize: vertical; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5;"
-        ></textarea>
+        <div id="run-strip" style="display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));"></div>
       </section>
 
-      <section style="padding: 12px; background: #141414; border: 1px solid #2d2d2d; border-radius: 8px;">
-        <div style="margin-bottom: 12px; font-size: 14px; font-weight: 600;">Live Event Log</div>
-        <div
-          id="event-log"
-          style="max-height: 280px; overflow-y: auto; background: #0a0a0a;
-                 border-radius: 6px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-                 font-size: 13px; line-height: 1.6;"
-        >
-          <div style="color: #888;">Connecting to event stream...</div>
+      <section style="display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+        <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
+          <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
+            <div style="font-size: 15px; font-weight: 600;">Command Deck</div>
+            <div id="control-status" style="min-height: 20px; font-size: 13px; color: #8c8c8c;"></div>
+          </div>
+          <div style="display: grid; gap: 10px;">
+            <div>
+              <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Resume From</label>
+              <select id="resume-step" style="${inputStyle()}"></select>
+            </div>
+            <div>
+              <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Instruction Scope</label>
+              <select id="instruction-scope" style="${inputStyle()}">
+                <option value="">All phases</option>
+              </select>
+            </div>
+            <div>
+              <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Operator Instruction</label>
+              <textarea
+                id="operator-instruction"
+                rows="5"
+                placeholder="Inject a directive, remediation note, or priority correction."
+                style="${textAreaStyle()}"
+              ></textarea>
+            </div>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #d5d5d5;">
+              <input id="compact-before-resume" type="checkbox" />
+              Compact context before resume
+            </label>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
+              <button id="btn-inject" style="${actionButton("#173c66", "#ffffff")}">Inject</button>
+              <button id="btn-compact" style="${actionButton("#1d4f38", "#ffffff")}">Compact</button>
+              <button id="btn-resume" style="${actionButton("#8fd3ff", "#05111d", true)}">Resume</button>
+            </div>
+          </div>
+        </section>
+
+        <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
+          <div style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">Run Focus</div>
+          <div id="focus-panel" style="display: grid; gap: 10px;">
+            <div style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px;">
+              <div style="font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Now</div>
+              <div id="focus-panel-title" style="font-size: 17px; font-weight: 600; color: #f3f3f3;">Waiting for events</div>
+              <div id="focus-panel-body" style="font-size: 13px; color: #b5b5b5; margin-top: 8px; line-height: 1.5;">Open the run, inject instructions, or resume from any enabled step.</div>
+            </div>
+            <div style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px;">
+              <div style="font-size: 12px; color: #8c8c8c; margin-bottom: 8px;">Quick State</div>
+              <div id="focus-panel-grid" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;"></div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
+        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
+          <div>
+            <div style="font-size: 15px; font-weight: 600;">Workflow Control Room</div>
+            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">Drag to reorder. Toggle steps. Inspect and tune one step at a time.</div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <button id="btn-build-team" style="${actionButton("#61318b", "#ffffff")}">Build Team</button>
+            <button id="btn-add-checkpoint" style="${actionButton("#51411b", "#ffffff")}">Add Checkpoint</button>
+            <button id="btn-reload-workflow" style="${actionButton("#173c66", "#ffffff")}">Reload</button>
+            <button id="btn-save-workflow" style="${actionButton("#1d4f38", "#ffffff")}">Save Workflow</button>
+          </div>
+        </div>
+        <div style="display: grid; gap: 16px; grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);">
+          <div id="workflow-board" style="display: grid; gap: 10px;"></div>
+          <div id="workflow-inspector" style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px;"></div>
+        </div>
+        <details style="margin-top: 14px;">
+          <summary style="cursor: pointer; color: #8fd3ff; font-size: 13px;">Advanced workflow JSON</summary>
+          <textarea
+            id="workflow-editor"
+            rows="14"
+            style="${textAreaStyle("12px", "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace")}; margin-top: 10px;"
+          ></textarea>
+        </details>
+      </section>
+
+      <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
+        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
+          <div>
+            <div style="font-size: 15px; font-weight: 600;">Founding Team</div>
+            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">Edit personas directly in workflow config. Save when you like the roster.</div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-add-persona" style="${actionButton("#173c66", "#ffffff")}">Add Persona</button>
+            <button id="btn-save-team" style="${actionButton("#1d4f38", "#ffffff")}">Save Team</button>
+          </div>
+        </div>
+        <div id="persona-list" style="display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));"></div>
+      </section>
+
+      <section style="padding: 14px; background: linear-gradient(180deg, #120d16 0%, #0c0911 100%); border: 1px solid #30203b; border-radius: 8px;">
+        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
+          <div>
+            <div style="font-size: 15px; font-weight: 600;">Palace Memory</div>
+            <div style="font-size: 12px; color: #a996b6; margin-top: 4px;">Mine the project, refresh wake-up context, and search the palace without leaving the run.</div>
+          </div>
+          <div id="memory-status-badge" style="padding: 6px 10px; border-radius: 999px; background: #1f1527; border: 1px solid #352145; color: #d8cae4; font-size: 12px;">Checking...</div>
+        </div>
+        <div style="display: grid; gap: 16px; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);">
+          <div style="display: grid; gap: 12px;">
+            <div id="memory-meta" style="display: grid; gap: 8px;"></div>
+            <div style="display: grid; gap: 8px;">
+              <button id="btn-memory-sync" style="${actionButton("#61318b", "#ffffff")}">Sync Palace</button>
+              <button id="btn-memory-wakeup" style="${actionButton("#173c66", "#ffffff")}">Refresh Wake-Up</button>
+            </div>
+            <div style="display: grid; gap: 8px;">
+              <input id="memory-query" placeholder="Search memory: why did we switch to GraphQL" style="${inputStyle()}" />
+              <input id="memory-room" placeholder="Optional room scope" style="${inputStyle()}" />
+              <button id="btn-memory-search" style="${actionButton("#1d4f38", "#ffffff")}">Search Palace</button>
+            </div>
+          </div>
+          <div style="padding: 12px; background: #09070d; border: 1px solid #24192e; border-radius: 8px; min-height: 280px;">
+            <pre id="memory-output" style="margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; color: #eadff2; white-space: pre-wrap; word-break: break-word;">Loading memory status...</pre>
+          </div>
         </div>
       </section>
 
-      <section style="padding: 12px; background: #141414; border: 1px solid #2d2d2d; border-radius: 8px;">
-        <div style="margin-bottom: 12px; font-size: 14px; font-weight: 600;">Agent Logs</div>
-        <div id="phase-logs" style="display: grid; gap: 10px;">
-          <div style="color: #888;">Loading durable logs...</div>
+      <section style="display: grid; gap: 16px; grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);">
+        <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
+          <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
+            <div style="font-size: 15px; font-weight: 600;">Live Timeline</div>
+            <button id="btn-follow-live" style="${actionButton("#173c66", "#ffffff")}">Follow Live</button>
+          </div>
+          <div id="event-log" style="max-height: 380px; overflow-y: auto; display: grid; gap: 8px;"></div>
+        </section>
+        <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
+          <div style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">Event Detail</div>
+          <div id="event-detail" style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px; min-height: 320px;"></div>
+        </section>
+      </section>
+
+      <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
+        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
+          <div>
+            <div style="font-size: 15px; font-weight: 600;">Terminal Peek</div>
+            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">Durable agent logs with preserved indentation and wrapped output.</div>
+          </div>
+          <div id="log-phase-tabs" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+        </div>
+        <div id="phase-log-shell" style="padding: 12px; background: #080808; border: 1px solid #1d1d1d; border-radius: 8px; min-height: 280px;">
+          <pre id="phase-log-detail" style="margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; color: #d8d8d8; white-space: pre-wrap; word-break: break-word;"></pre>
         </div>
       </section>
     </main>
   `;
 
-  const eventLog = container.querySelector("#event-log") as HTMLDivElement;
-  const phaseLogs = container.querySelector("#phase-logs") as HTMLDivElement;
-  const phaseDot = container.querySelector("#phase-dot") as HTMLDivElement;
-  const phaseName = container.querySelector("#phase-name") as HTMLSpanElement;
-  const tokS = container.querySelector("#tok-s") as HTMLSpanElement;
-  const vram = container.querySelector("#vram") as HTMLSpanElement;
-  const phaseSteps = container.querySelectorAll(".phase-step");
+  const dirtyIndicator = container.querySelector("#dirty-indicator") as HTMLDivElement;
+  const focusStep = container.querySelector("#focus-step") as HTMLDivElement;
+  const focusDetail = container.querySelector("#focus-detail") as HTMLDivElement;
+  const focusNext = container.querySelector("#focus-next") as HTMLDivElement;
+  const focusNextDetail = container.querySelector("#focus-next-detail") as HTMLDivElement;
+  const tokS = container.querySelector("#tok-s") as HTMLDivElement;
+  const vram = container.querySelector("#vram") as HTMLDivElement;
+  const latestSignal = container.querySelector("#latest-signal") as HTMLDivElement;
+  const latestSignalDetail = container.querySelector("#latest-signal-detail") as HTMLDivElement;
+  const runStrip = container.querySelector("#run-strip") as HTMLDivElement;
   const resumeStep = container.querySelector("#resume-step") as HTMLSelectElement;
+  const instructionScope = container.querySelector("#instruction-scope") as HTMLSelectElement;
   const instructionInput = container.querySelector("#operator-instruction") as HTMLTextAreaElement;
   const compactCheckbox = container.querySelector("#compact-before-resume") as HTMLInputElement;
   const controlStatus = container.querySelector("#control-status") as HTMLDivElement;
+  const focusPanelTitle = container.querySelector("#focus-panel-title") as HTMLDivElement;
+  const focusPanelBody = container.querySelector("#focus-panel-body") as HTMLDivElement;
+  const focusPanelGrid = container.querySelector("#focus-panel-grid") as HTMLDivElement;
+  const workflowBoard = container.querySelector("#workflow-board") as HTMLDivElement;
+  const workflowInspector = container.querySelector("#workflow-inspector") as HTMLDivElement;
+  const workflowEditor = container.querySelector("#workflow-editor") as HTMLTextAreaElement;
+  const personaList = container.querySelector("#persona-list") as HTMLDivElement;
+  const memoryStatusBadge = container.querySelector("#memory-status-badge") as HTMLDivElement;
+  const memoryMeta = container.querySelector("#memory-meta") as HTMLDivElement;
+  const memoryQuery = container.querySelector("#memory-query") as HTMLInputElement;
+  const memoryRoom = container.querySelector("#memory-room") as HTMLInputElement;
+  const memoryOutput = container.querySelector("#memory-output") as HTMLPreElement;
+  const eventLog = container.querySelector("#event-log") as HTMLDivElement;
+  const eventDetail = container.querySelector("#event-detail") as HTMLDivElement;
+  const logPhaseTabs = container.querySelector("#log-phase-tabs") as HTMLDivElement;
+  const phaseLogDetail = container.querySelector("#phase-log-detail") as HTMLPreElement;
+
   const btnInject = container.querySelector("#btn-inject") as HTMLButtonElement;
   const btnCompact = container.querySelector("#btn-compact") as HTMLButtonElement;
   const btnResume = container.querySelector("#btn-resume") as HTMLButtonElement;
-  const workflowEditor = container.querySelector("#workflow-editor") as HTMLTextAreaElement;
   const btnBuildTeam = container.querySelector("#btn-build-team") as HTMLButtonElement;
+  const btnAddCheckpoint = container.querySelector("#btn-add-checkpoint") as HTMLButtonElement;
   const btnReloadWorkflow = container.querySelector("#btn-reload-workflow") as HTMLButtonElement;
   const btnSaveWorkflow = container.querySelector("#btn-save-workflow") as HTMLButtonElement;
+  const btnAddPersona = container.querySelector("#btn-add-persona") as HTMLButtonElement;
+  const btnSaveTeam = container.querySelector("#btn-save-team") as HTMLButtonElement;
+  const btnMemorySync = container.querySelector("#btn-memory-sync") as HTMLButtonElement;
+  const btnMemoryWakeup = container.querySelector("#btn-memory-wakeup") as HTMLButtonElement;
+  const btnMemorySearch = container.querySelector("#btn-memory-search") as HTMLButtonElement;
+  const btnFollowLive = container.querySelector("#btn-follow-live") as HTMLButtonElement;
 
   let workflowSteps: WorkflowStep[] = [];
+  let workflowDirty = false;
+  let selectedWorkflowStepId = "";
+  let selectedLogPhase = PHASE_ORDER[0];
   let evtSource: EventSource | null = null;
   let refreshTimer: number | null = null;
+  let eventHistory: JsonRecord[] = [];
+  let followLiveDetail = true;
+  let selectedEventIndex = -1;
+  let phaseSummaries: PhaseSummary[] = [];
+  let selectedPhaseLogEntries: JsonRecord[] = [];
+  let stepStatuses: Record<string, StepRunState> = {};
+  let currentSignal = "";
+  let currentSignalDetail = "";
+  let currentStepId = "";
+  let currentTokS = "-";
+  let currentVram = "-";
+  let memoryState: MemoryResponse | null = null;
+
+  function setDirty(dirty: boolean): void {
+    workflowDirty = dirty;
+    dirtyIndicator.textContent = dirty ? "Workflow has local edits" : "Workflow synced";
+    dirtyIndicator.style.color = dirty ? "#f0c36f" : "#8c8c8c";
+  }
 
   function setStatus(message: string, isError = false): void {
     controlStatus.textContent = message;
-    controlStatus.style.color = isError ? "#e74c3c" : "#888";
+    controlStatus.style.color = isError ? "#ff7a7a" : "#8c8c8c";
   }
 
   function setBusy(button: HTMLButtonElement, busy: boolean, label: string): void {
@@ -160,59 +370,546 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     button.style.opacity = busy ? "0.7" : "1";
   }
 
-  function appendEvent(type: string, message: string): void {
-    const div = document.createElement("div");
-    const timestamp = new Date().toLocaleTimeString();
+  function syncStepStateStore(): void {
+    (window as unknown as { __guildrStepStates?: Record<string, StepRunState> }).__guildrStepStates = { ...stepStatuses };
+  }
 
-    let color = "#888";
-    if (type.includes("error") || type.includes("fail")) color = "#e74c3c";
-    else if (type.includes("done") || type.includes("complete") || type.includes("approved")) color = "#2ecc71";
-    else if (type.includes("gate")) color = "#f39c12";
-    else if (type.includes("phase")) color = "#4fc3f7";
+  function getPersonaStep(): WorkflowStep | undefined {
+    return workflowSteps.find((step) => step.id === "persona_forum");
+  }
 
-    div.style.color = color;
-    div.textContent = `[${timestamp}] ${message}`;
-    eventLog.appendChild(div);
-    eventLog.scrollTop = eventLog.scrollHeight;
+  function getPersonas(): Persona[] {
+    return getPersonasFromStep(getPersonaStep());
+  }
 
-    while (eventLog.children.length > 200) {
-      eventLog.removeChild(eventLog.firstChild!);
+  function setPersonas(personas: Persona[]): void {
+    updateStep("persona_forum", (step) => ({
+      ...step,
+      config: {
+        ...(step.config ?? {}),
+        personas: personas.map((persona) => ({
+          name: persona.name,
+          perspective: persona.perspective,
+          mandate: persona.mandate,
+          turn_order: persona.turn_order,
+          veto_scope: persona.veto_scope,
+        })),
+      },
+    }));
+  }
+
+  function getNextEnabledStep(currentId: string): WorkflowStep | undefined {
+    const enabled = workflowSteps.filter((step) => step.enabled);
+    const index = enabled.findIndex((step) => step.id === currentId);
+    if (index < 0) {
+      return enabled[0];
+    }
+    return enabled[index + 1];
+  }
+
+  function replaceWorkflow(nextSteps: WorkflowStep[], dirty = false): void {
+    workflowSteps = nextSteps.map(cloneStep);
+    if (!selectedWorkflowStepId || !workflowSteps.some((step) => step.id === selectedWorkflowStepId)) {
+      selectedWorkflowStepId = workflowSteps[0]?.id ?? "";
+    }
+    if (!selectedLogPhase || !workflowSteps.some((step) => step.id === selectedLogPhase && step.type === "phase")) {
+      selectedLogPhase = workflowSteps.find((step) => step.type === "phase")?.id ?? PHASE_ORDER[0];
+    }
+    renderResumeOptions();
+    renderInstructionScopeOptions();
+    syncWorkflowEditor();
+    syncStepStateStore();
+    setDirty(dirty);
+    renderWorkflowBoard();
+    renderWorkflowInspector();
+    renderRunStrip();
+    renderPersonas();
+    renderFocus();
+    renderLogPhaseTabs();
+  }
+
+  function updateStep(stepId: string, updater: (step: WorkflowStep) => WorkflowStep): void {
+    const next = workflowSteps.map((step) => (step.id === stepId ? updater(cloneStep(step)) : cloneStep(step)));
+    replaceWorkflow(next, true);
+  }
+
+  function syncWorkflowEditor(): void {
+    workflowEditor.value = JSON.stringify(workflowSteps, null, 2);
+  }
+
+  function renderResumeOptions(): void {
+    const enabled = workflowSteps.filter((step) => step.enabled);
+    resumeStep.innerHTML = enabled
+      .map((step) => `<option value="${escapeHtml(step.id)}">${escapeHtml(step.title || step.id)}</option>`)
+      .join("");
+    if (enabled.length > 0 && !enabled.some((step) => step.id === resumeStep.value)) {
+      resumeStep.value = enabled[0].id;
     }
   }
 
-  function describeEvent(data: Record<string, unknown>): string {
-    const t = String(data.type ?? "event");
-    const name = data.name ?? data.phase ?? "";
-    const attempt = data.attempt;
-    const error = data.error;
-    if (t === "run_started") {
-      const startAt = data.start_at ? ` from ${data.start_at}` : "";
-      return `▶ run started (${data.dry_run ? "dry-run" : "live"}${startAt})`;
-    }
-    if (t === "run_complete") return "✔ run complete";
-    if (t === "run_error") return `✖ ${error ?? "run failed"}`;
-    if (t === "phase_start") return `→ ${name}${attempt ? ` (retry ${attempt})` : ""}`;
-    if (t === "phase_done") return `✔ ${name}`;
-    if (t === "phase_retry") return `↻ ${name} retry ${attempt ?? "?"}`;
-    if (t === "phase_error") return `✖ ${name}: ${error ?? "error"}`;
-    if (t === "gate_opened") return `⏸ gate: ${data.gate ?? ""}`;
-    if (t === "gate_decided") return `${data.decision === "approved" ? "✔" : "✖"} gate: ${data.gate ?? ""}`;
-    return data.message ? String(data.message) : t;
+  function renderInstructionScopeOptions(): void {
+    const phases = workflowSteps.filter((step) => step.type === "phase");
+    const currentValue = instructionScope.value;
+    instructionScope.innerHTML = [
+      `<option value="">All phases</option>`,
+      ...phases.map((step) => `<option value="${escapeHtml(step.id)}">${escapeHtml(step.title || step.id)}</option>`),
+    ].join("");
+    instructionScope.value = phases.some((step) => step.id === currentValue) ? currentValue : "";
   }
 
-  function updatePhase(phase: string): void {
-    phaseName.textContent = phase.charAt(0).toUpperCase() + phase.slice(1);
-    const idx = PIPELINE_PHASES.indexOf(phase);
-    phaseDot.style.background = idx >= 0 ? "#4fc3f7" : "#555";
-    for (let i = 0; i < phaseSteps.length; i++) {
-      const step = phaseSteps[i] as HTMLDivElement;
-      step.style.background = i <= idx ? "#4fc3f7" : "#333";
+  function renderRunStrip(): void {
+    runStrip.innerHTML = "";
+    if (workflowSteps.length === 0) {
+      runStrip.innerHTML = `<div style="color: #8c8c8c; font-size: 13px;">Workflow not loaded yet.</div>`;
+      return;
     }
+
+    for (const step of workflowSteps) {
+      const state = getStepState(step.id, step.enabled);
+      const palette = statePalette(state);
+      const card = document.createElement("button");
+      card.type = "button";
+      card.style.cssText = `
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid ${palette.border};
+        background: ${palette.background};
+        color: ${palette.text};
+        text-align: left;
+        cursor: pointer;
+      `;
+      card.innerHTML = `
+        <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 12px; color: ${palette.muted}; text-transform: uppercase; letter-spacing: 0.08em;">${escapeHtml(step.type)}</span>
+          <span style="width: 10px; height: 10px; border-radius: 999px; background: ${palette.dot};"></span>
+        </div>
+        <div style="font-size: 13px; font-weight: 600;">${escapeHtml(step.title || step.id)}</div>
+        <div style="font-size: 12px; color: ${palette.muted}; margin-top: 6px;">${escapeHtml(step.id)}</div>
+      `;
+      card.addEventListener("click", () => {
+        selectedWorkflowStepId = step.id;
+        if (step.type === "phase") {
+          selectedLogPhase = step.id;
+          void refreshSelectedPhaseLog();
+        }
+        renderWorkflowBoard();
+        renderWorkflowInspector();
+        renderRunStrip();
+        renderLogPhaseTabs();
+      });
+      runStrip.appendChild(card);
+    }
+  }
+
+  function renderWorkflowBoard(): void {
+    workflowBoard.innerHTML = "";
+    if (workflowSteps.length === 0) {
+      workflowBoard.innerHTML = `<div style="color: #8c8c8c; font-size: 13px;">Workflow not loaded yet.</div>`;
+      return;
+    }
+
+    for (const step of workflowSteps) {
+      const state = getStepState(step.id, step.enabled);
+      const palette = statePalette(state);
+      const card = document.createElement("div");
+      card.draggable = true;
+      card.style.cssText = `
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid ${selectedWorkflowStepId === step.id ? "#8fd3ff" : palette.border};
+        background: ${selectedWorkflowStepId === step.id ? "#111d2f" : palette.background};
+        cursor: grab;
+      `;
+      card.innerHTML = `
+        <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;">
+          <div style="display: grid; gap: 6px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+              <span style="padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,0.05); color: ${palette.text}; font-size: 11px; text-transform: uppercase;">${escapeHtml(step.type)}</span>
+              <span style="padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,0.05); color: ${palette.muted}; font-size: 11px;">${escapeHtml(step.handler)}</span>
+              <span style="padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,0.05); color: ${palette.muted}; font-size: 11px;">${escapeHtml(state)}</span>
+            </div>
+            <div style="font-size: 15px; font-weight: 600; color: #f2f2f2;">${escapeHtml(step.title || step.id)}</div>
+            <div style="font-size: 12px; color: #8c8c8c;">${escapeHtml(step.id)}</div>
+            <div style="font-size: 12px; color: #bcbcbc; line-height: 1.5;">${escapeHtml(step.description || summarizeStepConfig(step))}</div>
+          </div>
+          <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #d5d5d5;">
+            <input type="checkbox" ${step.enabled ? "checked" : ""} data-action="toggle-enabled" data-step-id="${escapeHtml(step.id)}" />
+            Enabled
+          </label>
+        </div>
+      `;
+
+      card.addEventListener("click", (event: MouseEvent) => {
+        const target = event.target as HTMLElement;
+        if (target.closest('input[data-action="toggle-enabled"]')) {
+          return;
+        }
+        selectedWorkflowStepId = step.id;
+        if (step.type === "phase") {
+          selectedLogPhase = step.id;
+        }
+        renderWorkflowBoard();
+        renderWorkflowInspector();
+        renderRunStrip();
+        renderLogPhaseTabs();
+        void refreshSelectedPhaseLog();
+      });
+
+      card.addEventListener("dragstart", (event: DragEvent) => {
+        event.dataTransfer?.setData("text/plain", step.id);
+      });
+      card.addEventListener("dragover", (event: DragEvent) => {
+        event.preventDefault();
+      });
+      card.addEventListener("drop", (event: DragEvent) => {
+        event.preventDefault();
+        const sourceId = event.dataTransfer?.getData("text/plain");
+        if (!sourceId || sourceId === step.id) {
+          return;
+        }
+        const next = reorderSteps(workflowSteps, sourceId, step.id);
+        replaceWorkflow(next, true);
+      });
+
+      workflowBoard.appendChild(card);
+    }
+
+    for (const input of workflowBoard.querySelectorAll('input[data-action="toggle-enabled"]')) {
+      input.addEventListener("change", (event) => {
+        const target = event.currentTarget as HTMLInputElement;
+        const stepId = target.dataset.stepId ?? "";
+        updateStep(stepId, (step) => ({ ...step, enabled: target.checked }));
+      });
+    }
+  }
+
+  function renderWorkflowInspector(): void {
+    const step = workflowSteps.find((item) => item.id === selectedWorkflowStepId);
+    if (!step) {
+      workflowInspector.innerHTML = `<div style="color: #8c8c8c; font-size: 13px;">Select a workflow step.</div>`;
+      return;
+    }
+
+    workflowInspector.innerHTML = `
+      <div style="display: grid; gap: 12px;">
+        <div>
+          <div style="font-size: 15px; font-weight: 600; color: #f2f2f2;">${escapeHtml(step.title || step.id)}</div>
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">${escapeHtml(step.id)} | ${escapeHtml(step.type)} | ${escapeHtml(step.handler)}</div>
+        </div>
+        <div>
+          <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Title</label>
+          <input id="inspector-title" value="${escapeHtml(step.title || "")}" style="${inputStyle()}" />
+        </div>
+        <div>
+          <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Description</label>
+          <textarea id="inspector-description" rows="4" style="${textAreaStyle()}">${escapeHtml(step.description || "")}</textarea>
+        </div>
+        <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #d5d5d5;">
+          <input id="inspector-enabled" type="checkbox" ${step.enabled ? "checked" : ""} />
+          Step enabled
+        </label>
+        <div>
+          <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Config JSON</label>
+          <textarea id="inspector-config" rows="8" style="${textAreaStyle("12px", "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace")}">${escapeHtml(JSON.stringify(step.config ?? {}, null, 2))}</textarea>
+        </div>
+        <div id="inspector-config-status" style="font-size: 12px; color: #8c8c8c;"></div>
+      </div>
+    `;
+
+    const titleInput = workflowInspector.querySelector("#inspector-title") as HTMLInputElement;
+    const descriptionInput = workflowInspector.querySelector("#inspector-description") as HTMLTextAreaElement;
+    const enabledInput = workflowInspector.querySelector("#inspector-enabled") as HTMLInputElement;
+    const configInput = workflowInspector.querySelector("#inspector-config") as HTMLTextAreaElement;
+    const configStatus = workflowInspector.querySelector("#inspector-config-status") as HTMLDivElement;
+
+    titleInput.addEventListener("input", () => {
+      updateStep(step.id, (current) => ({ ...current, title: titleInput.value }));
+    });
+    descriptionInput.addEventListener("input", () => {
+      updateStep(step.id, (current) => ({ ...current, description: descriptionInput.value }));
+    });
+    enabledInput.addEventListener("change", () => {
+      updateStep(step.id, (current) => ({ ...current, enabled: enabledInput.checked }));
+    });
+    configInput.addEventListener("input", () => {
+      try {
+        const parsed = JSON.parse(configInput.value) as JsonRecord;
+        configStatus.textContent = "Config valid";
+        configStatus.style.color = "#7de5b1";
+        updateStep(step.id, (current) => ({ ...current, config: parsed }));
+      } catch (err: unknown) {
+        configStatus.textContent = err instanceof Error ? err.message : "Invalid JSON";
+        configStatus.style.color = "#ff7a7a";
+      }
+    });
+  }
+
+  function renderPersonas(): void {
+    personaList.innerHTML = "";
+    const personas = getPersonas();
+    if (personas.length === 0) {
+      personaList.innerHTML = `<div style="padding: 14px; border: 1px dashed #2d2d2d; border-radius: 8px; color: #8c8c8c; font-size: 13px;">No personas yet. Build the team or add one manually.</div>`;
+      return;
+    }
+
+    personas
+      .slice()
+      .sort((a, b) => a.turn_order - b.turn_order)
+      .forEach((persona, index) => {
+        const card = document.createElement("div");
+        card.style.cssText = "padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px; display: grid; gap: 10px;";
+        card.innerHTML = `
+          <div style="display: flex; justify-content: space-between; gap: 10px; align-items: center;">
+            <div style="font-size: 15px; font-weight: 600; color: #f2f2f2;">Persona ${index + 1}</div>
+            <button type="button" data-remove-index="${index}" style="${miniButtonStyle("#4d2020", "#ffffff")}">Remove</button>
+          </div>
+          <div>
+            <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Name</label>
+            <input data-field="name" data-index="${index}" value="${escapeHtml(persona.name)}" style="${inputStyle()}" />
+          </div>
+          <div>
+            <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Perspective</label>
+            <textarea data-field="perspective" data-index="${index}" rows="3" style="${textAreaStyle()}">${escapeHtml(persona.perspective)}</textarea>
+          </div>
+          <div>
+            <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Mandate</label>
+            <textarea data-field="mandate" data-index="${index}" rows="4" style="${textAreaStyle()}">${escapeHtml(persona.mandate)}</textarea>
+          </div>
+          <div style="display: grid; grid-template-columns: minmax(0, 120px) minmax(0, 1fr); gap: 10px;">
+            <div>
+              <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Turn Order</label>
+              <input data-field="turn_order" data-index="${index}" type="number" min="1" value="${String(persona.turn_order)}" style="${inputStyle()}" />
+            </div>
+            <div>
+              <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Veto Scope</label>
+              <input data-field="veto_scope" data-index="${index}" value="${escapeHtml(persona.veto_scope)}" style="${inputStyle()}" />
+            </div>
+          </div>
+        `;
+        personaList.appendChild(card);
+      });
+
+    for (const field of personaList.querySelectorAll("[data-field]")) {
+      field.addEventListener("input", (event) => {
+        const target = event.currentTarget as HTMLInputElement | HTMLTextAreaElement;
+        const index = Number(target.dataset.index ?? "-1");
+        const key = target.dataset.field as keyof Persona;
+        const personas = getPersonas();
+        if (!personas[index]) {
+          return;
+        }
+        const nextValue: string | number = key === "turn_order" ? Number(target.value || "0") : target.value;
+        const nextPersonas = personas.map((item, itemIndex) => (
+          itemIndex === index ? { ...item, [key]: nextValue } : { ...item }
+        ));
+        setPersonas(nextPersonas);
+      });
+    }
+
+    for (const button of personaList.querySelectorAll("[data-remove-index]")) {
+      button.addEventListener("click", (event) => {
+        const target = event.currentTarget as HTMLButtonElement;
+        const index = Number(target.dataset.removeIndex ?? "-1");
+        const next = getPersonas().filter((_, itemIndex) => itemIndex !== index);
+        setPersonas(next);
+      });
+    }
+  }
+
+  function renderMemory(): void {
+    const available = memoryState?.available ?? false;
+    const initialized = memoryState?.initialized ?? false;
+    const badgeText = !available ? "MemPalace required" : initialized ? "Palace ready" : "Needs sync";
+    const badgeColors = !available
+      ? { background: "#2a1216", border: "#5d232c", color: "#ffd0d7" }
+      : initialized
+        ? { background: "#132018", border: "#244734", color: "#c8f0da" }
+        : { background: "#22180f", border: "#5d4520", color: "#ffe0b0" };
+
+    memoryStatusBadge.textContent = badgeText;
+    memoryStatusBadge.style.background = badgeColors.background;
+    memoryStatusBadge.style.borderColor = badgeColors.border;
+    memoryStatusBadge.style.color = badgeColors.color;
+
+    memoryMeta.innerHTML = [
+      quickStateTile("Wing", memoryState?.wing || projectId),
+      quickStateTile("Init", initialized ? "ready" : "not yet"),
+      quickStateTile("Command", memoryState?.command || "not found"),
+      quickStateTile("Search cache", memoryState?.last_search ? "present" : "empty"),
+    ].join("");
+
+    const visible = memoryState?.wake_up || memoryState?.output || memoryState?.cached_wakeup || memoryState?.cached_status || "No palace output yet.";
+    memoryOutput.textContent = visible;
+  }
+
+  async function loadMemoryStatus(): Promise<void> {
+    try {
+      memoryState = await apiGet<MemoryResponse>(`/api/projects/${projectId}/memory/status`);
+    } catch (err: unknown) {
+      memoryState = {
+        project_id: projectId,
+        available: false,
+        command: null,
+        initialized: false,
+        wing: projectId,
+        cached_wakeup: "",
+        cached_status: err instanceof Error ? err.message : "Failed to load memory status.",
+        last_search: "",
+        metadata: {},
+      };
+    }
+    renderMemory();
+  }
+
+  function renderEventTimeline(): void {
+    eventLog.innerHTML = "";
+    if (eventHistory.length === 0) {
+      eventLog.innerHTML = `<div style="padding: 14px; border: 1px dashed #2d2d2d; border-radius: 8px; color: #8c8c8c; font-size: 13px;">Connecting to event stream...</div>`;
+      return;
+    }
+
+    eventHistory.forEach((entry, index) => {
+      const type = String(entry.type ?? "event");
+      const phase = String(entry.name ?? entry.phase ?? entry.gate ?? "");
+      const active = index === selectedEventIndex;
+      const palette = eventPalette(type);
+      const row = document.createElement("button");
+      row.type = "button";
+      row.style.cssText = `
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid ${active ? "#8fd3ff" : palette.border};
+        background: ${active ? "#111d2f" : palette.background};
+        color: #f3f3f3;
+        text-align: left;
+        cursor: pointer;
+      `;
+      row.innerHTML = `
+        <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center;">
+          <div style="display: flex; gap: 8px; align-items: center; min-width: 0;">
+            <span style="width: 8px; height: 8px; border-radius: 999px; background: ${palette.dot}; flex: 0 0 auto;"></span>
+            <span style="font-size: 13px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(describeEvent(entry))}</span>
+          </div>
+          <span style="font-size: 11px; color: #8c8c8c; flex: 0 0 auto;">${escapeHtml(readableTime(entry.ts))}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; margin-top: 6px;">
+          <span style="font-size: 11px; color: ${palette.dot}; text-transform: uppercase;">${escapeHtml(type)}</span>
+          <span style="font-size: 11px; color: #8c8c8c;">${escapeHtml(phase || "run")}</span>
+        </div>
+      `;
+      row.addEventListener("click", () => {
+        selectedEventIndex = index;
+        followLiveDetail = false;
+        renderEventTimeline();
+        renderEventDetail();
+      });
+      eventLog.appendChild(row);
+    });
+  }
+
+  function renderEventDetail(): void {
+    const entry = eventHistory[selectedEventIndex];
+    if (!entry) {
+      eventDetail.innerHTML = `<div style="color: #8c8c8c; font-size: 13px;">No event selected.</div>`;
+      return;
+    }
+
+    const type = String(entry.type ?? "event");
+    const phase = String(entry.name ?? entry.phase ?? entry.gate ?? "run");
+    eventDetail.innerHTML = `
+      <div style="display: grid; gap: 12px;">
+        <div>
+          <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center;">
+            <div style="font-size: 16px; font-weight: 600; color: #f2f2f2;">${escapeHtml(describeEvent(entry))}</div>
+            <div style="font-size: 12px; color: #8c8c8c;">${escapeHtml(readableTime(entry.ts))}</div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+            <span style="padding: 4px 8px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${escapeHtml(type)}</span>
+            <span style="padding: 4px 8px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${escapeHtml(phase)}</span>
+            <span style="padding: 4px 8px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${followLiveDetail ? "Following live" : "Pinned"}</span>
+          </div>
+        </div>
+        <div style="font-size: 13px; color: #b8b8b8; line-height: 1.6;">${escapeHtml(eventNarrative(entry))}</div>
+        <pre style="margin: 0; padding: 12px; background: #070707; border: 1px solid #1d1d1d; border-radius: 8px; color: #d8d8d8; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;">${escapeHtml(JSON.stringify(entry, null, 2))}</pre>
+      </div>
+    `;
+  }
+
+  function renderLogPhaseTabs(): void {
+    logPhaseTabs.innerHTML = "";
+    const phases = phaseSummaries.length > 0
+      ? phaseSummaries
+      : workflowSteps.filter((step) => step.type === "phase").map((step) => ({
+          phase: step.id,
+          exists: false,
+          count: 0,
+          entries: [],
+          last_event: null,
+        }));
+
+    for (const phase of phases) {
+      const active = phase.phase === selectedLogPhase;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.style.cssText = active
+        ? miniButtonStyle("#173c66", "#ffffff")
+        : miniButtonStyle("#181818", "#d8d8d8", "#292929");
+      button.textContent = `${phase.phase} (${phase.count})`;
+      button.addEventListener("click", () => {
+        selectedLogPhase = phase.phase;
+        renderLogPhaseTabs();
+        void refreshSelectedPhaseLog();
+      });
+      logPhaseTabs.appendChild(button);
+    }
+  }
+
+  function renderSelectedPhaseLog(): void {
+    if (!selectedLogPhase) {
+      phaseLogDetail.textContent = "No phase selected.";
+      return;
+    }
+    if (selectedPhaseLogEntries.length === 0) {
+      phaseLogDetail.textContent = `No log entries yet for ${selectedLogPhase}.`;
+      return;
+    }
+    const rendered = selectedPhaseLogEntries.map((entry) => formatLogEntry(entry)).join("\n\n");
+    phaseLogDetail.textContent = rendered;
+  }
+
+  function renderFocus(): void {
+    const current = currentStepId ? workflowSteps.find((step) => step.id === currentStepId) : undefined;
+    const currentTitle = current?.title || current?.id || "Waiting for run state";
+    const currentState = current ? getStepState(current.id, current.enabled) : "idle";
+    const nextStep = current
+      ? getNextEnabledStep(current.id)
+      : workflowSteps.find((step) => step.enabled);
+
+    focusStep.textContent = currentTitle;
+    focusDetail.textContent = currentSignalDetail || summarizeStepConfig(current || null);
+    focusNext.textContent = nextStep?.title || nextStep?.id || "-";
+    focusNextDetail.textContent = nextStep ? `Ready at ${nextStep.id}` : "No enabled follow-up step.";
+    latestSignal.textContent = currentSignal || "Waiting for live signal";
+    latestSignalDetail.textContent = currentSignalDetail || "The event stream will fill this in.";
+    tokS.textContent = currentTokS;
+    vram.textContent = currentVram;
+    focusPanelTitle.textContent = currentTitle;
+    focusPanelBody.textContent = currentSignalDetail || "The selected run will stream details here.";
+
+    focusPanelGrid.innerHTML = [
+      quickStateTile("State", currentState),
+      quickStateTile("Resume target", resumeStep.value || "-"),
+      quickStateTile("Log phase", selectedLogPhase || "-"),
+      quickStateTile("Timeline events", String(eventHistory.length)),
+    ].join("");
   }
 
   async function apiGet<T>(url: string): Promise<T> {
     const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`API ${resp.status}: ${resp.statusText}`);
+    if (!resp.ok) {
+      throw new Error(`API ${resp.status}: ${resp.statusText}`);
+    }
     return resp.json() as Promise<T>;
   }
 
@@ -234,56 +931,62 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!resp.ok) throw new Error(`API ${resp.status}: ${resp.statusText}`);
+    if (!resp.ok) {
+      throw new Error(`API ${resp.status}: ${resp.statusText}`);
+    }
     return resp.json() as Promise<T>;
   }
 
-  function renderResumeOptions(steps: WorkflowStep[]): void {
-    const enabled = steps.filter((step) => step.enabled);
-    resumeStep.innerHTML = enabled
-      .map((step) => `<option value="${escapeHtml(step.id)}">${escapeHtml(step.id)}</option>`)
-      .join("");
-  }
-
   async function loadWorkflow(): Promise<void> {
-    try {
-      const response = await apiGet<WorkflowResponse>(`/api/projects/${projectId}/control/workflow`);
-      workflowSteps = response.steps;
-      workflowEditor.value = JSON.stringify(response.steps, null, 2);
-      renderResumeOptions(response.steps);
-    } catch (err: unknown) {
-      workflowEditor.value = err instanceof Error ? err.message : "Failed to load workflow";
-    }
+    const response = await apiGet<WorkflowResponse>(`/api/projects/${projectId}/control/workflow`);
+    replaceWorkflow(response.steps, false);
   }
 
   async function refreshLogs(): Promise<void> {
     try {
-      const data = await apiGet<LogResponse>(`/api/projects/${projectId}/logs?limit=6`);
-      phaseLogs.innerHTML = "";
-      for (const phase of data.phases) {
-        const block = document.createElement("section");
-        block.style.cssText = "padding: 10px; background: #0b0b0b; border: 1px solid #242424; border-radius: 6px;";
-        const entries = phase.entries.length === 0
-          ? `<div style="color: #666; font-size: 12px;">No entries yet</div>`
-          : phase.entries.map((entry) => {
-            const level = typeof entry.level === "string" ? entry.level : "INFO";
-            const message = typeof entry.message === "string" ? entry.message : (typeof entry.event === "string" ? entry.event : "event");
-            const ts = typeof entry.ts === "string" ? new Date(entry.ts).toLocaleTimeString() : "now";
-            const color = level === "ERROR" ? "#e74c3c" : level === "WARNING" ? "#f39c12" : "#cfcfcf";
-            return `<div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: ${color}; line-height: 1.5;">[${escapeHtml(ts)}] ${escapeHtml(message)}</div>`;
-          }).join("");
-
-        block.innerHTML = `
-          <div style="display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px;">
-            <strong style="font-size: 13px;">${escapeHtml(phase.phase)}</strong>
-            <span style="font-size: 12px; color: #888;">${phase.count} events</span>
-          </div>
-          ${entries}
-        `;
-        phaseLogs.appendChild(block);
+      const data = await apiGet<LogResponse>(`/api/projects/${projectId}/logs?limit=12`);
+      phaseSummaries = data.phases;
+      applyLogStateHints();
+      renderLogPhaseTabs();
+      if (!selectedLogPhase || !phaseSummaries.some((phase) => phase.phase === selectedLogPhase)) {
+        selectedLogPhase = phaseSummaries[0]?.phase || selectedLogPhase;
       }
+      await refreshSelectedPhaseLog(false);
+      renderFocus();
     } catch (err: unknown) {
-      phaseLogs.innerHTML = `<div style="color: #e74c3c; font-size: 13px;">${escapeHtml(err instanceof Error ? err.message : "Failed to load logs")}</div>`;
+      phaseLogDetail.textContent = err instanceof Error ? err.message : "Failed to load logs.";
+    }
+  }
+
+  async function refreshSelectedPhaseLog(showErrors = true): Promise<void> {
+    if (!selectedLogPhase) {
+      renderSelectedPhaseLog();
+      return;
+    }
+    try {
+      const response = await apiGet<PhaseLogResponse>(`/api/projects/${projectId}/logs/${selectedLogPhase}?limit=160`);
+      selectedPhaseLogEntries = response.entries;
+      renderSelectedPhaseLog();
+    } catch (err: unknown) {
+      if (showErrors) {
+        phaseLogDetail.textContent = err instanceof Error ? err.message : "Failed to load phase log.";
+      }
+    }
+  }
+
+  async function loadEventHistory(): Promise<void> {
+    try {
+      const response = await apiGet<EventListResponse>(`/api/projects/${projectId}/events?limit=240`);
+      eventHistory = response.events;
+      if (followLiveDetail || selectedEventIndex < 0) {
+        selectedEventIndex = eventHistory.length - 1;
+      }
+      renderEventTimeline();
+      renderEventDetail();
+    } catch (err: unknown) {
+      if (eventHistory.length === 0) {
+        eventDetail.innerHTML = `<div style="color: #8c8c8c; font-size: 13px;">${escapeHtml(err instanceof Error ? err.message : "Failed to load event history.")}</div>`;
+      }
     }
   }
 
@@ -292,36 +995,130 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     evtSource = new EventSource(`/api/projects/${projectId}/stream`);
 
     evtSource.onmessage = (event: MessageEvent): void => {
-      if (event.data.startsWith(":")) return;
-
-      let data: Record<string, unknown>;
-      try {
-        data = JSON.parse(event.data);
-      } catch {
-        appendEvent("parse-error", "Failed to parse event stream payload");
+      if (event.data.startsWith(":")) {
         return;
       }
 
-      const eventType = (data.type as string) || "unknown";
-      const phase = (data.name as string) || (data.phase as string) || "";
-      appendEvent(eventType, describeEvent(data));
+      let data: JsonRecord;
+      try {
+        data = JSON.parse(event.data) as JsonRecord;
+      } catch {
+        currentSignal = "Malformed stream event";
+        currentSignalDetail = "A payload could not be parsed.";
+        renderFocus();
+        return;
+      }
 
-      if (phase && PIPELINE_PHASES.includes(phase)) {
-        updatePhase(phase);
+      eventHistory.push(data);
+      if (eventHistory.length > 240) {
+        eventHistory = eventHistory.slice(-240);
       }
-      if (data.tok_s !== undefined) {
-        tokS.textContent = typeof data.tok_s === "number" ? `${data.tok_s.toFixed(1)}` : String(data.tok_s);
+      if (followLiveDetail || selectedEventIndex < 0) {
+        selectedEventIndex = eventHistory.length - 1;
       }
-      if (data.vram !== undefined) {
-        vram.textContent = typeof data.vram === "number" ? `${data.vram.toFixed(0)} MB` : String(data.vram);
-      }
+
+      applyStreamEvent(data);
+      renderEventTimeline();
+      renderEventDetail();
+      renderRunStrip();
+      renderWorkflowBoard();
+      renderFocus();
     };
 
     evtSource.onerror = (): void => {
-      appendEvent("error", "Connection lost. Reconnecting...");
+      currentSignal = "Stream disconnected";
+      currentSignalDetail = "Reconnecting in 3 seconds.";
+      renderFocus();
       evtSource?.close();
       window.setTimeout(connectStream, 3000);
     };
+  }
+
+  function applyStreamEvent(entry: JsonRecord): void {
+    const type = String(entry.type ?? "event");
+    const phase = String(entry.name ?? entry.phase ?? entry.gate ?? "");
+    currentSignal = describeEvent(entry);
+    currentSignalDetail = eventNarrative(entry);
+
+    if (entry.tok_s !== undefined) {
+      currentTokS = typeof entry.tok_s === "number" ? entry.tok_s.toFixed(1) : String(entry.tok_s);
+    }
+    if (entry.vram !== undefined) {
+      currentVram = typeof entry.vram === "number" ? `${entry.vram.toFixed(0)} MB` : String(entry.vram);
+    }
+
+    if (type === "run_started") {
+      stepStatuses = {};
+      currentStepId = String(entry.start_at ?? workflowSteps.find((step) => step.enabled)?.id ?? "");
+      syncStepStateStore();
+      return;
+    }
+    if (type === "run_complete") {
+      if (currentStepId) {
+        stepStatuses[currentStepId] = "done";
+      }
+      syncStepStateStore();
+      return;
+    }
+    if (!phase) {
+      return;
+    }
+
+    if (type === "phase_start") {
+      currentStepId = phase;
+      stepStatuses[phase] = "active";
+      syncStepStateStore();
+      return;
+    }
+    if (type === "phase_done") {
+      currentStepId = phase;
+      stepStatuses[phase] = "done";
+      syncStepStateStore();
+      return;
+    }
+    if (type === "phase_retry") {
+      currentStepId = phase;
+      stepStatuses[phase] = "active";
+      syncStepStateStore();
+      return;
+    }
+    if (type === "phase_error") {
+      currentStepId = phase;
+      stepStatuses[phase] = "error";
+      syncStepStateStore();
+      return;
+    }
+    if (type === "gate_opened") {
+      currentStepId = phase;
+      stepStatuses[phase] = "waiting";
+      syncStepStateStore();
+      return;
+    }
+    if (type === "gate_decided") {
+      currentStepId = phase;
+      stepStatuses[phase] = entry.decision === "approved" ? "done" : "error";
+      syncStepStateStore();
+      return;
+    }
+    if (type === "checkpoint") {
+      currentStepId = phase;
+      stepStatuses[phase] = "done";
+      syncStepStateStore();
+    }
+  }
+
+  function applyLogStateHints(): void {
+    for (const phase of phaseSummaries) {
+      if (stepStatuses[phase.phase] === "active" || stepStatuses[phase.phase] === "waiting" || stepStatuses[phase.phase] === "error") {
+        continue;
+      }
+      if (phase.count === 0) {
+        continue;
+      }
+      const level = String(phase.last_event?.level ?? "");
+      stepStatuses[phase.phase] = level === "ERROR" ? "error" : "done";
+    }
+    syncStepStateStore();
   }
 
   btnInject.addEventListener("click", async () => {
@@ -333,11 +1130,11 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     setBusy(btnInject, true, "Injecting...");
     try {
       await apiPost(`/api/projects/${projectId}/control/instructions`, {
-        phase: null,
+        phase: instructionScope.value || null,
         instruction,
       });
       instructionInput.value = "";
-      setStatus("Instruction queued for upcoming model calls.");
+      setStatus("Instruction queued.");
       await refreshLogs();
     } catch (err: unknown) {
       setStatus(err instanceof Error ? err.message : "Inject failed", true);
@@ -368,10 +1165,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
         compact_context: compactCheckbox.checked,
         max_chars: 18000,
       };
-      const result = await apiPost<{ started: boolean; start_at: string }>(
-        `/api/projects/${projectId}/control/resume`,
-        payload,
-      );
+      const result = await apiPost<{ started: boolean; start_at: string }>(`/api/projects/${projectId}/control/resume`, payload);
       instructionInput.value = "";
       setStatus(result.started ? `Run resumed from ${result.start_at}.` : "A run is already active.");
       await refreshLogs();
@@ -380,6 +1174,31 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     } finally {
       setBusy(btnResume, false, "Resume");
     }
+  });
+
+  btnBuildTeam.addEventListener("click", async () => {
+    setBusy(btnBuildTeam, true, "Building...");
+    try {
+      const response = await apiPost<PersonaSynthesisResponse>(`/api/projects/${projectId}/control/personas/synthesize`, {});
+      replaceWorkflow(response.steps, false);
+      setStatus(`Built ${response.personas.length} personas.`);
+      await refreshLogs();
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : "Team synthesis failed", true);
+    } finally {
+      setBusy(btnBuildTeam, false, "Build Team");
+    }
+  });
+
+  btnAddCheckpoint.addEventListener("click", () => {
+    const checkpoint = createCheckpointStep(workflowSteps);
+    const deploymentIndex = workflowSteps.findIndex((step) => step.id === "deployment");
+    const next = workflowSteps.map(cloneStep);
+    const insertAt = deploymentIndex >= 0 ? deploymentIndex : next.length;
+    next.splice(insertAt, 0, checkpoint);
+    selectedWorkflowStepId = checkpoint.id;
+    replaceWorkflow(next, true);
+    setStatus("Checkpoint added locally. Save to persist.");
   });
 
   btnReloadWorkflow.addEventListener("click", async () => {
@@ -394,45 +1213,132 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     }
   });
 
-  btnBuildTeam.addEventListener("click", async () => {
-    setBusy(btnBuildTeam, true, "Building...");
-    try {
-      const response = await apiPost<PersonaSynthesisResponse>(
-        `/api/projects/${projectId}/control/personas/synthesize`,
-        {},
-      );
-      workflowSteps = response.steps;
-      workflowEditor.value = JSON.stringify(response.steps, null, 2);
-      renderResumeOptions(response.steps);
-      setStatus(`Founding team built with ${response.personas.length} personas.`);
-    } catch (err: unknown) {
-      setStatus(err instanceof Error ? err.message : "Team synthesis failed", true);
-    } finally {
-      setBusy(btnBuildTeam, false, "Build Team");
-    }
-  });
+  async function saveWorkflowFromState(): Promise<void> {
+    const response = await apiPut<WorkflowResponse>(`/api/projects/${projectId}/control/workflow`, { steps: workflowSteps });
+    replaceWorkflow(response.steps, false);
+  }
 
   btnSaveWorkflow.addEventListener("click", async () => {
     setBusy(btnSaveWorkflow, true, "Saving...");
     try {
-      const steps = JSON.parse(workflowEditor.value) as WorkflowStep[];
-      const response = await apiPut<WorkflowResponse>(`/api/projects/${projectId}/control/workflow`, { steps });
-      workflowSteps = response.steps;
-      workflowEditor.value = JSON.stringify(response.steps, null, 2);
-      renderResumeOptions(response.steps);
+      await saveWorkflowFromState();
       setStatus("Workflow updated.");
+      await refreshLogs();
     } catch (err: unknown) {
       setStatus(err instanceof Error ? err.message : "Workflow save failed", true);
     } finally {
-      setBusy(btnSaveWorkflow, false, "Save");
+      setBusy(btnSaveWorkflow, false, "Save Workflow");
+    }
+  });
+
+  btnSaveTeam.addEventListener("click", async () => {
+    setBusy(btnSaveTeam, true, "Saving...");
+    try {
+      await saveWorkflowFromState();
+      setStatus("Founding team saved.");
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : "Team save failed", true);
+    } finally {
+      setBusy(btnSaveTeam, false, "Save Team");
+    }
+  });
+
+  btnAddPersona.addEventListener("click", () => {
+    const next = [...getPersonas(), {
+      name: "New Persona",
+      perspective: "State the perspective this role brings to the forum.",
+      mandate: "Define what this role protects or pushes for.",
+      turn_order: getPersonas().length + 1,
+      veto_scope: "critical product or quality concerns",
+    }];
+    setPersonas(next);
+    setStatus("Persona added locally. Save to persist.");
+  });
+
+  btnMemorySync.addEventListener("click", async () => {
+    setBusy(btnMemorySync, true, "Syncing...");
+    try {
+      memoryState = await apiPost<MemoryResponse>(`/api/projects/${projectId}/memory/sync`, {});
+      renderMemory();
+      setStatus("Palace memory synced.");
+      await refreshLogs();
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : "Memory sync failed", true);
+    } finally {
+      setBusy(btnMemorySync, false, "Sync Palace");
+    }
+  });
+
+  btnMemoryWakeup.addEventListener("click", async () => {
+    setBusy(btnMemoryWakeup, true, "Refreshing...");
+    try {
+      memoryState = await apiPost<MemoryResponse>(`/api/projects/${projectId}/memory/wake-up`, {});
+      renderMemory();
+      setStatus("Wake-up packet refreshed.");
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : "Wake-up refresh failed", true);
+    } finally {
+      setBusy(btnMemoryWakeup, false, "Refresh Wake-Up");
+    }
+  });
+
+  btnMemorySearch.addEventListener("click", async () => {
+    const query = memoryQuery.value.trim();
+    if (!query) {
+      setStatus("Enter a memory query first.", true);
+      return;
+    }
+    setBusy(btnMemorySearch, true, "Searching...");
+    try {
+      memoryState = await apiPost<MemoryResponse>(`/api/projects/${projectId}/memory/search`, {
+        query,
+        room: memoryRoom.value.trim() || null,
+        results: 5,
+      });
+      renderMemory();
+      setStatus("Palace search complete.");
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : "Memory search failed", true);
+    } finally {
+      setBusy(btnMemorySearch, false, "Search Palace");
+    }
+  });
+
+  btnFollowLive.addEventListener("click", () => {
+    followLiveDetail = true;
+    selectedEventIndex = eventHistory.length - 1;
+    renderEventTimeline();
+    renderEventDetail();
+  });
+
+  workflowEditor.addEventListener("input", () => {
+    setDirty(true);
+  });
+
+  workflowEditor.addEventListener("blur", () => {
+    try {
+      const parsed = JSON.parse(workflowEditor.value) as WorkflowStep[];
+      replaceWorkflow(parsed, true);
+      setStatus("Advanced JSON applied locally.");
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : "Workflow JSON is invalid.", true);
     }
   });
 
   connectStream();
-  loadWorkflow();
-  refreshLogs();
+  void loadWorkflow()
+    .then(async () => {
+      await loadEventHistory();
+      await refreshLogs();
+      await loadMemoryStatus();
+    })
+    .catch((err: unknown) => {
+      setStatus(err instanceof Error ? err.message : "Failed to load workflow.", true);
+    });
+
   refreshTimer = window.setInterval(() => {
     void refreshLogs();
+    void loadMemoryStatus();
   }, 4000);
 
   window.addEventListener("hashchange", () => {
@@ -443,8 +1349,241 @@ export function renderProgress(container: Element, navigate: (route: string) => 
   }, { once: true });
 }
 
+function cloneStep(step: WorkflowStep): WorkflowStep {
+  return {
+    ...step,
+    config: { ...(step.config ?? {}) },
+  };
+}
+
+function reorderSteps(steps: WorkflowStep[], sourceId: string, targetId: string): WorkflowStep[] {
+  const next = steps.map(cloneStep);
+  const sourceIndex = next.findIndex((step) => step.id === sourceId);
+  const targetIndex = next.findIndex((step) => step.id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0) {
+    return next;
+  }
+  const [source] = next.splice(sourceIndex, 1);
+  next.splice(targetIndex, 0, source);
+  return next;
+}
+
+function createCheckpointStep(existing: WorkflowStep[]): WorkflowStep {
+  let index = 1;
+  while (existing.some((step) => step.id === `operator_checkpoint_${index}`)) {
+    index += 1;
+  }
+  return {
+    id: `operator_checkpoint_${index}`,
+    title: `Operator Checkpoint ${index}`,
+    type: "checkpoint",
+    handler: "operator_checkpoint",
+    enabled: true,
+    description: "Pause here for user review, instruction injection, or fast-forward decisions.",
+    config: {},
+  };
+}
+
+function quickStateTile(label: string, value: string): string {
+  return `
+    <div style="padding: 10px; background: #101010; border: 1px solid #1d1d1d; border-radius: 8px;">
+      <div style="font-size: 11px; color: #8c8c8c; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">${escapeHtml(label)}</div>
+      <div style="font-size: 13px; color: #f2f2f2; font-weight: 600;">${escapeHtml(value)}</div>
+    </div>
+  `;
+}
+
+function getStepState(stepId: string, enabled: boolean): StepRunState {
+  if (!enabled) {
+    return "disabled";
+  }
+  return (window as unknown as { __guildrStepStates?: Record<string, StepRunState> }).__guildrStepStates?.[stepId]
+    || localStepState(stepId)
+    || "idle";
+}
+
+function localStepState(stepId: string): StepRunState | null {
+  const stateStore = (window as unknown as { __guildrStepStates?: Record<string, StepRunState> }).__guildrStepStates;
+  return stateStore?.[stepId] ?? null;
+}
+
+function statePalette(state: StepRunState): { background: string; border: string; text: string; muted: string; dot: string } {
+  const palette: Record<StepRunState, { background: string; border: string; text: string; muted: string; dot: string }> = {
+    idle: { background: "#0e0e0e", border: "#242424", text: "#f0f0f0", muted: "#8c8c8c", dot: "#6a6a6a" },
+    active: { background: "#101b2d", border: "#26456d", text: "#f0f7ff", muted: "#9fc4e6", dot: "#8fd3ff" },
+    done: { background: "#0f1813", border: "#26533e", text: "#f0fff6", muted: "#96d7b4", dot: "#7de5b1" },
+    waiting: { background: "#1a1409", border: "#5d4520", text: "#fff6e8", muted: "#f0c36f", dot: "#f0c36f" },
+    error: { background: "#210f12", border: "#6d2d39", text: "#fff0f2", muted: "#ff9cab", dot: "#ff7a7a" },
+    disabled: { background: "#0a0a0a", border: "#1d1d1d", text: "#8c8c8c", muted: "#676767", dot: "#454545" },
+  };
+  return palette[state];
+}
+
+function describeEvent(data: JsonRecord): string {
+  const type = String(data.type ?? "event");
+  const name = String(data.name ?? data.phase ?? data.gate ?? "");
+  const attempt = data.attempt;
+  const error = data.error;
+  if (type === "run_started") {
+    const mode = data.dry_run ? "dry-run" : "live";
+    const startAt = data.start_at ? ` from ${String(data.start_at)}` : "";
+    return `Run started (${mode}${startAt})`;
+  }
+  if (type === "run_complete") {
+    return "Run complete";
+  }
+  if (type === "run_error") {
+    return `Run failed: ${String(error ?? "unknown error")}`;
+  }
+  if (type === "phase_start") {
+    return `Entering ${name}${attempt ? ` (retry ${String(attempt)})` : ""}`;
+  }
+  if (type === "phase_done") {
+    return `Completed ${name}`;
+  }
+  if (type === "phase_retry") {
+    return `Retrying ${name} (${String(attempt ?? "?")})`;
+  }
+  if (type === "phase_error") {
+    return `${name} failed: ${String(error ?? "error")}`;
+  }
+  if (type === "gate_opened") {
+    return `Gate opened: ${name}`;
+  }
+  if (type === "gate_decided") {
+    return `Gate ${name}: ${data.decision === "approved" ? "approved" : "rejected"}`;
+  }
+  if (type === "checkpoint") {
+    return `Checkpoint reached: ${name}`;
+  }
+  return typeof data.message === "string" ? data.message : type;
+}
+
+function eventNarrative(data: JsonRecord): string {
+  const type = String(data.type ?? "event");
+  const attempt = data.attempt ? ` Attempt ${String(data.attempt)}.` : "";
+  const error = typeof data.error === "string" ? ` ${data.error}` : "";
+  if (type === "phase_error") {
+    return `The current phase reported an error.${attempt}${error}`.trim();
+  }
+  if (type === "phase_retry") {
+    return `The framework scheduled another pass for this phase.${attempt}`.trim();
+  }
+  if (type === "gate_opened") {
+    return "A decision gate is now waiting for operator input.";
+  }
+  if (type === "gate_decided") {
+    return `The gate closed with decision '${String(data.decision ?? "unknown")}'.`;
+  }
+  if (type === "run_started") {
+    return "A new run was launched and the control room is now following it live.";
+  }
+  if (type === "run_complete") {
+    return "The enabled workflow completed without another blocking event.";
+  }
+  if (typeof data.message === "string" && data.message.trim()) {
+    return data.message.trim();
+  }
+  return describeEvent(data);
+}
+
+function formatLogEntry(entry: JsonRecord): string {
+  const timestamp = readableTime(entry.ts);
+  const level = String(entry.level ?? "INFO");
+  const message = typeof entry.message === "string"
+    ? entry.message
+    : typeof entry.event === "string"
+      ? entry.event
+      : JSON.stringify(entry);
+  const extra = Object.fromEntries(Object.entries(entry).filter(([key]) => !["ts", "level", "message", "event"].includes(key)));
+  const suffix = Object.keys(extra).length > 0 ? `\n${JSON.stringify(extra, null, 2)}` : "";
+  return `[${timestamp}] [${level}] ${message}${suffix}`;
+}
+
+function readableTime(value: unknown): string {
+  if (typeof value === "string" && value.trim()) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleTimeString();
+    }
+  }
+  return new Date().toLocaleTimeString();
+}
+
+function summarizeStepConfig(step: WorkflowStep | null): string {
+  if (!step) {
+    return "No active step yet.";
+  }
+  if (step.description && step.description.trim()) {
+    return step.description.trim();
+  }
+  const config = step.config ?? {};
+  if (step.id === "persona_forum") {
+    const personas = Array.isArray(config.personas) ? config.personas.length : 0;
+    const mode = config.auto_generate === false ? "manual persona roster" : "auto-build persona roster";
+    return `${mode}; ${personas} personas configured.`;
+  }
+  if (step.id === "guru_escalation") {
+    const providers = Array.isArray(config.providers) ? config.providers.join(", ") : "configured providers";
+    return `Escalation advisors: ${providers}.`;
+  }
+  const keys = Object.keys(config);
+  if (keys.length > 0) {
+    return `Config keys: ${keys.join(", ")}`;
+  }
+  return "No extra config yet.";
+}
+
+function getPersonasFromStep(step: WorkflowStep | undefined): Persona[] {
+  const raw = step?.config?.personas;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.map((item, index) => normalizePersona(item, index));
+}
+
+function normalizePersona(item: unknown, index: number): Persona {
+  const record = typeof item === "object" && item !== null ? item as JsonRecord : {};
+  return {
+    name: String(record.name ?? `Persona ${index + 1}`),
+    perspective: String(record.perspective ?? ""),
+    mandate: String(record.mandate ?? ""),
+    turn_order: Number(record.turn_order ?? index + 1) || index + 1,
+    veto_scope: String(record.veto_scope ?? ""),
+  };
+}
+
 function escapeHtml(text: string): string {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+function actionButton(background: string, color: string, bold = false): string {
+  return `padding: 10px 12px; background: ${background}; color: ${color}; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;${bold ? " font-weight: 600;" : ""}`;
+}
+
+function miniButtonStyle(background: string, color: string, border = "transparent"): string {
+  return `padding: 7px 10px; background: ${background}; color: ${color}; border: 1px solid ${border}; border-radius: 6px; cursor: pointer; font-size: 12px;`;
+}
+
+function inputStyle(): string {
+  return "width: 100%; padding: 10px; box-sizing: border-box; background: #090909; color: #f1f1f1; border: 1px solid #2d2d2d; border-radius: 6px;";
+}
+
+function textAreaStyle(fontSize = "13px", fontFamily = "inherit"): string {
+  return `width: 100%; padding: 10px; box-sizing: border-box; background: #090909; color: #f1f1f1; border: 1px solid #2d2d2d; border-radius: 6px; resize: vertical; font-size: ${fontSize}; font-family: ${fontFamily}; line-height: 1.5;`;
+}
+
+function eventPalette(type: string): { background: string; border: string; dot: string } {
+  if (type.includes("error") || type.includes("fail")) {
+    return { background: "#170d10", border: "#4f2330", dot: "#ff7a7a" };
+  }
+  if (type.includes("done") || type.includes("complete") || type.includes("approved")) {
+    return { background: "#0d1612", border: "#244734", dot: "#7de5b1" };
+  }
+  if (type.includes("gate") || type.includes("checkpoint")) {
+    return { background: "#181308", border: "#4e3d17", dot: "#f0c36f" };
+  }
+  return { background: "#0d131c", border: "#223653", dot: "#8fd3ff" };
 }

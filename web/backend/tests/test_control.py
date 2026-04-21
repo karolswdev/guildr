@@ -64,6 +64,9 @@ async def test_control_compact_route_generates_framework_summary(
             encoding="utf-8",
         )
         (project.project_dir / "PRD.md").write_text("# PRD\n\nShip the thing.\n", encoding="utf-8")
+        memory_dir = project.project_dir / ".orchestrator" / "memory"
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        (memory_dir / "wake-up.md").write_text("Wake-up text from palace.", encoding="utf-8")
 
         response = await client.post(
             f"/api/projects/{project_id}/control/compact",
@@ -77,6 +80,7 @@ async def test_control_compact_route_generates_framework_summary(
     )
     assert "npm/js project detected" in compact
     assert "PRD.md" in compact
+    assert "Wake-up text from palace." in compact
 
 
 @pytest.mark.asyncio

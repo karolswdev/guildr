@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from orchestrator.lib.memory_palace import wakeup_path
+
 PHASES = (
+    "memory_refresh",
     "persona_forum",
     "architect",
     "micro_task_breakdown",
@@ -19,6 +22,7 @@ PHASES = (
 )
 GATES = ("approve_sprint_plan", "approve_review")
 RUN_STEPS = (
+    "memory_refresh",
     "persona_forum",
     "architect",
     "approve_sprint_plan",
@@ -183,6 +187,10 @@ def build_operator_context(
     if compact.strip():
         sections.append("## Compact Project Context\n\n" + compact.strip())
 
+    wakeup = _read_text_if_exists(wakeup_path(project_dir), max_chars // 2)
+    if wakeup.strip():
+        sections.append("## Palace Wake-Up\n\n" + wakeup.strip())
+
     instructions = read_instructions(project_dir, phase=clean_phase, limit=20)
     if instructions:
         lines = ["## User Instructions"]
@@ -236,6 +244,7 @@ def write_compact_context(project_dir: Path, *, max_chars: int = 18000) -> dict[
         "qwendea.md",
         "PERSONA_FORUM.md",
         "FOUNDING_TEAM.json",
+        ".orchestrator/memory/wake-up.md",
         "PRD.md",
         "prd.md",
         "project-context.md",

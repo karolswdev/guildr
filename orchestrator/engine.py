@@ -159,6 +159,7 @@ class Orchestrator:
 
     def _resolve_phase_handler(self, handler_name: str) -> Callable[..., None]:
         mapping: dict[str, Callable[..., None]] = {
+            "memory_refresh": self._memory_refresh,
             "persona_forum": self._persona_forum,
             "architect": self._architect,
             "micro_task_breakdown": self._micro_task_breakdown,
@@ -323,6 +324,21 @@ class Orchestrator:
         # Architect.execute() writes sprint-plan.md itself and returns the
         # path. Don't overwrite the file with the returned string.
         architect.execute()
+
+    def _memory_refresh(
+        self,
+        *,
+        phase_logger: logging.Logger | None = None,
+        step: dict[str, Any] | None = None,
+    ) -> None:
+        from orchestrator.roles.memory_refresh import MemoryRefresh
+
+        memory = MemoryRefresh(
+            self.state,
+            step_config=(step or {}).get("config") if step else None,
+            _phase_logger=phase_logger,
+        )
+        memory.execute()
 
     def _persona_forum(
         self,

@@ -9,6 +9,7 @@ from typing import Any
 
 STEP_TYPES = ("phase", "gate", "checkpoint")
 PHASE_HANDLERS = (
+    "memory_refresh",
     "persona_forum",
     "architect",
     "micro_task_breakdown",
@@ -23,6 +24,14 @@ CHECKPOINT_HANDLERS = ("operator_checkpoint",)
 SUPPORTED_HANDLERS = PHASE_HANDLERS + GATE_HANDLERS + CHECKPOINT_HANDLERS
 
 DEFAULT_WORKFLOW: list[dict[str, Any]] = [
+    {
+        "id": "memory_refresh",
+        "title": "Palace Memory Refresh",
+        "type": "phase",
+        "handler": "memory_refresh",
+        "enabled": True,
+        "config": {},
+    },
     {
         "id": "persona_forum",
         "title": "Founding Team Forum",
