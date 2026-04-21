@@ -57,6 +57,16 @@ class TestServiceWorker:
         sw = (FRONTEND_DIR / "sw.js").read_text()
         assert "offline" in sw.lower()
 
+    def test_sw_precaches_core_runtime_assets_only(self) -> None:
+        sw = (FRONTEND_DIR / "sw.js").read_text()
+        assert "/assets/environments/hex-grid.png" not in sw
+        assert "/assets/atom-meshes/flat-normal.png" in sw
+        assert "/assets/mempalace/radial-alpha-gradient.png" in sw
+        assert "/assets/edge-particle-sprites/disc.png" in sw
+        assert "/assets/fonts/InterVariable.woff2" in sw
+        assert "/assets/hdris/kloppenheim-02-puresky-1k.hdr" not in sw
+        assert "/assets/post-processing-refs/lensDirt1.png" not in sw
+
 
 class TestIndexHtml:
     """Verify index.html structure."""

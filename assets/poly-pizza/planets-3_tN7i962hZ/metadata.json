@@ -1,0 +1,31 @@
+{
+  "id": "planets-3_tN7i962hZ",
+  "title": "Planets",
+  "publicId": "3_tN7i962hZ",
+  "resourceId": "906be02b-46db-4dc9-8a68-04f2ae6d3853",
+  "creator": "Poly by Google",
+  "license": "CC-BY 3.0",
+  "source": "https://poly.pizza/m/3_tN7i962hZ",
+  "modelUrl": "https://static.poly.pizza/906be02b-46db-4dc9-8a68-04f2ae6d3853.glb",
+  "previewUrl": "https://static.poly.pizza/906be02b-46db-4dc9-8a68-04f2ae6d3853.webp",
+  "localModel": "assets/poly-pizza/planets-3_tN7i962hZ/planets-3_tN7i962hZ.glb",
+  "localPreview": "assets/poly-pizza/planets-3_tN7i962hZ/planets-3_tN7i962hZ.webp",
+  "type": "obj",
+  "tris": 1164,
+  "tags": [
+    "planets",
+    "planet",
+    "solarsystem",
+    "mercury",
+    "venus",
+    "earth",
+    "mars",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+    "pluto"
+  ],
+  "bytes": 2733732,
+  "downloadedAt": "2026-04-21T07:23:45.795Z"
+}

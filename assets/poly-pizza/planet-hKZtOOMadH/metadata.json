@@ -1,0 +1,20 @@
+{
+  "id": "planet-hKZtOOMadH",
+  "title": "Planet",
+  "publicId": "hKZtOOMadH",
+  "resourceId": "a7874f98-9015-4c0c-933e-fa82dbb01907",
+  "creator": "Quaternius",
+  "license": "CC0 1.0",
+  "source": "https://poly.pizza/m/hKZtOOMadH",
+  "modelUrl": "https://static.poly.pizza/a7874f98-9015-4c0c-933e-fa82dbb01907.glb",
+  "previewUrl": "https://static.poly.pizza/a7874f98-9015-4c0c-933e-fa82dbb01907.webp",
+  "localModel": "assets/poly-pizza/planet-hKZtOOMadH/planet-hKZtOOMadH.glb",
+  "localPreview": "assets/poly-pizza/planet-hKZtOOMadH/planet-hKZtOOMadH.webp",
+  "type": "FBX",
+  "tris": 2586,
+  "tags": [
+    "Sphere"
+  ],
+  "bytes": 88696,
+  "downloadedAt": "2026-04-21T07:23:44.392Z"
+}

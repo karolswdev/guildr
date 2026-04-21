@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -173,6 +174,7 @@ class PersonaForum:
             ),
         )
         try:
+            start = time.monotonic()
             response = self.llm.chat(
                 [
                     {"role": "system", "content": "Return only valid JSON."},
@@ -180,7 +182,38 @@ class PersonaForum:
                 ],
                 max_tokens=4096,
             )
-        except Exception:
+            from orchestrator.lib.usage import emit_llm_usage
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                response,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=(time.monotonic() - start) * 1000,
+            )
+        except Exception as exc:
+            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
+            elapsed_ms = (time.monotonic() - start) * 1000 if "start" in locals() else 0.0
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                None,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                status="error",
+                error=exc,
+            )
+            emit_provider_error(
+                self.state,
+                provider_kind=type(self.llm).__name__,
+                provider_name=type(self.llm).__name__,
+                model="",
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                error=exc,
+            )
             return []
         content = getattr(response, "content", "") or ""
         parsed = self._parse_personas_json(content)
@@ -218,6 +251,7 @@ class PersonaForum:
         if self.llm is None:
             return self._fallback_forum(brief, personas)
         try:
+            start = time.monotonic()
             response = self.llm.chat(
                 [
                     {
@@ -232,7 +266,38 @@ class PersonaForum:
                 ],
                 max_tokens=8192,
             )
-        except Exception:
+            from orchestrator.lib.usage import emit_llm_usage
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                response,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=(time.monotonic() - start) * 1000,
+            )
+        except Exception as exc:
+            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
+            elapsed_ms = (time.monotonic() - start) * 1000 if "start" in locals() else 0.0
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                None,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                status="error",
+                error=exc,
+            )
+            emit_provider_error(
+                self.state,
+                provider_kind=type(self.llm).__name__,
+                provider_name=type(self.llm).__name__,
+                model="",
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                error=exc,
+            )
             return self._fallback_forum(brief, personas)
         content = getattr(response, "content", "") or ""
         if not content.strip():

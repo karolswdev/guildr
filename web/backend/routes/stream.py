@@ -8,12 +8,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
+
+from orchestrator.lib.event_schema import EventValidationError, normalize_event_for_write
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ class SimpleEventBus:
     def __init__(self, project_id: str | None = None) -> None:
         self._subscribers: list[list] = []
         self._history: list[str] = []
+        self._history_event_ids: set[str] = set()
         self._project_id = project_id
 
     def emit(self, event_type: str, **fields: Any) -> None:
@@ -46,11 +47,26 @@ class SimpleEventBus:
         doesn't match — that's what made the Progress view sit on
         "Connecting..." while the run completed in the background.
         """
-        event = {"type": event_type, "ts": _now_iso(), **fields}
+        event = normalize_event_for_write(
+            event_type,
+            fields,
+            default_run_id=self._project_id or fields.get("project_id"),
+            require_run_id=bool(self._project_id or fields.get("project_id") or fields.get("run_id")),
+        )
+        event_id = event["event_id"]
+        if event_id in self._history_event_ids:
+            return
+
         data = f"data: {json.dumps(event)}\n\n"
         self._history.append(data)
+        self._history_event_ids.add(event_id)
         if len(self._history) > _REPLAY_LIMIT:
+            removed = self._history[: len(self._history) - _REPLAY_LIMIT]
             del self._history[: len(self._history) - _REPLAY_LIMIT]
+            for raw in removed:
+                event_id = _event_id_from_sse(raw)
+                if event_id:
+                    self._history_event_ids.discard(event_id)
         self._persist_event(event)
         for subscriber in self._subscribers:
             try:
@@ -72,6 +88,15 @@ class SimpleEventBus:
     def _persist_event(self, event: dict[str, Any]) -> None:
         if not self._project_id:
             return
+        try:
+            event = normalize_event_for_write(
+                str(event["type"]),
+                event,
+                default_run_id=self._project_id,
+            )
+        except EventValidationError:
+            logger.debug("Rejected invalid event for %s: %r", self._project_id, event, exc_info=True)
+            raise
         path = event_log_path(self._project_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -113,8 +138,15 @@ def event_log_path(project_id: str) -> Path:
     return _projects_base() / project_id / ".orchestrator" / "events.jsonl"
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _event_id_from_sse(raw: str) -> str | None:
+    if not raw.startswith("data: "):
+        return None
+    try:
+        event = json.loads(raw[6:])
+    except json.JSONDecodeError:
+        return None
+    event_id = event.get("event_id") if isinstance(event, dict) else None
+    return event_id if isinstance(event_id, str) else None
 
 
 # -- routes ------------------------------------------------------------------

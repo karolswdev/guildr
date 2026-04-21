@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "dependencies": {
+    "three": "0.165.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0"
+  }
+}

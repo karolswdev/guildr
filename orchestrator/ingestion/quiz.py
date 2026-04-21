@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 from orchestrator.lib.config import Config
 from orchestrator.lib.llm import LLMClient
@@ -160,10 +162,14 @@ class QuizEngine:
         messages = [{"role": "user", "content": prompt}]
 
         try:
+            start = time.monotonic()
             resp = self.llm.chat(messages, max_tokens=512, temperature=0.7)
         except Exception as exc:
+            elapsed_ms = (time.monotonic() - start) * 1000 if "start" in locals() else 0.0
+            self._emit_usage(None, "adaptive_question", elapsed_ms, status="error", error=exc)
             logger.error("Adaptive question failed: %s", exc)
             return None
+        self._emit_usage(resp, "adaptive_question", (time.monotonic() - start) * 1000)
 
         answer = resp.content.strip()
         if answer == "DONE":
@@ -175,7 +181,13 @@ class QuizEngine:
         """Send the synthesis prompt to the LLM."""
         prompt = _SYNTHESIZE_PROMPT.format(qa_log=qa_log)
         messages = [{"role": "user", "content": prompt}]
-        resp = self.llm.chat(messages, max_tokens=8192, temperature=0.3)
+        start = time.monotonic()
+        try:
+            resp = self.llm.chat(messages, max_tokens=8192, temperature=0.3)
+        except Exception as exc:
+            self._emit_usage(None, "synthesize", (time.monotonic() - start) * 1000, status="error", error=exc)
+            raise
+        self._emit_usage(resp, "synthesize", (time.monotonic() - start) * 1000)
         return resp.content
 
     def _validate_and_fix(self, content: str, qa_log: str) -> str:
@@ -195,12 +207,16 @@ class QuizEngine:
         )
         messages = [{"role": "user", "content": retry_prompt}]
         try:
+            start = time.monotonic()
             resp = self.llm.chat(messages, max_tokens=8192, temperature=0.3)
         except Exception as exc:
+            elapsed_ms = (time.monotonic() - start) * 1000 if "start" in locals() else 0.0
+            self._emit_usage(None, "synthesize_retry", elapsed_ms, status="error", error=exc)
             logger.error("Synthesis retry failed: %s", exc)
             raise SynthesisError(
                 "Synthesis failed after retry: LLM error", content
             ) from exc
+        self._emit_usage(resp, "synthesize_retry", (time.monotonic() - start) * 1000)
 
         content = self._strip_code_fences(resp.content)
         missing = self._check_missing_headers(content)
@@ -210,6 +226,31 @@ class QuizEngine:
                 content,
             )
         return content
+
+    def _emit_usage(
+        self,
+        response: object | None,
+        role: str,
+        runtime_ms: float,
+        *,
+        status: str = "ok",
+        error: Exception | None = None,
+    ) -> None:
+        events = getattr(self.config, "events", None)
+        if events is None:
+            return
+        from orchestrator.lib.usage import emit_llm_usage
+
+        emit_llm_usage(
+            SimpleNamespace(events=events),
+            self.llm,
+            response,
+            role=role,
+            step="ingestion_quiz",
+            runtime_ms=runtime_ms,
+            status=status,
+            error=error,
+        )
 
     @staticmethod
     def _strip_code_fences(content: str) -> str:

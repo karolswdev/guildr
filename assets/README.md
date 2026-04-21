@@ -16,6 +16,7 @@ Use this as the asset handoff for the first PWA scene implementation.
 | Artifact cards | `artifact-textures/canvas-grain.png`, `icon-sprites/tabler-icons.woff2` | Give crystallized output cards subtle paper tooth and icon consistency with atom badges. |
 | Typography | `fonts/InterVariable.woff2`, `fonts/JetBrainsMono-Regular.woff2` | Use Inter for UI labels/HUD numerics and JetBrains Mono for event streams or JSONL-style readouts. |
 | Post-processing reference | `post-processing-refs/lensDirt1.png` | Reference or source texture for bloom dirt; downscale before shipping as a runtime mobile asset. |
+| Poly Pizza spatial models | `poly-pizza/` | Deferred GLB models for planet, asteroid, probe, satellite, and the Ultimate Space Kit semantic actor vocabulary. |
 
 ## Runtime Notes
 
@@ -58,6 +59,8 @@ post-processing, and rich burst particles before it delays atom map rendering.
 | `fonts/InterVariable.woff2` | UI typography | https://github.com/rsms/inter | OFL-1.1 | Variable font. |
 | `fonts/JetBrainsMono-Regular.woff2` | Event/code readouts | https://github.com/JetBrains/JetBrainsMono | OFL-1.1 | Regular mono font. |
 | `post-processing-refs/lensDirt1.png` | Bloom/dirt reference texture | https://github.com/sonicether/SE-Natural-Bloom-Dirty-Lens/blob/master/Assets/SE%20Natural%20Bloom/Lens%20Textures/lensDirt1.png | MIT | 1920x1080 PNG, about 3 MB. Consider downscaling before runtime use. |
+| `poly-pizza/manifest.json` | Deferred spatial model pack | https://poly.pizza/search/planet | CC0 1.0 and CC-BY 3.0 | 14 GLB models plus previews. See `poly-pizza/README.md` for per-model attribution and loading guidance. |
+| `poly-pizza/ultimate-space-kit/manifest.json` | Deferred orchestration actor/model pack | https://poly.pizza/bundle/Ultimate-Space-Kit-YWh743lqGX | CC0 1.0 | 87 GLB models from Quaternius. Includes animated astronauts/mechs/enemies plus ships, rovers, planets, facilities, tokens, and connectors. |
 
 ## Manual References
 

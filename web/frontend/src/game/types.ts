@@ -1,0 +1,104 @@
+export type RunEvent = Record<string, unknown> & {
+  event_id?: string;
+  schema_version?: number;
+  type?: string;
+  step?: string;
+  role?: string;
+  model?: string;
+  provider_name?: string;
+  atom_id?: string;
+};
+
+export type AtomState = "idle" | "active" | "done" | "error" | "waiting" | "skipped";
+export type LoopStage = "discover" | "plan" | "build" | "verify" | "repair" | "review" | "ship" | "learn";
+
+export type WorkflowStep = {
+  id: string;
+  title?: string;
+  type: string;
+  handler: string;
+  enabled: boolean;
+};
+
+export type AtomStatus = {
+  id: string;
+  state: AtomState;
+  attempt: number;
+  startedAt: number | null;
+  completedAt: number | null;
+  lastEvent: RunEvent | null;
+};
+
+export type CostSource = "provider_reported" | "rate_card_estimate" | "local_estimate" | "unknown";
+export type CostConfidence = "high" | "medium" | "low" | "none";
+
+export type CostBucket = {
+  effectiveUsd: number;
+  providerReportedUsd: number;
+  estimatedUsd: number;
+  unknownCostCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+};
+
+export type CostSnapshot = CostBucket & {
+  byProvider: Record<string, CostBucket>;
+  byModel: Record<string, CostBucket>;
+  byRole: Record<string, CostBucket>;
+  byPhase: Record<string, CostBucket>;
+  byAtom: Record<string, CostBucket>;
+  sourceCounts: Record<CostSource, number>;
+  runBudgetUsd: number | null;
+  phaseBudgetUsd: number | null;
+  remainingRunBudgetUsd: number | null;
+  remainingPhaseBudgetUsd: number | null;
+  runHalted: boolean;
+  warnings: string[];
+  exceeded: string[];
+  openBudgetGateIds: string[];
+};
+
+export type MemPalaceStatus = {
+  initialized: boolean;
+  wing: string | null;
+  cached_wakeup: string | null;
+  last_search: string | null;
+};
+
+export type AtomLoopStatus = {
+  atomId: string;
+  currentStage: LoopStage | null;
+  previousStage: LoopStage | null;
+  nextExpectedStage: LoopStage | null;
+  repairCount: number;
+  reopenedCount: number;
+  artifactRefs: string[];
+  evidenceRefs: string[];
+  memoryRefs: string[];
+  lastEvent: RunEvent | null;
+};
+
+export type LoopSnapshot = {
+  byAtom: Record<string, AtomLoopStatus>;
+  activeStageCounts: Record<LoopStage, number>;
+  selectedStageFilter: LoopStage | null;
+  lastLoopEvent: RunEvent | null;
+};
+
+export type EngineSnapshot = {
+  projectId: string;
+  runId: string | null;
+  atoms: Record<string, AtomStatus>;
+  events: RunEvent[];
+  scrubIndex: number;
+  isLive: boolean;
+  memPalaceStatus: MemPalaceStatus | null;
+  historyLength: number;
+  replayIndex: number;
+  live: boolean;
+  cost: CostSnapshot;
+  loops: LoopSnapshot;
+};

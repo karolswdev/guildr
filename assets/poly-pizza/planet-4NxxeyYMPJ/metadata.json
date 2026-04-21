@@ -1,0 +1,22 @@
+{
+  "id": "planet-4NxxeyYMPJ",
+  "title": "Planet",
+  "publicId": "4NxxeyYMPJ",
+  "resourceId": "e5a5d5bd-043d-4d0d-b320-9ead685b63ff",
+  "creator": "Quaternius",
+  "license": "CC0 1.0",
+  "source": "https://poly.pizza/m/4NxxeyYMPJ",
+  "modelUrl": "https://static.poly.pizza/e5a5d5bd-043d-4d0d-b320-9ead685b63ff.glb",
+  "previewUrl": "https://static.poly.pizza/e5a5d5bd-043d-4d0d-b320-9ead685b63ff.webp",
+  "localModel": "assets/poly-pizza/planet-4NxxeyYMPJ/planet-4NxxeyYMPJ.glb",
+  "localPreview": "assets/poly-pizza/planet-4NxxeyYMPJ/planet-4NxxeyYMPJ.webp",
+  "type": "FBX",
+  "tris": 2400,
+  "tags": [
+    "Sphere",
+    "Berry",
+    "Blueberry"
+  ],
+  "bytes": 72252,
+  "downloadedAt": "2026-04-21T07:23:45.222Z"
+}

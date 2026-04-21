@@ -1,0 +1,22 @@
+{
+  "id": "planet-B7xd3SZq0z",
+  "title": "Planet",
+  "publicId": "B7xd3SZq0z",
+  "resourceId": "ae96e45d-8863-4182-b69d-80f3d2cd677f",
+  "creator": "Quaternius",
+  "license": "CC0 1.0",
+  "source": "https://poly.pizza/m/B7xd3SZq0z",
+  "modelUrl": "https://static.poly.pizza/ae96e45d-8863-4182-b69d-80f3d2cd677f.glb",
+  "previewUrl": "https://static.poly.pizza/ae96e45d-8863-4182-b69d-80f3d2cd677f.webp",
+  "localModel": "assets/poly-pizza/planet-B7xd3SZq0z/planet-B7xd3SZq0z.glb",
+  "localPreview": "assets/poly-pizza/planet-B7xd3SZq0z/planet-B7xd3SZq0z.webp",
+  "type": "FBX",
+  "tris": 10688,
+  "tags": [
+    "Sphere",
+    "Astronomy",
+    "Outer Space"
+  ],
+  "bytes": 282368,
+  "downloadedAt": "2026-04-21T07:23:44.597Z"
+}

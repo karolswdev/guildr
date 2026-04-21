@@ -1,0 +1,20 @@
+{
+  "id": "satellite-orbiting-earth-4E2HTzh1DFQ",
+  "title": "Satellite orbiting Earth",
+  "publicId": "4E2HTzh1DFQ",
+  "resourceId": "dd7c1791-d976-4fd2-bb02-6ff23c06bf78",
+  "creator": "Poly by Google",
+  "license": "CC-BY 3.0",
+  "source": "https://poly.pizza/m/4E2HTzh1DFQ",
+  "modelUrl": "https://static.poly.pizza/dd7c1791-d976-4fd2-bb02-6ff23c06bf78.glb",
+  "previewUrl": "https://static.poly.pizza/dd7c1791-d976-4fd2-bb02-6ff23c06bf78.webp",
+  "localModel": "assets/poly-pizza/satellite-orbiting-earth-4E2HTzh1DFQ/satellite-orbiting-earth-4E2HTzh1DFQ.glb",
+  "localPreview": "assets/poly-pizza/satellite-orbiting-earth-4E2HTzh1DFQ/satellite-orbiting-earth-4E2HTzh1DFQ.webp",
+  "type": "obj",
+  "tris": 146,
+  "tags": [
+    "planet"
+  ],
+  "bytes": 57512,
+  "downloadedAt": "2026-04-21T07:23:46.513Z"
+}

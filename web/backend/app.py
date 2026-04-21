@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 from pathlib import Path
 
@@ -13,8 +14,12 @@ from fastapi.staticfiles import StaticFiles
 from web.backend.middleware import LanOnlyMiddleware
 
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 
 logger = logging.getLogger(__name__)
+
+mimetypes.add_type("model/gltf-binary", ".glb")
+mimetypes.add_type("model/gltf+json", ".gltf")
 
 
 def _include_router(app: FastAPI, module_name: str, prefix: str) -> None:
@@ -56,6 +61,7 @@ def create_app(store=None) -> FastAPI:
     _include_router(app, "logs", "/api/projects")
     _include_router(app, "events", "/api/projects")
     _include_router(app, "control", "/api/projects")
+    _include_router(app, "intents", "/api/projects")
     _include_router(app, "memory", "/api/projects")
     _include_router(app, "metrics", "/api/llama")
 
@@ -65,6 +71,9 @@ def create_app(store=None) -> FastAPI:
 
     # PWA shell. Mounted last so /api/* and /healthz win on conflict.
     # dist/ is the esbuild output; built by web/frontend/build.sh.
+    if _ASSETS_DIR.is_dir():
+        app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
+
     if _FRONTEND_DIR.is_dir():
         dist_dir = _FRONTEND_DIR / "dist"
         if dist_dir.is_dir():

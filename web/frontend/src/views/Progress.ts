@@ -2,6 +2,9 @@
  * Progress view - mission control for live runs, workflow editing, and logs.
  */
 
+import { EventEngine } from "../game/EventEngine.js";
+import type { EngineSnapshot, RunEvent } from "../game/types.js";
+
 type JsonRecord = Record<string, unknown>;
 
 type PhaseSummary = {
@@ -204,8 +207,12 @@ export function renderProgress(container: Element, navigate: (route: string) => 
         <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px; display: grid; gap: 10px; align-content: start;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="font-size: 14px; font-weight: 600;">Live Timeline</div>
-            <button id="btn-follow-live" style="${miniButtonStyle("#173c66", "#ffffff")}">Follow Live</button>
+            <div style="display: flex; gap: 8px; align-items: center; min-width: min(280px, 58%);">
+              <input id="replay-scrub" type="range" min="0" max="0" value="0" style="width: 100%; accent-color: #8fd3ff;" />
+              <button id="btn-follow-live" style="${miniButtonStyle("#173c66", "#ffffff")}">Follow Live</button>
+            </div>
           </div>
+          <div id="replay-label" style="font-size: 11px; color: #8c8c8c;">Live</div>
           <div id="event-log" style="max-height: 320px; overflow-y: auto; display: grid; gap: 6px;"></div>
         </section>
       </div>
@@ -324,6 +331,8 @@ export function renderProgress(container: Element, navigate: (route: string) => 
   const eventDetail = container.querySelector("#event-detail") as HTMLDivElement;
   const logPhaseTabs = container.querySelector("#log-phase-tabs") as HTMLDivElement;
   const phaseLogDetail = container.querySelector("#phase-log-detail") as HTMLPreElement;
+  const replayScrub = container.querySelector("#replay-scrub") as HTMLInputElement;
+  const replayLabel = container.querySelector("#replay-label") as HTMLDivElement;
 
   const btnInject = container.querySelector("#btn-inject") as HTMLButtonElement;
   const btnCompact = container.querySelector("#btn-compact") as HTMLButtonElement;
@@ -346,6 +355,8 @@ export function renderProgress(container: Element, navigate: (route: string) => 
   let evtSource: EventSource | null = null;
   let refreshTimer: number | null = null;
   let eventHistory: JsonRecord[] = [];
+  const eventEngine = new EventEngine(projectId);
+  let latestSnapshot: EngineSnapshot = eventEngine.snapshot();
   let followLiveDetail = true;
   let selectedEventIndex = -1;
   let phaseSummaries: PhaseSummary[] = [];
@@ -432,6 +443,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
 
   function replaceWorkflow(nextSteps: WorkflowStep[], dirty = false): void {
     workflowSteps = nextSteps.map(cloneStep);
+    eventEngine.setWorkflow(workflowSteps);
     if (!selectedWorkflowStepId || !workflowSteps.some((step) => step.id === selectedWorkflowStepId)) {
       selectedWorkflowStepId = workflowSteps[0]?.id ?? "";
     }
@@ -450,6 +462,43 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     renderFocus();
     renderLogPhaseTabs();
   }
+
+  function applyEngineSnapshot(snapshot: EngineSnapshot): void {
+    latestSnapshot = snapshot;
+    eventHistory = snapshot.events as JsonRecord[];
+    const nextStatuses: Record<string, StepRunState> = {};
+    let activeStep = "";
+    for (const step of workflowSteps) {
+      const atom = snapshot.atoms[step.id];
+      if (!atom) {
+        continue;
+      }
+      nextStatuses[step.id] = atom.state === "skipped" ? "disabled" : atom.state;
+      if (atom.state === "active" || atom.state === "waiting" || atom.state === "error") {
+        activeStep = step.id;
+      }
+    }
+    if (snapshot.replayIndex >= 0) {
+      selectedEventIndex = snapshot.replayIndex;
+      followLiveDetail = false;
+    } else if (followLiveDetail || selectedEventIndex < 0 || selectedEventIndex >= eventHistory.length) {
+      selectedEventIndex = eventHistory.length - 1;
+    }
+    const selected = eventHistory[selectedEventIndex] ?? eventHistory[eventHistory.length - 1];
+    stepStatuses = nextStatuses;
+    currentStepId = activeStep || eventStepId(selected) || currentStepId;
+    if (selected && (snapshot.replayIndex >= 0 || followLiveDetail || !currentSignal)) {
+      currentSignal = describeEvent(selected);
+      currentSignalDetail = eventNarrative(selected);
+    }
+    updateReplayControls(snapshot);
+    syncStepStateStore();
+  }
+
+  eventEngine.onSnapshot((snapshot) => {
+    applyEngineSnapshot(snapshot);
+    renderEngineViews();
+  });
 
   function updateStep(stepId: string, updater: (step: WorkflowStep) => WorkflowStep): void {
     const next = workflowSteps.map((step) => (step.id === stepId ? updater(cloneStep(step)) : cloneStep(step)));
@@ -772,6 +821,26 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     memoryOutput.textContent = visible;
   }
 
+  function updateReplayControls(snapshot: EngineSnapshot): void {
+    const max = Math.max(0, snapshot.historyLength - 1);
+    replayScrub.max = String(max);
+    replayScrub.disabled = snapshot.historyLength === 0;
+    replayScrub.value = String(snapshot.replayIndex >= 0 ? snapshot.replayIndex : max);
+    replayLabel.textContent = snapshot.replayIndex >= 0
+      ? `Replay event ${snapshot.replayIndex + 1} of ${snapshot.historyLength}`
+      : `Live${snapshot.historyLength > 0 ? ` · ${snapshot.historyLength} events` : ""}`;
+    btnFollowLive.disabled = snapshot.live;
+    btnFollowLive.style.opacity = snapshot.live ? "0.7" : "1";
+  }
+
+  function renderEngineViews(): void {
+    renderEventTimeline();
+    renderEventDetail();
+    renderRunStrip();
+    renderWorkflowBoard();
+    renderFocus();
+  }
+
   async function loadMemoryStatus(): Promise<void> {
     try {
       memoryState = await apiGet<MemoryResponse>(`/api/projects/${projectId}/memory/status`);
@@ -800,7 +869,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
 
     eventHistory.forEach((entry, index) => {
       const type = String(entry.type ?? "event");
-      const phase = String(entry.name ?? entry.phase ?? entry.gate ?? "");
+      const phase = String(entry.name ?? entry.phase ?? entry.step ?? entry.gate ?? "");
       const active = index === selectedEventIndex;
       const palette = eventPalette(type);
       const row = document.createElement("button");
@@ -831,8 +900,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       row.addEventListener("click", () => {
         selectedEventIndex = index;
         followLiveDetail = false;
-        renderEventTimeline();
-        renderEventDetail();
+        eventEngine.scrubTo(index);
       });
       eventLog.appendChild(row);
     });
@@ -846,7 +914,8 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     }
 
     const type = String(entry.type ?? "event");
-    const phase = String(entry.name ?? entry.phase ?? entry.gate ?? "run");
+    const phase = String(entry.name ?? entry.phase ?? entry.step ?? entry.gate ?? "run");
+    const detailMode = latestSnapshot.replayIndex >= 0 ? "Replay" : followLiveDetail ? "Following live" : "Pinned";
     eventDetail.innerHTML = `
       <div style="display: grid; gap: 10px;">
         <div>
@@ -857,7 +926,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
           <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
             <span style="padding: 3px 7px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${escapeHtml(type)}</span>
             <span style="padding: 3px 7px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${escapeHtml(phase)}</span>
-            <span style="padding: 3px 7px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${followLiveDetail ? "Following live" : "Pinned"}</span>
+            <span style="padding: 3px 7px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${escapeHtml(detailMode)}</span>
           </div>
         </div>
         <div style="font-size: 12px; color: #b8b8b8; line-height: 1.6;">${escapeHtml(eventNarrative(entry))}</div>
@@ -1005,13 +1074,8 @@ export function renderProgress(container: Element, navigate: (route: string) => 
 
   async function loadEventHistory(): Promise<void> {
     try {
-      const response = await apiGet<EventListResponse>(`/api/projects/${projectId}/events?limit=240`);
-      eventHistory = response.events;
-      if (followLiveDetail || selectedEventIndex < 0) {
-        selectedEventIndex = eventHistory.length - 1;
-      }
-      renderEventTimeline();
-      renderEventDetail();
+      const response = await apiGet<EventListResponse>(`/api/projects/${projectId}/events?limit=500`);
+      eventEngine.loadHistory(response.events as RunEvent[]);
     } catch (err: unknown) {
       if (eventHistory.length === 0) {
         eventDetail.innerHTML = `<div style="color: #8c8c8c; font-size: 13px;">${escapeHtml(err instanceof Error ? err.message : "Failed to load event history.")}</div>`;
@@ -1038,20 +1102,11 @@ export function renderProgress(container: Element, navigate: (route: string) => 
         return;
       }
 
-      eventHistory.push(data);
-      if (eventHistory.length > 240) {
-        eventHistory = eventHistory.slice(-240);
+      if (!eventEngine.applyEvent(data as RunEvent)) {
+        return;
       }
-      if (followLiveDetail || selectedEventIndex < 0) {
-        selectedEventIndex = eventHistory.length - 1;
-      }
-
       applyStreamEvent(data);
-      renderEventTimeline();
-      renderEventDetail();
-      renderRunStrip();
-      renderWorkflowBoard();
-      renderFocus();
+      renderEngineViews();
     };
 
     evtSource.onerror = (): void => {
@@ -1064,8 +1119,6 @@ export function renderProgress(container: Element, navigate: (route: string) => 
   }
 
   function applyStreamEvent(entry: JsonRecord): void {
-    const type = String(entry.type ?? "event");
-    const phase = String(entry.name ?? entry.phase ?? entry.gate ?? "");
     currentSignal = describeEvent(entry);
     currentSignalDetail = eventNarrative(entry);
 
@@ -1075,68 +1128,12 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     if (entry.vram !== undefined) {
       currentVram = typeof entry.vram === "number" ? `${entry.vram.toFixed(0)} MB` : String(entry.vram);
     }
-
-    if (type === "run_started") {
-      stepStatuses = {};
-      currentStepId = String(entry.start_at ?? workflowSteps.find((step) => step.enabled)?.id ?? "");
-      syncStepStateStore();
-      return;
-    }
-    if (type === "run_complete") {
-      if (currentStepId) {
-        stepStatuses[currentStepId] = "done";
-      }
-      syncStepStateStore();
-      return;
-    }
-    if (!phase) {
-      return;
-    }
-
-    if (type === "phase_start") {
-      currentStepId = phase;
-      stepStatuses[phase] = "active";
-      syncStepStateStore();
-      return;
-    }
-    if (type === "phase_done") {
-      currentStepId = phase;
-      stepStatuses[phase] = "done";
-      syncStepStateStore();
-      return;
-    }
-    if (type === "phase_retry") {
-      currentStepId = phase;
-      stepStatuses[phase] = "active";
-      syncStepStateStore();
-      return;
-    }
-    if (type === "phase_error") {
-      currentStepId = phase;
-      stepStatuses[phase] = "error";
-      syncStepStateStore();
-      return;
-    }
-    if (type === "gate_opened") {
-      currentStepId = phase;
-      stepStatuses[phase] = "waiting";
-      syncStepStateStore();
-      return;
-    }
-    if (type === "gate_decided") {
-      currentStepId = phase;
-      stepStatuses[phase] = entry.decision === "approved" ? "done" : "error";
-      syncStepStateStore();
-      return;
-    }
-    if (type === "checkpoint") {
-      currentStepId = phase;
-      stepStatuses[phase] = "done";
-      syncStepStateStore();
-    }
   }
 
   function applyLogStateHints(): void {
+    if (latestSnapshot.historyLength > 0) {
+      return;
+    }
     for (const phase of phaseSummaries) {
       if (stepStatuses[phase.phase] === "active" || stepStatuses[phase.phase] === "waiting" || stepStatuses[phase.phase] === "error") {
         continue;
@@ -1333,11 +1330,17 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     }
   });
 
+  replayScrub.addEventListener("input", () => {
+    const index = Number(replayScrub.value);
+    if (Number.isFinite(index)) {
+      eventEngine.scrubTo(index);
+    }
+  });
+
   btnFollowLive.addEventListener("click", () => {
     followLiveDetail = true;
-    selectedEventIndex = eventHistory.length - 1;
-    renderEventTimeline();
-    renderEventDetail();
+    selectedEventIndex = latestSnapshot.historyLength - 1;
+    eventEngine.resumeLive();
   });
 
   workflowEditor.addEventListener("input", () => {
@@ -1354,10 +1357,10 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     }
   });
 
-  connectStream();
   void loadWorkflow()
     .then(async () => {
       await loadEventHistory();
+      connectStream();
       await refreshLogs();
       await loadMemoryStatus();
     })
@@ -1448,9 +1451,22 @@ function statePalette(state: StepRunState): { background: string; border: string
   return palette[state];
 }
 
+function eventStepId(data: JsonRecord | undefined): string {
+  if (!data) {
+    return "";
+  }
+  for (const key of ["step", "name", "phase", "start_at"]) {
+    const value = data[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+  return "";
+}
+
 function describeEvent(data: JsonRecord): string {
   const type = String(data.type ?? "event");
-  const name = String(data.name ?? data.phase ?? data.gate ?? "");
+  const name = String(data.name ?? data.phase ?? data.step ?? data.gate ?? "");
   const attempt = data.attempt;
   const error = data.error;
   if (type === "run_started") {

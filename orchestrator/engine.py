@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from orchestrator.lib.config import Config
 from orchestrator.lib.logger import setup_phase_logger
+from orchestrator.lib.loops import emit_loop_event, loop_stage_for_step
 from orchestrator.lib.state import State
 from orchestrator.lib.workflow import enabled_steps
 
@@ -48,6 +49,7 @@ class Orchestrator:
         self._events = events
         self._git_ops = git_ops
         self._fake_llm = fake_llm
+        self.state.events = events
 
     # -- lazy accessors (import on first use) --------------------------------
 
@@ -62,6 +64,15 @@ class Orchestrator:
     def _gate_registry_obj(self) -> Any:
         if self._gate_registry is None:
             from orchestrator.lib.gates import GateRegistry
+            # Fallback lets isolated unit tests run without the full wiring;
+            # in production this means nothing on the outside (PWA, runner)
+            # can see or decide the gates this engine opens. Anything running
+            # with human gates enabled and hitting this branch is mis-wired.
+            logger.warning(
+                "Orchestrator constructed without gate_registry — falling back "
+                "to a detached GateRegistry. No PWA/HTTP client can decide "
+                "gates opened by this engine."
+            )
             self._gate_registry = GateRegistry()
         return self._gate_registry
 
@@ -72,10 +83,27 @@ class Orchestrator:
             self._git_ops = GitOps(self.config.project_dir)
         return self._git_ops
 
+    def _llm_for(self, role: str) -> Any:
+        """Return the LLM-shaped object a role should call.
+
+        - ``fake_llm`` wins when set (test / dry-run path).
+        - Otherwise wrap the async ``UpstreamPool`` in a per-role
+          ``SyncPoolClient`` so the role's sync ``self.llm.chat(...)`` call
+          reaches the pool without a coroutine leak (H5).
+        - ``None`` when neither is configured — caller raises ``PhaseFailure``.
+        """
+        if self._fake_llm is not None:
+            return self._fake_llm
+        if self._pool is None:
+            return None
+        from orchestrator.lib.sync_pool import SyncPoolClient
+        return SyncPoolClient(self._pool, role, project_dir=self.state.project_dir)
+
     # -- public API ----------------------------------------------------------
 
     def run(self, *, start_at: str | None = None) -> None:
         """Execute the full SDLC pipeline, optionally resuming at one step."""
+        self.state.events = self._events_obj
         self._ensure_git_repo()
         self._ensure_qwendea()
         steps = enabled_steps(self.config.project_dir)
@@ -105,6 +133,12 @@ class Orchestrator:
             self.state.current_phase = name
             self.state.save()
             self._events_obj.emit("phase_start", name=name, attempt=attempt)
+            emit_loop_event(
+                self._events_obj,
+                "loop_entered",
+                step=name,
+                attempt=attempt,
+            )
             phase_logger = self._make_phase_logger(name)
             self._log_phase_event(
                 phase_logger,
@@ -117,6 +151,13 @@ class Orchestrator:
                 self._invoke_handler(fn, phase_logger=phase_logger, step=step)
             except Exception as e:
                 self._events_obj.emit("phase_error", name=name, error=str(e))
+                emit_loop_event(
+                    self._events_obj,
+                    "loop_blocked",
+                    step=name,
+                    error=str(e),
+                    attempt=attempt,
+                )
                 self._log_phase_event(
                     phase_logger,
                     logging.ERROR,
@@ -130,6 +171,12 @@ class Orchestrator:
 
             if self._validate(name):
                 self._events_obj.emit("phase_done", name=name)
+                emit_loop_event(
+                    self._events_obj,
+                    "loop_completed",
+                    step=name,
+                    attempt=attempt,
+                )
                 self._log_phase_event(
                     phase_logger,
                     logging.INFO,
@@ -141,6 +188,23 @@ class Orchestrator:
                 return
 
             # Validator failed — retry with failure context
+            stage = loop_stage_for_step(name)
+            emit_loop_event(
+                self._events_obj,
+                "loop_blocked",
+                step=name,
+                loop_stage=stage,
+                attempt=attempt,
+                reason="validator_failed",
+            )
+            emit_loop_event(
+                self._events_obj,
+                "loop_repaired",
+                step=name,
+                loop_stage="repair",
+                attempt=attempt + 1,
+                reason="validator_failed",
+            )
             self._events_obj.emit("phase_retry", name=name, attempt=attempt + 1)
             next_attempt = min(attempt + 2, self.config.max_retries)
             self._log_phase_event(
@@ -229,6 +293,14 @@ class Orchestrator:
         gate = Gate(name=name, artifact_path=f"{name}-artifact.md")
         self._gate_registry_obj.open(gate)
         self._events_obj.emit("gate_opened", gate=name)
+        emit_loop_event(
+            self._events_obj,
+            "loop_entered",
+            step=name,
+            atom_id=name,
+            loop_stage="review",
+            artifact_refs=[gate.artifact_path],
+        )
 
         try:
             decision = self._gate_registry_obj.wait(name, timeout_sec=0)
@@ -239,6 +311,15 @@ class Orchestrator:
         self.state.gates_approved[name] = decision == "approved"
         self.state.save()
         self._events_obj.emit("gate_decided", gate=name, decision=decision)
+        emit_loop_event(
+            self._events_obj,
+            "loop_completed" if decision == "approved" else "loop_blocked",
+            step=name,
+            atom_id=name,
+            loop_stage="review",
+            artifact_refs=[gate.artifact_path],
+            decision=decision,
+        )
 
         if decision == "rejected":
             reason = self._gate_registry_obj.get_rejection_reason(name)
@@ -316,7 +397,7 @@ class Orchestrator:
         """Run the Architect role."""
         from orchestrator.roles.architect import Architect
 
-        llm = self._fake_llm or (self._pool.chat if self._pool else None)
+        llm = self._llm_for("architect")
         if llm is None:
             raise PhaseFailure("architect")
 
@@ -348,7 +429,7 @@ class Orchestrator:
     ) -> None:
         from orchestrator.roles.persona_forum import PersonaForum
 
-        llm = self._fake_llm or (self._pool.chat if self._pool else None)
+        llm = self._llm_for("persona_forum")
         forum = PersonaForum(
             llm,
             self.state,
@@ -372,7 +453,7 @@ class Orchestrator:
         """Run the Coder role."""
         from orchestrator.roles.coder import Coder
 
-        llm = self._fake_llm or (self._pool.chat if self._pool else None)
+        llm = self._llm_for("coder")
         if llm is None:
             raise PhaseFailure("implementation")
 
@@ -383,7 +464,7 @@ class Orchestrator:
         """Run the Tester role."""
         from orchestrator.roles.tester import Tester
 
-        llm = self._fake_llm or (self._pool.chat if self._pool else None)
+        llm = self._llm_for("tester")
         if llm is None:
             raise PhaseFailure("testing")
 
@@ -409,7 +490,7 @@ class Orchestrator:
         """Run the Reviewer role."""
         from orchestrator.roles.reviewer import Reviewer
 
-        llm = self._fake_llm or (self._pool.chat if self._pool else None)
+        llm = self._llm_for("reviewer")
         if llm is None:
             raise PhaseFailure("review")
 
@@ -420,7 +501,7 @@ class Orchestrator:
         """Run the Deployer role."""
         from orchestrator.roles.deployer import Deployer
 
-        llm = self._fake_llm or (self._pool.chat if self._pool else None)
+        llm = self._llm_for("deployer")
         if llm is None:
             raise PhaseFailure("deployment")
 

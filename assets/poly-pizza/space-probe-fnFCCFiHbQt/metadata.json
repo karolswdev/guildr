@@ -1,0 +1,23 @@
+{
+  "id": "space-probe-fnFCCFiHbQt",
+  "title": "Space probe",
+  "publicId": "fnFCCFiHbQt",
+  "resourceId": "1ada2522-200f-46d7-ba03-e02a968924ec",
+  "creator": "Poly by Google",
+  "license": "CC-BY 3.0",
+  "source": "https://poly.pizza/m/fnFCCFiHbQt",
+  "modelUrl": "https://static.poly.pizza/1ada2522-200f-46d7-ba03-e02a968924ec.glb",
+  "previewUrl": "https://static.poly.pizza/1ada2522-200f-46d7-ba03-e02a968924ec.webp",
+  "localModel": "assets/poly-pizza/space-probe-fnFCCFiHbQt/space-probe-fnFCCFiHbQt.glb",
+  "localPreview": "assets/poly-pizza/space-probe-fnFCCFiHbQt/space-probe-fnFCCFiHbQt.webp",
+  "type": "obj",
+  "tris": 1324,
+  "tags": [
+    "space",
+    "discovery",
+    "exploration",
+    "planet"
+  ],
+  "bytes": 2107760,
+  "downloadedAt": "2026-04-21T07:23:46.312Z"
+}

@@ -127,7 +127,7 @@ class Architect:
         call_id = new_event_id()
         start = time.monotonic()
         try:
-            response = self.llm.chat(messages, max_tokens=16384)
+            response = self.llm.chat(messages, max_tokens=16384, call_id=call_id)
             elapsed_ms = (time.monotonic() - start) * 1000
             from orchestrator.lib.usage import emit_llm_usage
             emit_llm_usage(
@@ -215,7 +215,7 @@ class Architect:
         call_id = new_event_id()
         start = time.monotonic()
         try:
-            response = self.llm.chat(messages, max_tokens=16384)
+            response = self.llm.chat(messages, max_tokens=16384, call_id=call_id)
             elapsed_ms = (time.monotonic() - start) * 1000
             from orchestrator.lib.usage import emit_llm_usage
             emit_llm_usage(
@@ -406,7 +406,7 @@ class Architect:
         call_id = new_event_id()
         start = time.monotonic()
         try:
-            response = self.llm.chat(messages, max_tokens=4096)
+            response = self.llm.chat(messages, max_tokens=4096, call_id=call_id)
             elapsed_ms = (time.monotonic() - start) * 1000
             from orchestrator.lib.usage import emit_llm_usage
             emit_llm_usage(

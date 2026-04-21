@@ -1,0 +1,22 @@
+{
+  "id": "planet-5zzi8WUMXj",
+  "title": "Planet",
+  "publicId": "5zzi8WUMXj",
+  "resourceId": "65aa2bde-4ce0-47e8-b744-13056cd8b389",
+  "creator": "Quaternius",
+  "license": "CC0 1.0",
+  "source": "https://poly.pizza/m/5zzi8WUMXj",
+  "modelUrl": "https://static.poly.pizza/65aa2bde-4ce0-47e8-b744-13056cd8b389.glb",
+  "previewUrl": "https://static.poly.pizza/65aa2bde-4ce0-47e8-b744-13056cd8b389.webp",
+  "localModel": "assets/poly-pizza/planet-5zzi8WUMXj/planet-5zzi8WUMXj.glb",
+  "localPreview": "assets/poly-pizza/planet-5zzi8WUMXj/planet-5zzi8WUMXj.webp",
+  "type": "FBX",
+  "tris": 1070,
+  "tags": [
+    "Sphere",
+    "Purple",
+    "Person"
+  ],
+  "bytes": 45224,
+  "downloadedAt": "2026-04-21T07:23:43.760Z"
+}

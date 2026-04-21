@@ -54,6 +54,8 @@ class JsonFormatter(logging.Formatter):
             entry["reasoning_tokens"] = record.reasoning_tokens
         if hasattr(record, "latency_ms"):
             entry["latency_ms"] = record.latency_ms
+        if hasattr(record, "request_id"):
+            entry["request_id"] = record.request_id
         if record.levelno >= logging.ERROR and record.exc_info:
             entry["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(entry, default=str)
@@ -116,6 +118,9 @@ def setup_phase_logger(
     logger = logging.getLogger(f"orchestrator.phase.{phase}")
     logger.setLevel(level)
     logger.handlers.clear()
+    # Stash project_dir so log_llm_call can persist raw I/O without every
+    # call site needing to pass it. Read by log_llm_call via getattr.
+    logger._project_dir = project_dir  # type: ignore[attr-defined]
 
     handler = PhaseFileHandler(log_dir, phase)
     handler.setLevel(level)
@@ -143,8 +148,15 @@ def log_llm_call(
     messages: list[dict],
     response: Any,
     latency_ms: float,
+    endpoint: str | None = None,
+    request_id: str | None = None,
 ) -> None:
     """Log an LLM call with token counts and latency.
+
+    Also persists the full prompt/response round-trip to
+    ``.orchestrator/logs/raw-io.jsonl`` when the logger was built by
+    ``setup_phase_logger`` (which stashes ``_project_dir`` on the logger).
+    This is the audit trail — the token-count log line is the summary.
 
     Args:
         logger: The phase logger to write to.
@@ -153,6 +165,9 @@ def log_llm_call(
         messages: The messages sent to the model.
         response: An ``LLMResponse`` or similar object with token counts.
         latency_ms: Time taken for the call in milliseconds.
+        endpoint: Upstream label (e.g. ``"primary"`` / ``"alien"``), optional.
+        request_id: Stable id for correlating summary and raw records.
+            Auto-generated when omitted.
     """
     prompt_tokens = 0
     completion_tokens = 0
@@ -163,9 +178,13 @@ def log_llm_call(
         completion_tokens = getattr(response, "completion_tokens", 0) or 0
         reasoning_tokens = getattr(response, "reasoning_tokens", 0) or 0
 
+    if request_id is None:
+        request_id = uuid.uuid4().hex[:16]
+
     extra: dict[str, Any] = {
         "event": f"llm_call.{role}",
         "phase": phase,
+        "request_id": request_id,
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "reasoning_tokens": reasoning_tokens,
@@ -183,6 +202,21 @@ def log_llm_call(
     for k, v in extra.items():
         setattr(record, k, v)
     logger.handle(record)
+
+    project_dir = getattr(logger, "_project_dir", None)
+    if project_dir is not None and response is not None:
+        from orchestrator.lib.raw_io import write_round_trip
+
+        write_round_trip(
+            project_dir,
+            phase=phase,
+            role=role,
+            request_id=request_id,
+            messages=messages,
+            response=response,
+            latency_ms=latency_ms,
+            endpoint=endpoint,
+        )
 
 
 def log_llm_error(

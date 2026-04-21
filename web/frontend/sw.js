@@ -3,12 +3,19 @@
  * Caches the app shell for offline loading.
  */
 
-const CACHE_NAME = "orchestrator-v1";
+const CACHE_NAME = "orchestrator-v10-zero-g-graph";
 const STATIC_ASSETS = [
   "/",
-  "/index.html",
   "/manifest.json",
-  "/src/app.ts",
+  "/dist/app.js",
+  "/assets/atom-meshes/flat-normal.png",
+  "/assets/atom-meshes/canvas-grain.png",
+  "/assets/artifact-textures/canvas-grain.png",
+  "/assets/edge-particle-sprites/disc.png",
+  "/assets/mempalace/radial-alpha-gradient.png",
+  "/assets/fonts/InterVariable.woff2",
+  "/assets/fonts/JetBrainsMono-Regular.woff2",
+  "/assets/icon-sprites/tabler-icons.woff2",
 ];
 
 // Install event — cache static assets

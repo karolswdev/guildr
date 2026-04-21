@@ -41,7 +41,7 @@ class BaseRole:
         call_id = new_event_id()
         start = time.monotonic()
         try:
-            response = self.llm.chat(messages, **kw)
+            response = self.llm.chat(messages, call_id=call_id, **kw)
             elapsed_ms = (time.monotonic() - start) * 1000
             from orchestrator.lib.usage import emit_llm_usage
             emit_llm_usage(

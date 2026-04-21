@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import textwrap
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -143,6 +144,7 @@ class GuruEscalation:
                 {"role": "user", "content": prompt},
             ],
         }
+        start = time.monotonic()
         try:
             with httpx.Client(timeout=120) as client:
                 response = client.post(
@@ -153,7 +155,35 @@ class GuruEscalation:
                 response.raise_for_status()
                 data = response.json()
         except Exception as exc:
+            elapsed_ms = (time.monotonic() - start) * 1000
+            from orchestrator.lib.usage import emit_advisor_usage, emit_provider_error
+            call_id = emit_advisor_usage(
+                self.state,
+                provider_kind="openrouter",
+                provider_name="openrouter",
+                model=model,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                status="error",
+                source="unknown",
+                confidence="none",
+                extraction_path="openrouter.error.no_usage",
+                error=exc,
+            )
+            emit_provider_error(
+                self.state,
+                provider_kind="openrouter",
+                provider_name="openrouter",
+                model=model,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                error=exc,
+                call_id=call_id,
+            )
             return {"provider": "openrouter", "status": "error", "error": str(exc), "model": model}
+        elapsed_ms = (time.monotonic() - start) * 1000
 
         content = ""
         try:
@@ -163,11 +193,50 @@ class GuruEscalation:
         except Exception:
             content = ""
         if not content.strip():
+            from orchestrator.lib.usage import emit_advisor_usage
+            usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+            has_cost = isinstance(usage, dict) and isinstance(usage.get("cost"), int | float)
+            emit_advisor_usage(
+                self.state,
+                provider_kind="openrouter",
+                provider_name="openrouter",
+                model=model,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                status="empty",
+                usage=usage,
+                cost_usd=float(usage["cost"]) if has_cost else None,
+                source="provider_reported" if has_cost else "unknown",
+                confidence="high" if has_cost else "none",
+                extraction_path="response_usage" if has_cost else "openrouter.no_usage",
+                provider_metadata=usage,
+            )
             return {"provider": "openrouter", "status": "empty", "model": model}
         output_path.write_text(content, encoding="utf-8")
+        from orchestrator.lib.usage import emit_advisor_usage
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+        has_cost = isinstance(usage, dict) and isinstance(usage.get("cost"), int | float)
+        emit_advisor_usage(
+            self.state,
+            provider_kind="openrouter",
+            provider_name="openrouter",
+            model=model,
+            role=self._role,
+            step=self._phase,
+            runtime_ms=elapsed_ms,
+            status="ok",
+            usage=usage,
+            cost_usd=float(usage["cost"]) if has_cost else None,
+            source="provider_reported" if has_cost else "unknown",
+            confidence="high" if has_cost else "none",
+            extraction_path="response_usage" if has_cost else "openrouter.no_usage",
+            provider_metadata=usage,
+        )
         return {"provider": "openrouter", "status": "ok", "model": model, "path": str(output_path.relative_to(self.state.project_dir))}
 
     def _run_command(self, provider_name: str, command: list[str], output_path: Path) -> dict[str, Any]:
+        start = time.monotonic()
         try:
             result = subprocess.run(
                 command,
@@ -177,18 +246,101 @@ class GuruEscalation:
                 timeout=240,
             )
         except Exception as exc:
+            elapsed_ms = (time.monotonic() - start) * 1000
+            from orchestrator.lib.usage import emit_advisor_usage, emit_provider_error
+            call_id = emit_advisor_usage(
+                self.state,
+                provider_kind="cli",
+                provider_name=provider_name,
+                model="",
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                status="error",
+                source="cli_process",
+                confidence="none",
+                extraction_path="cli.no_usage",
+                error=exc,
+            )
+            emit_provider_error(
+                self.state,
+                provider_kind="cli",
+                provider_name=provider_name,
+                model="",
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                error=exc,
+                call_id=call_id,
+            )
             return {"provider": provider_name, "status": "error", "error": str(exc)}
+        elapsed_ms = (time.monotonic() - start) * 1000
         if result.returncode != 0:
+            error = (result.stderr or result.stdout or f"exit {result.returncode}").strip()[:1200]
+            from orchestrator.lib.usage import emit_advisor_usage, emit_provider_error
+            call_id = emit_advisor_usage(
+                self.state,
+                provider_kind="cli",
+                provider_name=provider_name,
+                model="",
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                status="error",
+                source="cli_process",
+                confidence="none",
+                extraction_path="cli.no_usage",
+                error=error,
+            )
+            emit_provider_error(
+                self.state,
+                provider_kind="cli",
+                provider_name=provider_name,
+                model="",
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                error=error,
+                call_id=call_id,
+            )
             return {
                 "provider": provider_name,
                 "status": "error",
-                "error": (result.stderr or result.stdout or f"exit {result.returncode}").strip()[:1200],
+                "error": error,
             }
         if not output_path.exists():
             if result.stdout.strip():
                 output_path.write_text(result.stdout, encoding="utf-8")
             else:
+                from orchestrator.lib.usage import emit_advisor_usage
+                emit_advisor_usage(
+                    self.state,
+                    provider_kind="cli",
+                    provider_name=provider_name,
+                    model="",
+                    role=self._role,
+                    step=self._phase,
+                    runtime_ms=elapsed_ms,
+                    status="empty",
+                    source="cli_process",
+                    confidence="none",
+                    extraction_path="cli.no_usage",
+                )
                 return {"provider": provider_name, "status": "empty"}
+        from orchestrator.lib.usage import emit_advisor_usage
+        emit_advisor_usage(
+            self.state,
+            provider_kind="cli",
+            provider_name=provider_name,
+            model="",
+            role=self._role,
+            step=self._phase,
+            runtime_ms=elapsed_ms,
+            status="ok",
+            source="cli_process",
+            confidence="none",
+            extraction_path="cli.no_usage",
+        )
         return {"provider": provider_name, "status": "ok", "path": str(output_path.relative_to(self.state.project_dir))}
 
     @staticmethod

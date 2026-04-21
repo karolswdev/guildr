@@ -79,6 +79,14 @@ def mock_pool() -> MagicMock:
     return pool
 
 
+class CaptureEvents:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def emit(self, event_type: str, **fields) -> None:
+        self.events.append({"type": event_type, **fields})
+
+
 # ---------------------------------------------------------------------------
 # Tests: run() calls phases in correct order
 # ---------------------------------------------------------------------------
@@ -203,6 +211,7 @@ class TestRunOrder:
 
         mock_git_ops.ensure_repo.assert_called_once()
 
+
     def test_run_calls_ensure_qwendea(self, config, qwendea, mock_git_ops, mock_pool):
         """run() calls _ensure_qwendea after git repo setup."""
         (config.project_dir / "sprint-plan.md").write_text(
@@ -241,6 +250,50 @@ class TestRunOrder:
         # _ensure_qwendea should have been called (no exception raised)
         # If qwendea.md exists, it silently passes
         assert config.project_dir.exists()
+
+
+class TestLoopEvents:
+    """SDLC loop event emission."""
+
+    def test_validator_retry_emits_verify_repair_verify_loop(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = CaptureEvents()
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events)
+        validation_results = iter([False, True])
+        orchestrator._validate = MagicMock(side_effect=lambda name: next(validation_results))
+
+        orchestrator._run_phase("testing", lambda: None)
+
+        loop_events = [event for event in events.events if event["type"].startswith("loop_")]
+        assert [(event["type"], event["loop_stage"]) for event in loop_events] == [
+            ("loop_entered", "verify"),
+            ("loop_blocked", "verify"),
+            ("loop_repaired", "repair"),
+            ("loop_entered", "verify"),
+            ("loop_completed", "verify"),
+        ]
+        assert all(event["step"] == "testing" for event in loop_events)
+        assert all("loop_id" in event for event in loop_events)
+
+    def test_memory_refresh_maps_to_learn_loop(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = CaptureEvents()
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events)
+        orchestrator._validate = MagicMock(return_value=True)
+
+        orchestrator._run_phase("memory_refresh", lambda: None)
+
+        loop_events = [event for event in events.events if event["type"].startswith("loop_")]
+        assert [(event["type"], event["loop_stage"]) for event in loop_events] == [
+            ("loop_entered", "learn"),
+            ("loop_completed", "learn"),
+        ]
 
 
 # ---------------------------------------------------------------------------

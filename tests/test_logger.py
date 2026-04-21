@@ -273,6 +273,66 @@ class TestLogLlmCall:
         assert "judge" in entry["event"]
 
 
+class TestLogLlmCallRawIo:
+    """log_llm_call must also persist the raw round-trip to raw-io.jsonl."""
+
+    def test_writes_raw_round_trip_alongside_token_summary(self, tmp_path: Path) -> None:
+        logger = setup_phase_logger(tmp_path, "architect", level=logging.DEBUG, console=False)
+        mock_response = MagicMock()
+        mock_response.content = "SENTINEL-RESPONSE-7f3a"
+        mock_response.reasoning_content = "thinking..."
+        mock_response.finish_reason = "stop"
+        mock_response.prompt_tokens = 11
+        mock_response.completion_tokens = 22
+        mock_response.reasoning_tokens = 3
+
+        log_llm_call(
+            logger,
+            phase="architect",
+            role="architect",
+            messages=[{"role": "user", "content": "SENTINEL-PROMPT-bea2"}],
+            response=mock_response,
+            latency_ms=42.0,
+            endpoint="http://192.168.1.13:8080",
+        )
+
+        phase_log = tmp_path / ".orchestrator" / "logs" / "architect.jsonl"
+        raw_io = tmp_path / ".orchestrator" / "logs" / "raw-io.jsonl"
+        assert phase_log.exists()
+        assert raw_io.exists()
+
+        phase_entry = json.loads(phase_log.read_text().strip())
+        raw_entry = json.loads(raw_io.read_text().strip())
+
+        assert phase_entry["request_id"] == raw_entry["request_id"]
+        assert raw_entry["role"] == "architect"
+        assert raw_entry["endpoint"] == "http://192.168.1.13:8080"
+        assert raw_entry["messages"] == [{"role": "user", "content": "SENTINEL-PROMPT-bea2"}]
+        assert raw_entry["response_content"] == "SENTINEL-RESPONSE-7f3a"
+        assert raw_entry["reasoning_content"] == "thinking..."
+        assert raw_entry["usage"] == {"prompt_tokens": 11, "completion_tokens": 22, "reasoning_tokens": 3}
+
+    def test_raw_round_trip_skipped_when_no_project_dir_on_logger(self, tmp_path: Path) -> None:
+        bare_logger = logging.getLogger("orchestrator.phase.detached")
+        bare_logger.handlers.clear()
+        mock_response = MagicMock()
+        mock_response.content = "x"
+        mock_response.prompt_tokens = 0
+        mock_response.completion_tokens = 0
+        mock_response.reasoning_tokens = 0
+
+        log_llm_call(
+            bare_logger,
+            phase="detached",
+            role="architect",
+            messages=[{"role": "user", "content": "x"}],
+            response=mock_response,
+            latency_ms=1.0,
+        )
+
+        assert not (tmp_path / ".orchestrator" / "logs" / "raw-io.jsonl").exists()
+
+
 class TestLogLlmError:
     """Test LLM error logging helper."""
 

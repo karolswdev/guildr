@@ -1,0 +1,23 @@
+{
+  "id": "planet-18Uxrb2dIc",
+  "title": "Planet",
+  "publicId": "18Uxrb2dIc",
+  "resourceId": "14f2d768-c6d0-4174-b9ed-0adba110ab89",
+  "creator": "Quaternius",
+  "license": "CC0 1.0",
+  "source": "https://poly.pizza/m/18Uxrb2dIc",
+  "modelUrl": "https://static.poly.pizza/14f2d768-c6d0-4174-b9ed-0adba110ab89.glb",
+  "previewUrl": "https://static.poly.pizza/14f2d768-c6d0-4174-b9ed-0adba110ab89.webp",
+  "localModel": "assets/poly-pizza/planet-18Uxrb2dIc/planet-18Uxrb2dIc.glb",
+  "localPreview": "assets/poly-pizza/planet-18Uxrb2dIc/planet-18Uxrb2dIc.webp",
+  "type": "FBX",
+  "tris": 2178,
+  "tags": [
+    "Soccer Ball",
+    "Sport",
+    "Sphere",
+    "Hoodie"
+  ],
+  "bytes": 86312,
+  "downloadedAt": "2026-04-21T07:23:43.037Z"
+}

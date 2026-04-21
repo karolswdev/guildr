@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from openai import APIConnectionError, APITimeoutError, OpenAI, RateLimitError
 from openai._exceptions import APIStatusError, InternalServerError
@@ -20,6 +21,10 @@ class LLMResponse:
     completion_tokens: int
     reasoning_tokens: int
     finish_reason: str
+    model: str = ""
+    usage_metadata: dict[str, Any] | None = None
+    cost_usd: float | None = None
+    timings: dict[str, Any] | None = None
 
 
 class ThinkingTruncation(Exception):
@@ -52,6 +57,7 @@ class LLMClient:
         *,
         max_tokens: int = 8192,
         temperature: float | None = None,
+        call_id: str | None = None,  # noqa: ARG002 — accepted so SyncPoolClient/base role can thread the H4 join key uniformly
     ) -> LLMResponse:
         """Send a chat completion request.
 
@@ -117,6 +123,8 @@ class LLMClient:
             raise ThinkingTruncation(reasoning_len=len(reasoning))
 
         usage = response.usage or {}
+        usage_metadata = usage if isinstance(usage, dict) else _usage_to_dict(usage)
+
         def _tok(key: str) -> int:
             if isinstance(usage, dict):
                 return usage.get(key, 0)
@@ -130,7 +138,32 @@ class LLMClient:
             completion_tokens=_tok("completion_tokens"),
             reasoning_tokens=_tok("reasoning_tokens"),
             finish_reason=choice.finish_reason or "stop",
+            model=_string_attr(response, "model"),
+            usage_metadata=usage_metadata,
+            timings=_extract_timings(response),
         )
+
+    def metrics(self) -> dict[str, Any] | None:
+        """Fetch supplemental /metrics and /slots telemetry.
+
+        Returns None when monitoring endpoints are disabled or unreachable —
+        these are supplemental and must never fail the call.
+        """
+        import httpx
+
+        result: dict[str, Any] = {}
+        try:
+            with httpx.Client(timeout=2) as client:
+                for name, path in (("metrics", "/metrics"), ("slots", "/slots")):
+                    try:
+                        resp = client.get(f"{self.base_url}{path}")
+                        if resp.status_code == 200:
+                            result[name] = resp.text if name == "metrics" else resp.json()
+                    except Exception:
+                        continue
+        except Exception:
+            return None
+        return result or None
 
     def health(self) -> bool:
         """Check llama-server health via GET /health."""
@@ -144,3 +177,41 @@ class LLMClient:
                 return data.get("status") == "ok"
         except Exception:
             return False
+
+
+def _usage_to_dict(usage: Any) -> dict[str, Any]:
+    if usage is None:
+        return {}
+    if hasattr(usage, "model_dump"):
+        data = usage.model_dump()
+        return data if isinstance(data, dict) else {}
+    result: dict[str, Any] = {}
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens"):
+        value = getattr(usage, key, None)
+        if value is not None:
+            result[key] = value
+    return result
+
+
+def _string_attr(obj: Any, name: str) -> str:
+    value = getattr(obj, name, "")
+    return value if isinstance(value, str) else ""
+
+
+def _extract_timings(response: Any) -> dict[str, Any] | None:
+    """Read llama.cpp `timings` block from an OpenAI-compatible response."""
+    timings = getattr(response, "timings", None)
+    if timings is None:
+        extra = getattr(response, "model_extra", None)
+        if isinstance(extra, dict):
+            timings = extra.get("timings")
+    if timings is None and isinstance(response, dict):
+        timings = response.get("timings")
+    if timings is None:
+        return None
+    if hasattr(timings, "model_dump"):
+        data = timings.model_dump()
+        return data if isinstance(data, dict) else None
+    if isinstance(timings, dict):
+        return timings
+    return None

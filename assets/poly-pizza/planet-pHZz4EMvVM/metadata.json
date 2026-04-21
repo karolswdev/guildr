@@ -1,0 +1,23 @@
+{
+  "id": "planet-pHZz4EMvVM",
+  "title": "Planet",
+  "publicId": "pHZz4EMvVM",
+  "resourceId": "b6152eba-27b5-4914-ad50-f1234adb7ff0",
+  "creator": "Quaternius",
+  "license": "CC0 1.0",
+  "source": "https://poly.pizza/m/pHZz4EMvVM",
+  "modelUrl": "https://static.poly.pizza/b6152eba-27b5-4914-ad50-f1234adb7ff0.glb",
+  "previewUrl": "https://static.poly.pizza/b6152eba-27b5-4914-ad50-f1234adb7ff0.webp",
+  "localModel": "assets/poly-pizza/planet-pHZz4EMvVM/planet-pHZz4EMvVM.glb",
+  "localPreview": "assets/poly-pizza/planet-pHZz4EMvVM/planet-pHZz4EMvVM.webp",
+  "type": "FBX",
+  "tris": 1864,
+  "tags": [
+    "Egg",
+    "Food",
+    "Hardhat",
+    "Helmet"
+  ],
+  "bytes": 65132,
+  "downloadedAt": "2026-04-21T07:23:44.895Z"
+}

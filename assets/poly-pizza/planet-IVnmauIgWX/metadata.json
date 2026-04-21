@@ -1,0 +1,22 @@
+{
+  "id": "planet-IVnmauIgWX",
+  "title": "Planet",
+  "publicId": "IVnmauIgWX",
+  "resourceId": "3948a6c9-cd96-467d-890e-e019442e9877",
+  "creator": "Quaternius",
+  "license": "CC0 1.0",
+  "source": "https://poly.pizza/m/IVnmauIgWX",
+  "modelUrl": "https://static.poly.pizza/3948a6c9-cd96-467d-890e-e019442e9877.glb",
+  "previewUrl": "https://static.poly.pizza/3948a6c9-cd96-467d-890e-e019442e9877.webp",
+  "localModel": "assets/poly-pizza/planet-IVnmauIgWX/planet-IVnmauIgWX.glb",
+  "localPreview": "assets/poly-pizza/planet-IVnmauIgWX/planet-IVnmauIgWX.webp",
+  "type": "FBX",
+  "tris": 1598,
+  "tags": [
+    "Sphere",
+    "Jupiter",
+    "Planet"
+  ],
+  "bytes": 58764,
+  "downloadedAt": "2026-04-21T07:23:43.495Z"
+}

@@ -1,0 +1,23 @@
+{
+  "id": "asteroid-enaIlQWET9a",
+  "title": "Asteroid",
+  "publicId": "enaIlQWET9a",
+  "resourceId": "ff13c036-f5c4-4267-b0b6-73cc3430728e",
+  "creator": "Poly by Google",
+  "license": "CC-BY 3.0",
+  "source": "https://poly.pizza/m/enaIlQWET9a",
+  "modelUrl": "https://static.poly.pizza/ff13c036-f5c4-4267-b0b6-73cc3430728e.glb",
+  "previewUrl": "https://static.poly.pizza/ff13c036-f5c4-4267-b0b6-73cc3430728e.webp",
+  "localModel": "assets/poly-pizza/asteroid-enaIlQWET9a/asteroid-enaIlQWET9a.glb",
+  "localPreview": "assets/poly-pizza/asteroid-enaIlQWET9a/asteroid-enaIlQWET9a.webp",
+  "type": "obj",
+  "tris": 1678,
+  "tags": [
+    "space",
+    "planetoid",
+    "galaxy",
+    "solarsystem"
+  ],
+  "bytes": 734132,
+  "downloadedAt": "2026-04-21T07:23:45.997Z"
+}

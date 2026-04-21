@@ -10,6 +10,10 @@ cd "$(dirname "$0")"
 
 mkdir -p dist
 
+if [ ! -d node_modules/three ]; then
+  npm install --no-package-lock --no-save >/dev/null
+fi
+
 npx --yes esbuild@0.24.0 \
   src/app.ts \
   --bundle \

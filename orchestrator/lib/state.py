@@ -20,6 +20,7 @@ class State:
         self.sessions: dict[str, str] = {}
         self.retries: dict[str, int] = {}
         self.gates_approved: dict[str, bool] = {}
+        self.events: object | None = None
 
     # -- loading / saving ---------------------------------------------------
 

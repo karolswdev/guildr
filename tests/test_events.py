@@ -39,6 +39,8 @@ class TestEventBus:
         bus.emit("phase_start", name="architect", attempt=0)
         event = queue.get_nowait()
         assert event["type"] == "phase_start"
+        assert event["event_id"]
+        assert event["schema_version"] == 1
         assert event["name"] == "architect"
         assert event["attempt"] == 0
 
