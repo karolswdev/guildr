@@ -619,3 +619,19 @@ Not yet implemented:
 - Event-to-artifact cross-links.
 - Agent diary mining.
 - Replay branching.
+
+## 18. Three.js Client Design Documents
+
+The PWA direction is now governed by the following design documents:
+
+- `docs/threejs-product-direction.md`
+- `docs/threejs-client-architecture.md`
+- `docs/ux-interaction-model.md`
+- `docs/visual-grammar.md`
+- `docs/threejs-integration-plan.md`
+- `docs/implementation-roadmap.md`
+
+These documents supersede the idea of the Progress view as a conventional
+admin console. The long-term default project run view is a Three.js strategy
+map driven by the event ledger, with DOM overlays for text, accessibility,
+controls, and fallback operation.

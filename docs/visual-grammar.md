@@ -1,0 +1,260 @@
+# Visual Grammar - Atoms, Memory, Agents, Gates, Artifacts, Events, Replay
+
+## Design Language
+
+The visual grammar is **functional minimalism with biological warmth**. Atoms are cells. Edges are axons. MemPalace is a sky structure. Gates are checkpoints. Artifacts are crystallized outputs. Events are pulses of energy. The overall aesthetic: dark environment, glowing active elements, subtle particle flow - closer to Monument Valley or Reigns than to a Gantt chart.
+
+---
+
+## Color System
+
+```
+Background (platform)   #0D0F14   near-black with blue undertone
+Grid lines              #1A1E2A   subtle hex grid
+Inactive atom           #1E2235   dark blue-grey solid
+Active atom             #2E4AFF   electric blue with bloom
+Done atom               #1A8C5A   deep teal-green
+Error atom              #CC3333   deep red
+Waiting atom (gate)     #E09B2A   amber
+Skipped atom            #2A2D3A   muted grey, dashed outline
+Edge (inactive)         #272B3D   near-invisible
+Edge (active pulse)     #4D6FFF   bright blue travelling dot
+Edge (done)             #1E5C42   settled green
+MemPalace arc           #5B3FBF   indigo-purple, semi-transparent
+Memory orb              #9B7EFF   lavender glow
+Artifact card           #2A3A2E   dark green panel
+Gate (waiting)          #E09B2A   amber
+Gate (decided/pass)     #1A8C5A
+Gate (decided/fail)     #CC3333
+Event pulse             #FFD966   yellow-gold travelling particle
+Text primary            #E8EAF0
+Text secondary          #7A7E92
+Accent / action         #4D6FFF
+Danger                  #CC3333
+Success                 #1A8C5A
+```
+
+---
+
+## Atom Nodes
+
+Each workflow step renders as an **AtomNode**: a rounded-rectangle platform (or pill shape) floating slightly above the ground plane, with a label underneath.
+
+### Geometry
+- Shape: `RoundedBoxGeometry` (width 1.6, height 0.18, depth 1.0, radius 0.12)
+- Normal state: flat-shaded with slight bevel
+- Active state: emissive glow (bloom pass amplifies it)
+- Label: `CanvasTexture` with step title, rendered below the mesh
+
+### State Visuals
+
+| State | Fill | Emissive | Outline | Animation |
+|---|---|---|---|---|
+| `idle` | `#1E2235` | none | none | none |
+| `active` | `#2E4AFF` | `#1A2A99` (0.4) | none | slow breathing scale (+/-2%, 2.4s) |
+| `done` | `#1A8C5A` | `#0A3A28` (0.2) | none | brief scale-up flash on transition |
+| `error` | `#CC3333` | `#660000` (0.3) | `#FF4444` dashed | brief shake (+/-0.05 x, 200ms) |
+| `waiting` | `#E09B2A` | `#7A4A00` (0.4) | none | rhythmic scale pulse (1.05x / 1s) |
+| `skipped` | `#2A2D3A` | none | `#3A3D4A` dashed | none |
+
+### Atom Type Badges
+
+Small icon rendered in the top-left corner of each atom face (via `CanvasTexture`):
+
+| Type | Icon | Color |
+|---|---|---|
+| `phase` | `diamond` diamond | white |
+| `gate` | `hex` hexagon | amber |
+| `checkpoint` | `check` checkmark | teal |
+| `memory_refresh` | `cycle` cycle | lavender |
+| `persona_forum` | `target` target | cyan |
+| `architect` | `pentagon` blueprint | blue |
+| `micro_task_breakdown` | `grid` grid | white |
+| `implementation` | `play` play | blue |
+| `testing` | `circle` circle-in-circle | green |
+| `guru_escalation` | `up` upward arrow | gold |
+| `review` | `diamond` layered diamond | purple |
+| `deployment` | `upload` upload | teal |
+
+---
+
+## Edges (Connections Between Atoms)
+
+Edges represent workflow order dependencies.
+
+### Geometry
+- `TubeGeometry` along a catmull-rom curve between atom center points
+- Tube radius: 0.04 (inactive), 0.06 (active)
+- Segments: 20 (enough for smooth curve without overdraw)
+
+### Animation
+- **Idle:** No animation. Near-invisible dark color.
+- **Active path:** Travelling dot particle (a `SphereGeometry` r=0.05) moves along the edge at 0.8 units/sec. Multiple particles stagger for visual flow.
+- **Done path:** Edge color transitions to done-green over 600ms. Particles stop.
+- **Blocked path:** Edge remains idle-dark.
+
+### Branching
+Gates with multiple outgoing edges show all branches. The taken branch animates; unchosen branches fade further.
+
+---
+
+## Gate Nodes
+
+Gates are a distinct visual from phase atoms.
+
+### Geometry
+- `OctahedronGeometry` (radius 0.5) - diamond/crystal shape
+- Floats 0.3 units above platform level
+- Slow continuous Y-axis rotation (0.3 rad/sec)
+
+### State Visuals
+
+| State | Color | Effect |
+|---|---|---|
+| `waiting` | Amber `#E09B2A` | Rhythmic bloom pulse, amber particles orbit |
+| `approved` | Teal `#1A8C5A` | Brief burst expand, then settles |
+| `rejected` | Red `#CC3333` | Brief shake, red particle burst |
+| `skipped` | Muted grey | No animation |
+
+### Decision Prompt
+When `waiting`, a floating text bubble above the gate shows the gate's question (truncated to 60 chars). Full text in FocusPanel.
+
+---
+
+## MemPalace Overlay
+
+MemPalace is the project's memory spine. It renders as a **persistent arc structure** floating above and behind the workflow map - always visible, never occluding atoms.
+
+### Geometry
+- `TorusGeometry` (radius 8, tube 0.12, arc 180 degrees) - a half-ring arc
+- Positioned at Y+4 above the map center, tilted back 20 degrees away from camera
+- Semi-transparent (`opacity: 0.35`, `transparent: true`)
+- Color: indigo-purple `#5B3FBF`
+- Slow continuous rotation around Y axis (0.05 rad/sec)
+
+### Status Indicators
+- Three small orbs sit on the arc: **initialized**, **synced**, **wake-up active**
+- Lit orbs (`#9B7EFF`) = active; dark orbs (`#2A2040`) = inactive
+- Tapping the arc triggers memory search UX
+
+### Memory Orbs (search results)
+- `SphereGeometry` radius 0.12, material `#9B7EFF` with bloom
+- On search result: orbs float down from arc, orbit the relevant atom for 3s, then drift back
+- Tapping an orb freezes it and opens the memory fragment in FocusPanel
+
+---
+
+## Artifact Cards
+
+Artifacts are outputs produced by atoms (sprint plan, test report, review, deploy manifest).
+
+### Geometry
+- `PlaneGeometry` (1.2 x 0.7) - flat card anchored below and to the right of the producing atom
+- Material: `#2A3A2E` dark green with a thin `#3A8C5A` border
+- Slight tilt (5 degrees toward camera)
+- Artifact type icon + name rendered via `CanvasTexture`
+- Tap to open full artifact text in FocusPanel
+
+### Artifact Types and Icons
+
+| Artifact | Icon | Color |
+|---|---|---|
+| `sprint-plan.md` | `clipboard` | teal |
+| `phase-files/` | `grid` grid | white |
+| `TEST_REPORT.md` | `circle` | green |
+| `REVIEW.md` | `diamond` | purple |
+| `DEPLOY.md` | `upload` | cyan |
+| `PERSONA_FORUM.md` | `target` | amber |
+| `FOUNDING_TEAM.json` | `targettargettarget` | gold |
+
+---
+
+## Event Particles
+
+Events from the SSE stream manifest as **travelling particles** in the scene.
+
+### Particle Types
+
+| Event Type | Particle Color | Behaviour |
+|---|---|---|
+| `phase_start` | `#4D6FFF` blue | Spawns at map entry, travels edge to atom |
+| `phase_done` | `#1A8C5A` teal | Expands outward from atom, fades |
+| `phase_error` | `#CC3333` red | Scatter-burst from atom |
+| `phase_retry` | `#E09B2A` amber | Orbit around atom, re-enter |
+| `gate_opened` | `#E09B2A` amber | Orbit gate crystal |
+| `gate_decided` | `#1A8C5A` or `#CC3333` | Expand outward from gate |
+| `run_started` | `#FFD966` gold | Cascade from top of map downward |
+| `run_complete` | `#1A8C5A` teal | Full-map ring-expand |
+| `run_error` | `#CC3333` red | Full-map shake + red flash |
+| `memory_refresh` | `#9B7EFF` lavender | Arc-to-atom beam |
+| `checkpoint` | `#FFD966` gold | Upward burst from atom |
+
+### Particle System Implementation
+- Use `THREE.Points` with a custom `ShaderMaterial` for performance
+- Maximum 500 simultaneous particles (recycle pool)
+- Each particle has: position, velocity, color, lifetime, curve-follow flag
+
+---
+
+## Replay Timeline HUD
+
+The bottom timeline renders the event history as a **density histogram** + **state lane**.
+
+### Structure (expanded state)
+
+```
+|||||||||||||||||||||||||||||||||||||||||||||||
+| #######################################   | <- event density
+| ||||||||||||||||||||||||||||||||||||||||||  | <- scrub track
+|  [<<] [>/[]] |||||||*|||||||||||||||| LIVE  |
+|  14:23:01                         14:31:44  |
+|||||||||||||||||||||||||||||||||||||||||||||||
+```
+
+- Density bars: taller = more events per time bucket. Colored by event type mix.
+- Scrubber thumb: `*` 24pt diameter, draggable
+- Left side: timestamp of leftmost visible event
+- Right side: `LIVE` (live mode) or timestamp (history)
+
+### Collapsed state (56pt bar)
+Shows only the scrubber track with event density as a thin gradient line. Swipe up to expand.
+
+---
+
+## FocusPanel
+
+The FocusPanel is a DOM overlay (not Three.js) that slides in from the bottom (portrait) or right (landscape).
+
+### Layout
+
+```
+||||||||||||||||||||||
+| diamond architect        |  <- atom icon + name
+| * ACTIVE  2m 14s   |  <- state badge + elapsed
+||||||||||||||||||||||
+| Last event         |
+| phase_start        |  <- event type
+| "Generating arch..." |  <- narrative
+||||||||||||||||||||||
+| Memory accesses    |
+| o entities.json    |  <- memory refs, tappable
+| o sprint-plan.md   |
+||||||||||||||||||||||
+| 1,240 tok/s  12GB  |  <- telemetry (if available)
+||||||||||||||||||||||
+| [View Logs] [JSON] |  <- action buttons
+||||||||||||||||||||||
+```
+
+For gates, the approve/reject/escalate buttons replace the bottom actions and are full-width, min 56pt height.
+
+---
+
+## Color Usage Rules
+
+1. **Never use more than 3 colors simultaneously on atom faces.** State color + label + badge only.
+2. **Bloom is additive.** Active atoms appear brighter in dark surroundings. Do not add bloom to idle atoms.
+3. **Error red is reserved for errors.** Do not use red for decorative elements.
+4. **MemPalace arc must always be visible.** Never occlude it with atom layout.
+5. **Particle alpha fades over lifetime.** Start at 0.9, end at 0.0. Never abrupt pop.
+6. **Text on canvas is always high-contrast.** Atom labels: `#E8EAF0` on dark background. Never text on active-blue without testing contrast ratio >= 4.5:1.

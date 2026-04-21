@@ -87,205 +87,210 @@ const PHASE_ORDER = [
 
 export function renderProgress(container: Element, navigate: (route: string) => void, projectId: string): void {
   container.innerHTML = `
-    <header style="padding: 16px; border-bottom: 1px solid #262626; background: #050505;">
-      <button
-        onclick="navigate('#project/${projectId}')"
-        style="background: none; border: none; color: #8fd3ff; font-size: 14px; cursor: pointer; padding: 8px 0;"
-      >
-        <- Back
-      </button>
-      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-end; margin-top: 8px;">
-        <div>
-          <h1 style="font-size: 22px; margin: 0 0 6px;">Mission Control</h1>
-          <div style="font-size: 13px; color: #8c8c8c;">Live workflow, founding team, event timeline, and terminal peeks.</div>
-        </div>
-        <div id="dirty-indicator" style="font-size: 12px; color: #8c8c8c;">Workflow synced</div>
+    <style>
+      .mc-topbar, .mc-status-strip, .mc-command, .mc-panel { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+      .mc-tabs { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+      .mc-panel-split { display: grid; gap: 16px; grid-template-columns: minmax(220px, 0.38fr) minmax(0, 0.62fr); }
+      .mc-workflow-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr); }
+      .mc-memory-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); }
+      @media (max-width: 760px) {
+        .mc-topbar { position: sticky; top: 0; z-index: 30; align-items: flex-start !important; }
+        .mc-status-strip { padding-top: 10px !important; }
+        .mc-command { position: sticky; top: 54px; z-index: 25; box-shadow: 0 10px 24px rgba(0,0,0,0.28); }
+        .mc-tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; padding: 6px max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)) !important; justify-content: space-around; border-top: 1px solid #202020; border-bottom: none !important; }
+        .mc-tab { min-width: 64px; min-height: 44px; padding: 8px 10px !important; border-bottom: none !important; border-radius: 8px; }
+        .mc-panel { padding: 12px max(12px, env(safe-area-inset-right)) calc(84px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)) !important; }
+        .mc-panel-split, .mc-workflow-grid, .mc-memory-grid { grid-template-columns: 1fr !important; }
+        .mc-command > div { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .mc-command button, .mc-command select, .mc-command input, .mc-command label { min-height: 44px; }
+        #run-strip { display: flex !important; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; }
+        #run-strip > button { min-width: 148px; scroll-snap-align: start; }
+      }
+    </style>
+    <header class="mc-topbar" style="padding: 12px 16px; border-bottom: 1px solid #1a1a1a; background: #050505; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center;">
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <button
+          onclick="navigate('#project/${projectId}')"
+          style="background: none; border: none; color: #8fd3ff; font-size: 13px; cursor: pointer; padding: 4px 0;"
+        >&larr; Back</button>
+        <h1 style="font-size: 18px; margin: 0; font-weight: 600;">Mission Control</h1>
+        <div id="dirty-indicator" style="font-size: 11px; color: #8c8c8c;">Workflow synced</div>
       </div>
+      <div id="control-status" style="font-size: 13px; color: #8c8c8c; min-height: 18px;"></div>
     </header>
-    <main style="padding: 16px; display: grid; gap: 16px;">
-      <section style="padding: 14px; background: linear-gradient(180deg, #121826 0%, #0c0f16 100%); border: 1px solid #273148; border-radius: 8px;">
-        <div style="display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 14px;">
-          <div style="padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
-            <div style="font-size: 11px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Current Focus</div>
-            <div id="focus-step" style="font-size: 18px; font-weight: 600; color: #f3f7ff;">Loading...</div>
-            <div id="focus-detail" style="font-size: 13px; color: #b7c1d8; margin-top: 6px;">Waiting for run state.</div>
-          </div>
-          <div style="padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
-            <div style="font-size: 11px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Next Step</div>
-            <div id="focus-next" style="font-size: 18px; font-weight: 600; color: #f3f7ff;">-</div>
-            <div id="focus-next-detail" style="font-size: 13px; color: #b7c1d8; margin-top: 6px;">Workflow ready.</div>
-          </div>
-          <div style="padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
-            <div style="font-size: 11px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Live Telemetry</div>
-            <div style="display: flex; justify-content: space-between; gap: 12px;">
-              <div>
-                <div style="font-size: 12px; color: #7f8aa3;">Tokens/sec</div>
-                <div id="tok-s" style="font-size: 18px; font-weight: 600; color: #7de5b1;">-</div>
-              </div>
-              <div>
-                <div style="font-size: 12px; color: #7f8aa3;">VRAM</div>
-                <div id="vram" style="font-size: 18px; font-weight: 600; color: #7de5b1;">-</div>
-              </div>
-            </div>
-          </div>
-          <div style="padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
-            <div style="font-size: 11px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Latest Signal</div>
-            <div id="latest-signal" style="font-size: 14px; font-weight: 600; color: #f3f7ff;">Connecting...</div>
-            <div id="latest-signal-detail" style="font-size: 12px; color: #b7c1d8; margin-top: 6px;">Event stream is starting.</div>
-          </div>
-        </div>
-        <div id="run-strip" style="display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));"></div>
-      </section>
 
-      <section style="display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
-        <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
-          <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
-            <div style="font-size: 15px; font-weight: 600;">Command Deck</div>
-            <div id="control-status" style="min-height: 20px; font-size: 13px; color: #8c8c8c;"></div>
-          </div>
-          <div style="display: grid; gap: 10px;">
+    <section class="mc-status-strip" style="padding: 12px 16px; background: linear-gradient(180deg,#121826 0%,#0c0f16 100%); border-bottom: 1px solid #273148;">
+      <div style="display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 10px;">
+        <div style="padding: 10px 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
+          <div style="font-size: 10px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0; margin-bottom: 4px;">Current Focus</div>
+          <div id="focus-step" style="font-size: 15px; font-weight: 600; color: #f3f7ff;">Loading...</div>
+          <div id="focus-detail" style="font-size: 12px; color: #b7c1d8; margin-top: 4px;">Waiting for run state.</div>
+        </div>
+        <div style="padding: 10px 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
+          <div style="font-size: 10px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0; margin-bottom: 4px;">Next Step</div>
+          <div id="focus-next" style="font-size: 15px; font-weight: 600; color: #f3f7ff;">-</div>
+          <div id="focus-next-detail" style="font-size: 12px; color: #b7c1d8; margin-top: 4px;">Workflow ready.</div>
+        </div>
+        <div style="padding: 10px 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
+          <div style="font-size: 10px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0; margin-bottom: 4px;">Telemetry</div>
+          <div style="display: flex; justify-content: space-between; gap: 8px;">
             <div>
-              <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Resume From</label>
-              <select id="resume-step" style="${inputStyle()}"></select>
+              <div style="font-size: 10px; color: #7f8aa3;">tok/s</div>
+              <div id="tok-s" style="font-size: 15px; font-weight: 600; color: #7de5b1;">-</div>
             </div>
             <div>
-              <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Instruction Scope</label>
-              <select id="instruction-scope" style="${inputStyle()}">
-                <option value="">All phases</option>
-              </select>
-            </div>
-            <div>
-              <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Operator Instruction</label>
-              <textarea
-                id="operator-instruction"
-                rows="5"
-                placeholder="Inject a directive, remediation note, or priority correction."
-                style="${textAreaStyle()}"
-              ></textarea>
-            </div>
-            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #d5d5d5;">
-              <input id="compact-before-resume" type="checkbox" />
-              Compact context before resume
-            </label>
-            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
-              <button id="btn-inject" style="${actionButton("#173c66", "#ffffff")}">Inject</button>
-              <button id="btn-compact" style="${actionButton("#1d4f38", "#ffffff")}">Compact</button>
-              <button id="btn-resume" style="${actionButton("#8fd3ff", "#05111d", true)}">Resume</button>
+              <div style="font-size: 10px; color: #7f8aa3;">VRAM</div>
+              <div id="vram" style="font-size: 15px; font-weight: 600; color: #7de5b1;">-</div>
             </div>
           </div>
-        </section>
+        </div>
+        <div style="padding: 10px 12px; background: rgba(255,255,255,0.03); border: 1px solid #24324b; border-radius: 8px;">
+          <div style="font-size: 10px; color: #7f8aa3; text-transform: uppercase; letter-spacing: 0; margin-bottom: 4px;">Latest Signal</div>
+          <div id="latest-signal" style="font-size: 13px; font-weight: 600; color: #f3f7ff;">Connecting...</div>
+          <div id="latest-signal-detail" style="font-size: 12px; color: #b7c1d8; margin-top: 4px;">Event stream starting.</div>
+        </div>
+      </div>
+      <div id="run-strip" style="display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));"></div>
+    </section>
 
-        <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
-          <div style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">Run Focus</div>
-          <div id="focus-panel" style="display: grid; gap: 10px;">
-            <div style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px;">
-              <div style="font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Now</div>
-              <div id="focus-panel-title" style="font-size: 17px; font-weight: 600; color: #f3f3f3;">Waiting for events</div>
-              <div id="focus-panel-body" style="font-size: 13px; color: #b5b5b5; margin-top: 8px; line-height: 1.5;">Open the run, inject instructions, or resume from any enabled step.</div>
-            </div>
-            <div style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px;">
-              <div style="font-size: 12px; color: #8c8c8c; margin-bottom: 8px;">Quick State</div>
-              <div id="focus-panel-grid" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;"></div>
-            </div>
+    <section class="mc-command" style="padding: 10px 16px; background: #0a0a0a; border-bottom: 1px solid #1a1a1a;">
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;">
+        <div>
+          <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 4px;">Resume from</div>
+          <select id="resume-step" style="${selectStyle()}"></select>
+        </div>
+        <div>
+          <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 4px;">Scope</div>
+          <select id="instruction-scope" style="${selectStyle()}">
+            <option value="">All phases</option>
+          </select>
+        </div>
+        <button id="btn-inject" style="${actionButton("#173c66", "#ffffff")}">Inject</button>
+        <button id="btn-compact" style="${actionButton("#1d4f38", "#ffffff")}">Compact</button>
+        <button id="btn-resume" style="${actionButton("#8fd3ff", "#05111d", true)}">Resume</button>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #d5d5d5; align-self: flex-end; padding-bottom: 10px;">
+          <input id="compact-before-resume" type="checkbox" /> Compact ctx
+        </label>
+      </div>
+      <details style="margin-top: 8px;">
+        <summary style="cursor: pointer; color: #8c8c8c; font-size: 12px; user-select: none;">Add instruction&hellip;</summary>
+        <textarea
+          id="operator-instruction"
+          rows="3"
+          placeholder="Inject a directive, remediation note, or priority correction."
+          style="${textAreaStyle()}; margin-top: 8px;"
+        ></textarea>
+      </details>
+    </section>
+
+    <nav class="mc-tabs" style="display: flex; padding: 0 16px; background: #070707; border-bottom: 1px solid #1a1a1a; gap: 0; overflow-x: auto;">
+      <button class="mc-tab" data-tab="pulse" style="${tabStyle(true)}">Pulse</button>
+      <button class="mc-tab" data-tab="workflow" style="${tabStyle(false)}">Workflow</button>
+      <button class="mc-tab" data-tab="team" style="${tabStyle(false)}">Team</button>
+      <button class="mc-tab" data-tab="memory" style="${tabStyle(false)}">Memory</button>
+      <button class="mc-tab" data-tab="logs" style="${tabStyle(false)}">Logs</button>
+    </nav>
+
+    <div id="panel-pulse" class="mc-panel" style="padding: 16px; display: grid; gap: 16px;">
+      <div class="mc-panel-split">
+        <div style="display: grid; gap: 10px; align-content: start;">
+          <div style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px;">
+            <div style="font-size: 11px; color: #8c8c8c; margin-bottom: 6px;">Now</div>
+            <div id="focus-panel-title" style="font-size: 16px; font-weight: 600; color: #f3f3f3;">Waiting for events</div>
+            <div id="focus-panel-body" style="font-size: 12px; color: #b5b5b5; margin-top: 6px; line-height: 1.5;">Open the run, inject instructions, or resume from any enabled step.</div>
           </div>
+          <div id="focus-panel-grid" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;"></div>
+        </div>
+        <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px; display: grid; gap: 10px; align-content: start;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 14px; font-weight: 600;">Live Timeline</div>
+            <button id="btn-follow-live" style="${miniButtonStyle("#173c66", "#ffffff")}">Follow Live</button>
+          </div>
+          <div id="event-log" style="max-height: 320px; overflow-y: auto; display: grid; gap: 6px;"></div>
         </section>
-      </section>
-
+      </div>
       <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
-        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
-          <div>
-            <div style="font-size: 15px; font-weight: 600;">Workflow Control Room</div>
-            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">Drag to reorder. Toggle steps. Inspect and tune one step at a time.</div>
-          </div>
-          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-            <button id="btn-build-team" style="${actionButton("#61318b", "#ffffff")}">Build Team</button>
-            <button id="btn-add-checkpoint" style="${actionButton("#51411b", "#ffffff")}">Add Checkpoint</button>
-            <button id="btn-reload-workflow" style="${actionButton("#173c66", "#ffffff")}">Reload</button>
-            <button id="btn-save-workflow" style="${actionButton("#1d4f38", "#ffffff")}">Save Workflow</button>
-          </div>
-        </div>
-        <div style="display: grid; gap: 16px; grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);">
-          <div id="workflow-board" style="display: grid; gap: 10px;"></div>
-          <div id="workflow-inspector" style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px;"></div>
-        </div>
-        <details style="margin-top: 14px;">
-          <summary style="cursor: pointer; color: #8fd3ff; font-size: 13px;">Advanced workflow JSON</summary>
-          <textarea
-            id="workflow-editor"
-            rows="14"
-            style="${textAreaStyle("12px", "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace")}; margin-top: 10px;"
-          ></textarea>
-        </details>
+        <div style="font-size: 13px; font-weight: 600; margin-bottom: 10px; color: #9c9c9c; text-transform: uppercase; letter-spacing: 0;">Event Detail</div>
+        <div id="event-detail" style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px; min-height: 180px;"></div>
       </section>
+    </div>
 
-      <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
-        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
-          <div>
-            <div style="font-size: 15px; font-weight: 600;">Founding Team</div>
-            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">Edit personas directly in workflow config. Save when you like the roster.</div>
-          </div>
-          <div style="display: flex; gap: 8px;">
-            <button id="btn-add-persona" style="${actionButton("#173c66", "#ffffff")}">Add Persona</button>
-            <button id="btn-save-team" style="${actionButton("#1d4f38", "#ffffff")}">Save Team</button>
-          </div>
+    <div id="panel-workflow" class="mc-panel" hidden style="padding: 16px; display: grid; gap: 16px;">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center;">
+        <div>
+          <div style="font-size: 15px; font-weight: 600;">Workflow</div>
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 3px;">Drag to reorder. Toggle steps. Click to inspect.</div>
         </div>
-        <div id="persona-list" style="display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));"></div>
-      </section>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <button id="btn-add-checkpoint" style="${actionButton("#51411b", "#ffffff")}">Add Checkpoint</button>
+          <button id="btn-reload-workflow" style="${actionButton("#173c66", "#ffffff")}">Reload</button>
+          <button id="btn-save-workflow" style="${actionButton("#1d4f38", "#ffffff")}">Save</button>
+        </div>
+      </div>
+      <div class="mc-workflow-grid">
+        <div id="workflow-board" style="display: grid; gap: 10px;"></div>
+        <div id="workflow-inspector" style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px;"></div>
+      </div>
+      <details>
+        <summary style="cursor: pointer; color: #8fd3ff; font-size: 13px; user-select: none;">Advanced workflow JSON</summary>
+        <textarea
+          id="workflow-editor"
+          rows="14"
+          style="${textAreaStyle("12px", "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace")}; margin-top: 10px;"
+        ></textarea>
+      </details>
+    </div>
 
-      <section style="padding: 14px; background: linear-gradient(180deg, #120d16 0%, #0c0911 100%); border: 1px solid #30203b; border-radius: 8px;">
-        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
-          <div>
-            <div style="font-size: 15px; font-weight: 600;">Palace Memory</div>
-            <div style="font-size: 12px; color: #a996b6; margin-top: 4px;">Mine the project, refresh wake-up context, and search the palace without leaving the run.</div>
-          </div>
-          <div id="memory-status-badge" style="padding: 6px 10px; border-radius: 999px; background: #1f1527; border: 1px solid #352145; color: #d8cae4; font-size: 12px;">Checking...</div>
+    <div id="panel-team" class="mc-panel" hidden style="padding: 16px; display: grid; gap: 16px;">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center;">
+        <div>
+          <div style="font-size: 15px; font-weight: 600;">Founding Team</div>
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 3px;">Personas shape how the forum debates trade-offs.</div>
         </div>
-        <div style="display: grid; gap: 16px; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);">
-          <div style="display: grid; gap: 12px;">
-            <div id="memory-meta" style="display: grid; gap: 8px;"></div>
-            <div style="display: grid; gap: 8px;">
-              <button id="btn-memory-sync" style="${actionButton("#61318b", "#ffffff")}">Sync Palace</button>
-              <button id="btn-memory-wakeup" style="${actionButton("#173c66", "#ffffff")}">Refresh Wake-Up</button>
-            </div>
-            <div style="display: grid; gap: 8px;">
-              <input id="memory-query" placeholder="Search memory: why did we switch to GraphQL" style="${inputStyle()}" />
-              <input id="memory-room" placeholder="Optional room scope" style="${inputStyle()}" />
-              <button id="btn-memory-search" style="${actionButton("#1d4f38", "#ffffff")}">Search Palace</button>
-            </div>
-          </div>
-          <div style="padding: 12px; background: #09070d; border: 1px solid #24192e; border-radius: 8px; min-height: 280px;">
-            <pre id="memory-output" style="margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; color: #eadff2; white-space: pre-wrap; word-break: break-word;">Loading memory status...</pre>
-          </div>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-build-team" style="${actionButton("#61318b", "#ffffff")}">Build Team</button>
+          <button id="btn-add-persona" style="${actionButton("#173c66", "#ffffff")}">Add Persona</button>
+          <button id="btn-save-team" style="${actionButton("#1d4f38", "#ffffff")}">Save Team</button>
         </div>
-      </section>
+      </div>
+      <div id="persona-list" style="display: grid; gap: 10px;"></div>
+    </div>
 
-      <section style="display: grid; gap: 16px; grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);">
-        <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
-          <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
-            <div style="font-size: 15px; font-weight: 600;">Live Timeline</div>
-            <button id="btn-follow-live" style="${actionButton("#173c66", "#ffffff")}">Follow Live</button>
-          </div>
-          <div id="event-log" style="max-height: 380px; overflow-y: auto; display: grid; gap: 8px;"></div>
-        </section>
-        <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
-          <div style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">Event Detail</div>
-          <div id="event-detail" style="padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px; min-height: 320px;"></div>
-        </section>
-      </section>
+    <div id="panel-memory" class="mc-panel" hidden style="padding: 16px; display: grid; gap: 16px;">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center;">
+        <div>
+          <div style="font-size: 15px; font-weight: 600;">Palace Memory</div>
+          <div style="font-size: 12px; color: #a996b6; margin-top: 3px;">Mine the project, refresh wake-up context, search the palace.</div>
+        </div>
+        <div id="memory-status-badge" style="padding: 5px 10px; border-radius: 999px; background: #1f1527; border: 1px solid #352145; color: #d8cae4; font-size: 12px;">Checking...</div>
+      </div>
+      <div class="mc-memory-grid">
+        <div style="display: grid; gap: 10px; align-content: start;">
+          <div id="memory-meta" style="display: grid; gap: 8px;"></div>
+          <button id="btn-memory-sync" style="${actionButton("#61318b", "#ffffff")}">Sync Palace</button>
+          <button id="btn-memory-wakeup" style="${actionButton("#173c66", "#ffffff")}">Refresh Wake-Up</button>
+          <input id="memory-query" placeholder="Search: why did we switch to GraphQL" style="${inputStyle()}" />
+          <input id="memory-room" placeholder="Optional room scope" style="${inputStyle()}" />
+          <button id="btn-memory-search" style="${actionButton("#1d4f38", "#ffffff")}">Search Palace</button>
+        </div>
+        <div style="padding: 12px; background: #09070d; border: 1px solid #24192e; border-radius: 8px; min-height: 260px;">
+          <pre id="memory-output" style="margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; color: #eadff2; white-space: pre-wrap; word-break: break-word;">Loading memory status...</pre>
+        </div>
+      </div>
+    </div>
 
-      <section style="padding: 14px; background: #111111; border: 1px solid #272727; border-radius: 8px;">
-        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
-          <div>
-            <div style="font-size: 15px; font-weight: 600;">Terminal Peek</div>
-            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">Durable agent logs with preserved indentation and wrapped output.</div>
-          </div>
-          <div id="log-phase-tabs" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+    <div id="panel-logs" class="mc-panel" hidden style="padding: 16px; display: grid; gap: 12px;">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center;">
+        <div>
+          <div style="font-size: 15px; font-weight: 600;">Terminal Peek</div>
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 3px;">Phase logs with preserved indentation and wrapped output.</div>
         </div>
-        <div id="phase-log-shell" style="padding: 12px; background: #080808; border: 1px solid #1d1d1d; border-radius: 8px; min-height: 280px;">
-          <pre id="phase-log-detail" style="margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; color: #d8d8d8; white-space: pre-wrap; word-break: break-word;"></pre>
-        </div>
-      </section>
-    </main>
+        <div id="log-phase-tabs" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+      </div>
+      <div id="phase-log-shell" style="padding: 12px; background: #080808; border: 1px solid #1d1d1d; border-radius: 8px; min-height: 280px;">
+        <pre id="phase-log-detail" style="margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; color: #d8d8d8; white-space: pre-wrap; word-break: break-word;"></pre>
+      </div>
+    </div>
   `;
 
   const dirtyIndicator = container.querySelector("#dirty-indicator") as HTMLDivElement;
@@ -353,9 +358,27 @@ export function renderProgress(container: Element, navigate: (route: string) => 
   let currentVram = "-";
   let memoryState: MemoryResponse | null = null;
 
+  function switchTab(tab: string): void {
+    for (const t of ["pulse", "workflow", "team", "memory", "logs"]) {
+      const panel = container.querySelector(`#panel-${t}`) as HTMLElement;
+      panel.hidden = t !== tab;
+    }
+    for (const btn of container.querySelectorAll(".mc-tab")) {
+      const b = btn as HTMLButtonElement;
+      const active = b.dataset.tab === tab;
+      b.style.cssText = tabStyle(active);
+    }
+  }
+
+  for (const btn of container.querySelectorAll(".mc-tab")) {
+    btn.addEventListener("click", () => {
+      switchTab((btn as HTMLButtonElement).dataset.tab ?? "pulse");
+    });
+  }
+
   function setDirty(dirty: boolean): void {
     workflowDirty = dirty;
-    dirtyIndicator.textContent = dirty ? "Workflow has local edits" : "Workflow synced";
+    dirtyIndicator.textContent = dirty ? "Unsaved edits" : "Workflow synced";
     dirtyIndicator.style.color = dirty ? "#f0c36f" : "#8c8c8c";
   }
 
@@ -460,7 +483,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
   function renderRunStrip(): void {
     runStrip.innerHTML = "";
     if (workflowSteps.length === 0) {
-      runStrip.innerHTML = `<div style="color: #8c8c8c; font-size: 13px;">Workflow not loaded yet.</div>`;
+      runStrip.innerHTML = `<div style="color: #8c8c8c; font-size: 12px;">Workflow not loaded yet.</div>`;
       return;
     }
 
@@ -470,8 +493,8 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       const card = document.createElement("button");
       card.type = "button";
       card.style.cssText = `
-        padding: 10px 12px;
-        border-radius: 8px;
+        padding: 8px 10px;
+        border-radius: 6px;
         border: 1px solid ${palette.border};
         background: ${palette.background};
         color: ${palette.text};
@@ -479,12 +502,11 @@ export function renderProgress(container: Element, navigate: (route: string) => 
         cursor: pointer;
       `;
       card.innerHTML = `
-        <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 8px;">
-          <span style="font-size: 12px; color: ${palette.muted}; text-transform: uppercase; letter-spacing: 0.08em;">${escapeHtml(step.type)}</span>
-          <span style="width: 10px; height: 10px; border-radius: 999px; background: ${palette.dot};"></span>
+        <div style="display: flex; justify-content: space-between; gap: 6px; align-items: center; margin-bottom: 5px;">
+          <span style="font-size: 10px; color: ${palette.muted}; text-transform: uppercase; letter-spacing: 0;">${escapeHtml(step.type)}</span>
+          <span style="width: 8px; height: 8px; border-radius: 999px; background: ${palette.dot};"></span>
         </div>
-        <div style="font-size: 13px; font-weight: 600;">${escapeHtml(step.title || step.id)}</div>
-        <div style="font-size: 12px; color: ${palette.muted}; margin-top: 6px;">${escapeHtml(step.id)}</div>
+        <div style="font-size: 12px; font-weight: 600;">${escapeHtml(step.title || step.id)}</div>
       `;
       card.addEventListener("click", () => {
         selectedWorkflowStepId = step.id;
@@ -496,6 +518,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
         renderWorkflowInspector();
         renderRunStrip();
         renderLogPhaseTabs();
+        switchTab("workflow");
       });
       runStrip.appendChild(card);
     }
@@ -522,19 +545,18 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       `;
       card.innerHTML = `
         <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;">
-          <div style="display: grid; gap: 6px;">
-            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-              <span style="padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,0.05); color: ${palette.text}; font-size: 11px; text-transform: uppercase;">${escapeHtml(step.type)}</span>
-              <span style="padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,0.05); color: ${palette.muted}; font-size: 11px;">${escapeHtml(step.handler)}</span>
-              <span style="padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,0.05); color: ${palette.muted}; font-size: 11px;">${escapeHtml(state)}</span>
+          <div style="display: grid; gap: 5px; min-width: 0;">
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; align-items: center;">
+              <span style="padding: 2px 6px; border-radius: 999px; background: rgba(255,255,255,0.05); color: ${palette.text}; font-size: 10px; text-transform: uppercase;">${escapeHtml(step.type)}</span>
+              <span style="padding: 2px 6px; border-radius: 999px; background: rgba(255,255,255,0.05); color: ${palette.muted}; font-size: 10px;">${escapeHtml(state)}</span>
             </div>
-            <div style="font-size: 15px; font-weight: 600; color: #f2f2f2;">${escapeHtml(step.title || step.id)}</div>
-            <div style="font-size: 12px; color: #8c8c8c;">${escapeHtml(step.id)}</div>
-            <div style="font-size: 12px; color: #bcbcbc; line-height: 1.5;">${escapeHtml(step.description || summarizeStepConfig(step))}</div>
+            <div style="font-size: 14px; font-weight: 600; color: #f2f2f2;">${escapeHtml(step.title || step.id)}</div>
+            <div style="font-size: 11px; color: #8c8c8c;">${escapeHtml(step.id)}</div>
+            <div style="font-size: 12px; color: #bcbcbc; line-height: 1.4;">${escapeHtml(step.description || summarizeStepConfig(step))}</div>
           </div>
-          <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #d5d5d5;">
+          <label style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #d5d5d5; flex-shrink: 0;">
             <input type="checkbox" ${step.enabled ? "checked" : ""} data-action="toggle-enabled" data-step-id="${escapeHtml(step.id)}" />
-            Enabled
+            On
           </label>
         </div>
       `;
@@ -593,23 +615,23 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     workflowInspector.innerHTML = `
       <div style="display: grid; gap: 12px;">
         <div>
-          <div style="font-size: 15px; font-weight: 600; color: #f2f2f2;">${escapeHtml(step.title || step.id)}</div>
-          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">${escapeHtml(step.id)} | ${escapeHtml(step.type)} | ${escapeHtml(step.handler)}</div>
+          <div style="font-size: 14px; font-weight: 600; color: #f2f2f2;">${escapeHtml(step.title || step.id)}</div>
+          <div style="font-size: 11px; color: #8c8c8c; margin-top: 3px;">${escapeHtml(step.id)} &middot; ${escapeHtml(step.type)} &middot; ${escapeHtml(step.handler)}</div>
         </div>
         <div>
-          <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Title</label>
+          <label style="display: block; font-size: 11px; color: #8c8c8c; margin-bottom: 5px;">Title</label>
           <input id="inspector-title" value="${escapeHtml(step.title || "")}" style="${inputStyle()}" />
         </div>
         <div>
-          <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Description</label>
-          <textarea id="inspector-description" rows="4" style="${textAreaStyle()}">${escapeHtml(step.description || "")}</textarea>
+          <label style="display: block; font-size: 11px; color: #8c8c8c; margin-bottom: 5px;">Description</label>
+          <textarea id="inspector-description" rows="3" style="${textAreaStyle()}">${escapeHtml(step.description || "")}</textarea>
         </div>
-        <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #d5d5d5;">
+        <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #d5d5d5;">
           <input id="inspector-enabled" type="checkbox" ${step.enabled ? "checked" : ""} />
           Step enabled
         </label>
         <div>
-          <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Config JSON</label>
+          <label style="display: block; font-size: 11px; color: #8c8c8c; margin-bottom: 5px;">Config JSON</label>
           <textarea id="inspector-config" rows="8" style="${textAreaStyle("12px", "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace")}">${escapeHtml(JSON.stringify(step.config ?? {}, null, 2))}</textarea>
         </div>
         <div id="inspector-config-status" style="font-size: 12px; color: #8c8c8c;"></div>
@@ -657,34 +679,42 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       .sort((a, b) => a.turn_order - b.turn_order)
       .forEach((persona, index) => {
         const card = document.createElement("div");
-        card.style.cssText = "padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px; display: grid; gap: 10px;";
+        card.style.cssText = "padding: 12px; background: #0b0b0b; border: 1px solid #202020; border-radius: 8px;";
         card.innerHTML = `
-          <div style="display: flex; justify-content: space-between; gap: 10px; align-items: center;">
-            <div style="font-size: 15px; font-weight: 600; color: #f2f2f2;">Persona ${index + 1}</div>
+          <div style="display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 10px;">
+            <div>
+              <span style="font-size: 14px; font-weight: 600; color: #f2f2f2;">${escapeHtml(persona.name || `Persona ${index + 1}`)}</span>
+              <span style="font-size: 11px; color: #8c8c8c; margin-left: 8px;">#${persona.turn_order}</span>
+            </div>
             <button type="button" data-remove-index="${index}" style="${miniButtonStyle("#4d2020", "#ffffff")}">Remove</button>
           </div>
-          <div>
-            <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Name</label>
-            <input data-field="name" data-index="${index}" value="${escapeHtml(persona.name)}" style="${inputStyle()}" />
-          </div>
-          <div>
-            <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Perspective</label>
-            <textarea data-field="perspective" data-index="${index}" rows="3" style="${textAreaStyle()}">${escapeHtml(persona.perspective)}</textarea>
-          </div>
-          <div>
-            <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Mandate</label>
-            <textarea data-field="mandate" data-index="${index}" rows="4" style="${textAreaStyle()}">${escapeHtml(persona.mandate)}</textarea>
-          </div>
-          <div style="display: grid; grid-template-columns: minmax(0, 120px) minmax(0, 1fr); gap: 10px;">
-            <div>
-              <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Turn Order</label>
-              <input data-field="turn_order" data-index="${index}" type="number" min="1" value="${String(persona.turn_order)}" style="${inputStyle()}" />
+          <details>
+            <summary style="cursor: pointer; color: #8c8c8c; font-size: 12px; user-select: none;">Edit fields&hellip;</summary>
+            <div style="display: grid; gap: 10px; margin-top: 10px;">
+              <div>
+                <label style="display: block; font-size: 11px; color: #8c8c8c; margin-bottom: 5px;">Name</label>
+                <input data-field="name" data-index="${index}" value="${escapeHtml(persona.name)}" style="${inputStyle()}" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 11px; color: #8c8c8c; margin-bottom: 5px;">Perspective</label>
+                <textarea data-field="perspective" data-index="${index}" rows="2" style="${textAreaStyle()}">${escapeHtml(persona.perspective)}</textarea>
+              </div>
+              <div>
+                <label style="display: block; font-size: 11px; color: #8c8c8c; margin-bottom: 5px;">Mandate</label>
+                <textarea data-field="mandate" data-index="${index}" rows="3" style="${textAreaStyle()}">${escapeHtml(persona.mandate)}</textarea>
+              </div>
+              <div style="display: grid; grid-template-columns: 110px 1fr; gap: 10px;">
+                <div>
+                  <label style="display: block; font-size: 11px; color: #8c8c8c; margin-bottom: 5px;">Turn Order</label>
+                  <input data-field="turn_order" data-index="${index}" type="number" min="1" value="${String(persona.turn_order)}" style="${inputStyle()}" />
+                </div>
+                <div>
+                  <label style="display: block; font-size: 11px; color: #8c8c8c; margin-bottom: 5px;">Veto Scope</label>
+                  <input data-field="veto_scope" data-index="${index}" value="${escapeHtml(persona.veto_scope)}" style="${inputStyle()}" />
+                </div>
+              </div>
             </div>
-            <div>
-              <label style="display: block; font-size: 12px; color: #8c8c8c; margin-bottom: 6px;">Veto Scope</label>
-              <input data-field="veto_scope" data-index="${index}" value="${escapeHtml(persona.veto_scope)}" style="${inputStyle()}" />
-            </div>
-          </div>
+          </details>
         `;
         personaList.appendChild(card);
       });
@@ -694,12 +724,12 @@ export function renderProgress(container: Element, navigate: (route: string) => 
         const target = event.currentTarget as HTMLInputElement | HTMLTextAreaElement;
         const index = Number(target.dataset.index ?? "-1");
         const key = target.dataset.field as keyof Persona;
-        const personas = getPersonas();
-        if (!personas[index]) {
+        const currentPersonas = getPersonas();
+        if (!currentPersonas[index]) {
           return;
         }
         const nextValue: string | number = key === "turn_order" ? Number(target.value || "0") : target.value;
-        const nextPersonas = personas.map((item, itemIndex) => (
+        const nextPersonas = currentPersonas.map((item, itemIndex) => (
           itemIndex === index ? { ...item, [key]: nextValue } : { ...item }
         ));
         setPersonas(nextPersonas);
@@ -764,7 +794,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
   function renderEventTimeline(): void {
     eventLog.innerHTML = "";
     if (eventHistory.length === 0) {
-      eventLog.innerHTML = `<div style="padding: 14px; border: 1px dashed #2d2d2d; border-radius: 8px; color: #8c8c8c; font-size: 13px;">Connecting to event stream...</div>`;
+      eventLog.innerHTML = `<div style="padding: 12px; border: 1px dashed #2d2d2d; border-radius: 8px; color: #8c8c8c; font-size: 12px;">Connecting to event stream...</div>`;
       return;
     }
 
@@ -777,8 +807,8 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       row.type = "button";
       row.style.cssText = `
         width: 100%;
-        padding: 10px 12px;
-        border-radius: 8px;
+        padding: 8px 10px;
+        border-radius: 6px;
         border: 1px solid ${active ? "#8fd3ff" : palette.border};
         background: ${active ? "#111d2f" : palette.background};
         color: #f3f3f3;
@@ -786,16 +816,16 @@ export function renderProgress(container: Element, navigate: (route: string) => 
         cursor: pointer;
       `;
       row.innerHTML = `
-        <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center;">
-          <div style="display: flex; gap: 8px; align-items: center; min-width: 0;">
-            <span style="width: 8px; height: 8px; border-radius: 999px; background: ${palette.dot}; flex: 0 0 auto;"></span>
-            <span style="font-size: 13px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(describeEvent(entry))}</span>
+        <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center;">
+          <div style="display: flex; gap: 6px; align-items: center; min-width: 0;">
+            <span style="width: 7px; height: 7px; border-radius: 999px; background: ${palette.dot}; flex: 0 0 auto;"></span>
+            <span style="font-size: 12px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(describeEvent(entry))}</span>
           </div>
-          <span style="font-size: 11px; color: #8c8c8c; flex: 0 0 auto;">${escapeHtml(readableTime(entry.ts))}</span>
+          <span style="font-size: 10px; color: #8c8c8c; flex: 0 0 auto;">${escapeHtml(readableTime(entry.ts))}</span>
         </div>
-        <div style="display: flex; justify-content: space-between; gap: 12px; margin-top: 6px;">
-          <span style="font-size: 11px; color: ${palette.dot}; text-transform: uppercase;">${escapeHtml(type)}</span>
-          <span style="font-size: 11px; color: #8c8c8c;">${escapeHtml(phase || "run")}</span>
+        <div style="display: flex; justify-content: space-between; gap: 8px; margin-top: 4px;">
+          <span style="font-size: 10px; color: ${palette.dot}; text-transform: uppercase;">${escapeHtml(type)}</span>
+          <span style="font-size: 10px; color: #8c8c8c;">${escapeHtml(phase || "run")}</span>
         </div>
       `;
       row.addEventListener("click", () => {
@@ -818,20 +848,20 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     const type = String(entry.type ?? "event");
     const phase = String(entry.name ?? entry.phase ?? entry.gate ?? "run");
     eventDetail.innerHTML = `
-      <div style="display: grid; gap: 12px;">
+      <div style="display: grid; gap: 10px;">
         <div>
-          <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center;">
-            <div style="font-size: 16px; font-weight: 600; color: #f2f2f2;">${escapeHtml(describeEvent(entry))}</div>
-            <div style="font-size: 12px; color: #8c8c8c;">${escapeHtml(readableTime(entry.ts))}</div>
+          <div style="display: flex; justify-content: space-between; gap: 10px; align-items: center;">
+            <div style="font-size: 15px; font-weight: 600; color: #f2f2f2;">${escapeHtml(describeEvent(entry))}</div>
+            <div style="font-size: 11px; color: #8c8c8c;">${escapeHtml(readableTime(entry.ts))}</div>
           </div>
-          <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
-            <span style="padding: 4px 8px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${escapeHtml(type)}</span>
-            <span style="padding: 4px 8px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${escapeHtml(phase)}</span>
-            <span style="padding: 4px 8px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${followLiveDetail ? "Following live" : "Pinned"}</span>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+            <span style="padding: 3px 7px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${escapeHtml(type)}</span>
+            <span style="padding: 3px 7px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${escapeHtml(phase)}</span>
+            <span style="padding: 3px 7px; border-radius: 999px; background: #151515; border: 1px solid #262626; font-size: 11px; color: #d0d0d0;">${followLiveDetail ? "Following live" : "Pinned"}</span>
           </div>
         </div>
-        <div style="font-size: 13px; color: #b8b8b8; line-height: 1.6;">${escapeHtml(eventNarrative(entry))}</div>
-        <pre style="margin: 0; padding: 12px; background: #070707; border: 1px solid #1d1d1d; border-radius: 8px; color: #d8d8d8; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;">${escapeHtml(JSON.stringify(entry, null, 2))}</pre>
+        <div style="font-size: 12px; color: #b8b8b8; line-height: 1.6;">${escapeHtml(eventNarrative(entry))}</div>
+        <pre style="margin: 0; padding: 10px; background: #070707; border: 1px solid #1d1d1d; border-radius: 8px; color: #d8d8d8; font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;">${escapeHtml(JSON.stringify(entry, null, 2))}</pre>
       </div>
     `;
   }
@@ -874,8 +904,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       phaseLogDetail.textContent = `No log entries yet for ${selectedLogPhase}.`;
       return;
     }
-    const rendered = selectedPhaseLogEntries.map((entry) => formatLogEntry(entry)).join("\n\n");
-    phaseLogDetail.textContent = rendered;
+    phaseLogDetail.textContent = selectedPhaseLogEntries.map((entry) => formatLogEntry(entry)).join("\n\n");
   }
 
   function renderFocus(): void {
@@ -901,7 +930,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       quickStateTile("State", currentState),
       quickStateTile("Resume target", resumeStep.value || "-"),
       quickStateTile("Log phase", selectedLogPhase || "-"),
-      quickStateTile("Timeline events", String(eventHistory.length)),
+      quickStateTile("Events", String(eventHistory.length)),
     ].join("");
   }
 
@@ -1227,7 +1256,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     } catch (err: unknown) {
       setStatus(err instanceof Error ? err.message : "Workflow save failed", true);
     } finally {
-      setBusy(btnSaveWorkflow, false, "Save Workflow");
+      setBusy(btnSaveWorkflow, false, "Save");
     }
   });
 
@@ -1386,9 +1415,9 @@ function createCheckpointStep(existing: WorkflowStep[]): WorkflowStep {
 
 function quickStateTile(label: string, value: string): string {
   return `
-    <div style="padding: 10px; background: #101010; border: 1px solid #1d1d1d; border-radius: 8px;">
-      <div style="font-size: 11px; color: #8c8c8c; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">${escapeHtml(label)}</div>
-      <div style="font-size: 13px; color: #f2f2f2; font-weight: 600;">${escapeHtml(value)}</div>
+    <div style="padding: 9px; background: #101010; border: 1px solid #1d1d1d; border-radius: 8px;">
+      <div style="font-size: 10px; color: #8c8c8c; text-transform: uppercase; letter-spacing: 0; margin-bottom: 4px;">${escapeHtml(label)}</div>
+      <div style="font-size: 12px; color: #f2f2f2; font-weight: 600;">${escapeHtml(value)}</div>
     </div>
   `;
 }
@@ -1409,11 +1438,11 @@ function localStepState(stepId: string): StepRunState | null {
 
 function statePalette(state: StepRunState): { background: string; border: string; text: string; muted: string; dot: string } {
   const palette: Record<StepRunState, { background: string; border: string; text: string; muted: string; dot: string }> = {
-    idle: { background: "#0e0e0e", border: "#242424", text: "#f0f0f0", muted: "#8c8c8c", dot: "#6a6a6a" },
-    active: { background: "#101b2d", border: "#26456d", text: "#f0f7ff", muted: "#9fc4e6", dot: "#8fd3ff" },
-    done: { background: "#0f1813", border: "#26533e", text: "#f0fff6", muted: "#96d7b4", dot: "#7de5b1" },
-    waiting: { background: "#1a1409", border: "#5d4520", text: "#fff6e8", muted: "#f0c36f", dot: "#f0c36f" },
-    error: { background: "#210f12", border: "#6d2d39", text: "#fff0f2", muted: "#ff9cab", dot: "#ff7a7a" },
+    idle:     { background: "#0e0e0e", border: "#242424", text: "#f0f0f0", muted: "#8c8c8c", dot: "#6a6a6a" },
+    active:   { background: "#101b2d", border: "#26456d", text: "#f0f7ff", muted: "#9fc4e6", dot: "#8fd3ff" },
+    done:     { background: "#0f1813", border: "#26533e", text: "#f0fff6", muted: "#96d7b4", dot: "#7de5b1" },
+    waiting:  { background: "#1a1409", border: "#5d4520", text: "#fff6e8", muted: "#f0c36f", dot: "#f0c36f" },
+    error:    { background: "#210f12", border: "#6d2d39", text: "#fff0f2", muted: "#ff9cab", dot: "#ff7a7a" },
     disabled: { background: "#0a0a0a", border: "#1d1d1d", text: "#8c8c8c", muted: "#676767", dot: "#454545" },
   };
   return palette[state];
@@ -1429,33 +1458,15 @@ function describeEvent(data: JsonRecord): string {
     const startAt = data.start_at ? ` from ${String(data.start_at)}` : "";
     return `Run started (${mode}${startAt})`;
   }
-  if (type === "run_complete") {
-    return "Run complete";
-  }
-  if (type === "run_error") {
-    return `Run failed: ${String(error ?? "unknown error")}`;
-  }
-  if (type === "phase_start") {
-    return `Entering ${name}${attempt ? ` (retry ${String(attempt)})` : ""}`;
-  }
-  if (type === "phase_done") {
-    return `Completed ${name}`;
-  }
-  if (type === "phase_retry") {
-    return `Retrying ${name} (${String(attempt ?? "?")})`;
-  }
-  if (type === "phase_error") {
-    return `${name} failed: ${String(error ?? "error")}`;
-  }
-  if (type === "gate_opened") {
-    return `Gate opened: ${name}`;
-  }
-  if (type === "gate_decided") {
-    return `Gate ${name}: ${data.decision === "approved" ? "approved" : "rejected"}`;
-  }
-  if (type === "checkpoint") {
-    return `Checkpoint reached: ${name}`;
-  }
+  if (type === "run_complete") { return "Run complete"; }
+  if (type === "run_error") { return `Run failed: ${String(error ?? "unknown error")}`; }
+  if (type === "phase_start") { return `Entering ${name}${attempt ? ` (retry ${String(attempt)})` : ""}`; }
+  if (type === "phase_done") { return `Completed ${name}`; }
+  if (type === "phase_retry") { return `Retrying ${name} (${String(attempt ?? "?")})`; }
+  if (type === "phase_error") { return `${name} failed: ${String(error ?? "error")}`; }
+  if (type === "gate_opened") { return `Gate opened: ${name}`; }
+  if (type === "gate_decided") { return `Gate ${name}: ${data.decision === "approved" ? "approved" : "rejected"}`; }
+  if (type === "checkpoint") { return `Checkpoint reached: ${name}`; }
   return typeof data.message === "string" ? data.message : type;
 }
 
@@ -1463,27 +1474,13 @@ function eventNarrative(data: JsonRecord): string {
   const type = String(data.type ?? "event");
   const attempt = data.attempt ? ` Attempt ${String(data.attempt)}.` : "";
   const error = typeof data.error === "string" ? ` ${data.error}` : "";
-  if (type === "phase_error") {
-    return `The current phase reported an error.${attempt}${error}`.trim();
-  }
-  if (type === "phase_retry") {
-    return `The framework scheduled another pass for this phase.${attempt}`.trim();
-  }
-  if (type === "gate_opened") {
-    return "A decision gate is now waiting for operator input.";
-  }
-  if (type === "gate_decided") {
-    return `The gate closed with decision '${String(data.decision ?? "unknown")}'.`;
-  }
-  if (type === "run_started") {
-    return "A new run was launched and the control room is now following it live.";
-  }
-  if (type === "run_complete") {
-    return "The enabled workflow completed without another blocking event.";
-  }
-  if (typeof data.message === "string" && data.message.trim()) {
-    return data.message.trim();
-  }
+  if (type === "phase_error") { return `The current phase reported an error.${attempt}${error}`.trim(); }
+  if (type === "phase_retry") { return `The framework scheduled another pass for this phase.${attempt}`.trim(); }
+  if (type === "gate_opened") { return "A decision gate is now waiting for operator input."; }
+  if (type === "gate_decided") { return `The gate closed with decision '${String(data.decision ?? "unknown")}'.`; }
+  if (type === "run_started") { return "A new run was launched and the control room is now following it live."; }
+  if (type === "run_complete") { return "The enabled workflow completed without another blocking event."; }
+  if (typeof data.message === "string" && data.message.trim()) { return data.message.trim(); }
   return describeEvent(data);
 }
 
@@ -1511,12 +1508,8 @@ function readableTime(value: unknown): string {
 }
 
 function summarizeStepConfig(step: WorkflowStep | null): string {
-  if (!step) {
-    return "No active step yet.";
-  }
-  if (step.description && step.description.trim()) {
-    return step.description.trim();
-  }
+  if (!step) { return "No active step yet."; }
+  if (step.description && step.description.trim()) { return step.description.trim(); }
   const config = step.config ?? {};
   if (step.id === "persona_forum") {
     const personas = Array.isArray(config.personas) ? config.personas.length : 0;
@@ -1528,17 +1521,13 @@ function summarizeStepConfig(step: WorkflowStep | null): string {
     return `Escalation advisors: ${providers}.`;
   }
   const keys = Object.keys(config);
-  if (keys.length > 0) {
-    return `Config keys: ${keys.join(", ")}`;
-  }
+  if (keys.length > 0) { return `Config keys: ${keys.join(", ")}`; }
   return "No extra config yet.";
 }
 
 function getPersonasFromStep(step: WorkflowStep | undefined): Persona[] {
   const raw = step?.config?.personas;
-  if (!Array.isArray(raw)) {
-    return [];
-  }
+  if (!Array.isArray(raw)) { return []; }
   return raw.map((item, index) => normalizePersona(item, index));
 }
 
@@ -1559,20 +1548,28 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+function tabStyle(active: boolean): string {
+  return `padding: 10px 16px; background: none; border: none; border-bottom: 2px solid ${active ? "#8fd3ff" : "transparent"}; color: ${active ? "#8fd3ff" : "#8c8c8c"}; cursor: pointer; font-size: 13px; white-space: nowrap;`;
+}
+
 function actionButton(background: string, color: string, bold = false): string {
-  return `padding: 10px 12px; background: ${background}; color: ${color}; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;${bold ? " font-weight: 600;" : ""}`;
+  return `padding: 9px 12px; background: ${background}; color: ${color}; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;${bold ? " font-weight: 600;" : ""}`;
 }
 
 function miniButtonStyle(background: string, color: string, border = "transparent"): string {
-  return `padding: 7px 10px; background: ${background}; color: ${color}; border: 1px solid ${border}; border-radius: 6px; cursor: pointer; font-size: 12px;`;
+  return `padding: 6px 10px; background: ${background}; color: ${color}; border: 1px solid ${border}; border-radius: 6px; cursor: pointer; font-size: 12px;`;
+}
+
+function selectStyle(): string {
+  return "padding: 8px 10px; background: #090909; color: #f1f1f1; border: 1px solid #2d2d2d; border-radius: 6px; font-size: 13px;";
 }
 
 function inputStyle(): string {
-  return "width: 100%; padding: 10px; box-sizing: border-box; background: #090909; color: #f1f1f1; border: 1px solid #2d2d2d; border-radius: 6px;";
+  return "width: 100%; padding: 9px; box-sizing: border-box; background: #090909; color: #f1f1f1; border: 1px solid #2d2d2d; border-radius: 6px; font-size: 13px;";
 }
 
 function textAreaStyle(fontSize = "13px", fontFamily = "inherit"): string {
-  return `width: 100%; padding: 10px; box-sizing: border-box; background: #090909; color: #f1f1f1; border: 1px solid #2d2d2d; border-radius: 6px; resize: vertical; font-size: ${fontSize}; font-family: ${fontFamily}; line-height: 1.5;`;
+  return `width: 100%; padding: 9px; box-sizing: border-box; background: #090909; color: #f1f1f1; border: 1px solid #2d2d2d; border-radius: 6px; resize: vertical; font-size: ${fontSize}; font-family: ${fontFamily}; line-height: 1.5;`;
 }
 
 function eventPalette(type: string): { background: string; border: string; dot: string } {
