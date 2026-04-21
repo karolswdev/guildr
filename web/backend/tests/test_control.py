@@ -143,3 +143,29 @@ async def test_workflow_route_can_enable_guru_escalation(app: FastAPI) -> None:
     saved_steps = {step["id"]: step for step in save_resp.json()["steps"]}
     assert saved_steps["guru_escalation"]["enabled"] is True
     assert saved_steps["guru_escalation"]["config"]["providers"][0]["kind"] == "openrouter"
+
+
+@pytest.mark.asyncio
+async def test_persona_synthesis_route_updates_workflow(app: FastAPI, fresh_store: ProjectStore) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        create_resp = await client.post(
+            "/api/projects",
+            json={"name": "Game Project", "initial_idea": "Build a tactical game with combat."},
+        )
+        project_id = create_resp.json()["id"]
+        project = fresh_store.get(project_id)
+        assert project is not None
+        (project.project_dir / "qwendea.md").write_text(
+            "# Project\n\nBuild a tactical game with combat.\n",
+            encoding="utf-8",
+        )
+
+        response = await client.post(f"/api/projects/{project_id}/control/personas/synthesize")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["personas"]) >= 4
+    persona_step = next(step for step in payload["steps"] if step["id"] == "persona_forum")
+    assert len(persona_step["config"]["personas"]) >= 4
+    assert persona_step["config"]["personas"][0]["turn_order"] == 1

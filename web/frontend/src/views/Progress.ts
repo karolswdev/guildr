@@ -30,6 +30,12 @@ type WorkflowResponse = {
   steps: WorkflowStep[];
 };
 
+type PersonaSynthesisResponse = {
+  project_id: string;
+  personas: Array<Record<string, unknown>>;
+  steps: WorkflowStep[];
+};
+
 const PIPELINE_PHASES = ["persona_forum", "architect", "micro_task_breakdown", "implementation", "testing", "guru_escalation", "review", "deployment"];
 
 export function renderProgress(container: Element, navigate: (route: string) => void, projectId: string): void {
@@ -86,6 +92,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
         <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
           <div style="font-size: 14px; font-weight: 600;">Workflow</div>
           <div style="display: flex; gap: 8px;">
+            <button id="btn-build-team" style="padding: 8px 10px; background: #5c2f8b; color: white; border: none; border-radius: 6px; cursor: pointer;">Build Team</button>
             <button id="btn-reload-workflow" style="padding: 8px 10px; background: #0f3460; color: white; border: none; border-radius: 6px; cursor: pointer;">Reload</button>
             <button id="btn-save-workflow" style="padding: 8px 10px; background: #184b35; color: white; border: none; border-radius: 6px; cursor: pointer;">Save</button>
           </div>
@@ -134,6 +141,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
   const btnCompact = container.querySelector("#btn-compact") as HTMLButtonElement;
   const btnResume = container.querySelector("#btn-resume") as HTMLButtonElement;
   const workflowEditor = container.querySelector("#workflow-editor") as HTMLTextAreaElement;
+  const btnBuildTeam = container.querySelector("#btn-build-team") as HTMLButtonElement;
   const btnReloadWorkflow = container.querySelector("#btn-reload-workflow") as HTMLButtonElement;
   const btnSaveWorkflow = container.querySelector("#btn-save-workflow") as HTMLButtonElement;
 
@@ -383,6 +391,24 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       setStatus(err instanceof Error ? err.message : "Workflow reload failed", true);
     } finally {
       setBusy(btnReloadWorkflow, false, "Reload");
+    }
+  });
+
+  btnBuildTeam.addEventListener("click", async () => {
+    setBusy(btnBuildTeam, true, "Building...");
+    try {
+      const response = await apiPost<PersonaSynthesisResponse>(
+        `/api/projects/${projectId}/control/personas/synthesize`,
+        {},
+      );
+      workflowSteps = response.steps;
+      workflowEditor.value = JSON.stringify(response.steps, null, 2);
+      renderResumeOptions(response.steps);
+      setStatus(`Founding team built with ${response.personas.length} personas.`);
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : "Team synthesis failed", true);
+    } finally {
+      setBusy(btnBuildTeam, false, "Build Team");
     }
   });
 

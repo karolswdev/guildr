@@ -214,3 +214,25 @@ def enabled_steps(project_dir: Path) -> list[dict[str, Any]]:
 
 def valid_start_steps(project_dir: Path) -> list[str]:
     return [step["id"] for step in enabled_steps(project_dir)]
+
+
+def update_step_config(
+    project_dir: Path,
+    step_id: str,
+    config_updates: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Merge config into one workflow step and persist the result."""
+    steps = load_workflow(project_dir)
+    updated = False
+    for step in steps:
+        if step["id"] != step_id:
+            continue
+        current = step.get("config") or {}
+        if not isinstance(current, dict):
+            current = {}
+        step["config"] = {**current, **config_updates}
+        updated = True
+        break
+    if not updated:
+        raise ValueError(f"Workflow step '{step_id}' not found")
+    return save_workflow(project_dir, steps)

@@ -32,6 +32,11 @@ def test_persona_forum_writes_roster_and_forum_artifacts(tmp_path: Path) -> None
     assert (tmp_path / "PERSONA_FORUM.md").exists()
     assert (tmp_path / "FOUNDING_TEAM.json").exists()
     assert "Player Advocate" in (tmp_path / "PERSONA_FORUM.md").read_text(encoding="utf-8")
+    workflow = load_workflow(tmp_path)
+    persona_step = next(step for step in workflow if step["id"] == "persona_forum")
+    personas = persona_step["config"]["personas"]
+    assert personas[0]["turn_order"] == 1
+    assert "veto_scope" in personas[0]
 
 
 def test_micro_task_breaker_writes_phase_files(tmp_path: Path) -> None:

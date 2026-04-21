@@ -113,3 +113,28 @@ async def put_workflow(project_id: str, body: WorkflowRequest) -> dict[str, Any]
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"project_id": project_id, "steps": steps}
+
+
+@router.post("/{project_id}/control/personas/synthesize")
+async def synthesize_personas(project_id: str) -> dict[str, Any]:
+    project = _project(project_id)
+    from orchestrator.roles.persona_forum import PersonaForum
+    from orchestrator.lib.state import State
+
+    workflow = load_workflow(project.project_dir)
+    persona_step = next((step for step in workflow if step["id"] == "persona_forum"), None)
+    if persona_step is None:
+        raise HTTPException(status_code=400, detail="persona_forum step not found in workflow")
+    forum = PersonaForum(
+        llm=None,
+        state=State(project.project_dir),
+        step_config=persona_step.get("config", {}),
+    )
+    brief = (project.project_dir / "qwendea.md").read_text(encoding="utf-8")
+    personas = forum._personas(brief)
+    forum._persist_personas(personas)
+    return {
+        "project_id": project_id,
+        "personas": personas,
+        "steps": load_workflow(project.project_dir),
+    }
