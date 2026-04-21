@@ -107,6 +107,7 @@ and direct manipulation of workflow atoms.
 - Replayable SDLC loop tracking and visualization.
 - Replay viewer foundation.
 - Structured design review protocol for major architecture changes.
+- Vendored PWA/Three.js asset pipeline.
 - PWA control room for workflow, memory, logs, events, and intervention.
 - Compact context generation for models under or around 128k tokens.
 
@@ -415,6 +416,7 @@ Core screens:
 
 - Project list.
 - Project setup.
+- Visual asset loading status.
 - Quiz/PRD gathering.
 - Mission Control.
 - Gates.
@@ -620,6 +622,8 @@ Portability:
 - Python environment must be explicit through `uv`.
 - PWA must run from the local backend.
 - No required cloud service for core local operation.
+- PWA visual assets must be loaded from local vendored paths, never hotlinked
+  from upstream sources.
 
 Observability:
 
@@ -674,6 +678,7 @@ Observability:
 
 ### Milestone 5: Game-Like PWA Surface
 
+- Vendored asset pipeline and AssetManager.
 - Workflow atom map.
 - Animated run state.
 - Memory palace browser.
@@ -734,6 +739,7 @@ Not yet implemented:
 
 - Full replay viewer controls.
 - Visual atom map.
+- AssetManager and runtime asset manifest.
 - Hook engine and hook permissions.
 - OpenRouter provider UI.
 - Runtime cost event emission.
@@ -748,6 +754,7 @@ Not yet implemented:
 
 The PWA direction is now governed by the following design documents:
 
+- `docs/sprint-plan-council-pwa.md`
 - `docs/threejs-product-direction.md`
 - `docs/threejs-client-architecture.md`
 - `docs/ux-interaction-model.md`
@@ -757,6 +764,8 @@ The PWA direction is now governed by the following design documents:
 - `docs/cost-tracking.md`
 - `docs/sdlc-loop-visualization.md`
 - `docs/design-review-protocol.md`
+- `docs/threejs-asset-pipeline.md`
+- `assets/README.md`
 
 These documents supersede the idea of the Progress view as a conventional
 admin console. The long-term default project run view is a Three.js strategy

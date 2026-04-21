@@ -56,6 +56,9 @@ Each workflow step renders as an **AtomNode**: a rounded-rectangle platform (or 
 - Normal state: flat-shaded with slight bevel
 - Active state: emissive glow (bloom pass amplifies it)
 - Label: `CanvasTexture` with step title, rendered below the mesh
+- Material assets: `assets/atom-meshes/flat-normal.png` for baseline normal
+  data and `assets/atom-meshes/canvas-grain.png` for restrained surface grain.
+  State color remains dominant; texture never reduces status readability.
 
 ### State Visuals
 
@@ -71,6 +74,9 @@ Each workflow step renders as an **AtomNode**: a rounded-rectangle platform (or 
 ### Atom Type Badges
 
 Small icon rendered in the top-left corner of each atom face (via `CanvasTexture`):
+
+Icons come from `assets/icon-sprites/tabler-icons.woff2`. Scene code uses
+semantic icon ids; glyph mappings stay centralized in the asset/icon manifest.
 
 | Type | Icon | Color |
 |---|---|---|
@@ -100,7 +106,7 @@ Edges represent workflow order dependencies.
 
 ### Animation
 - **Idle:** No animation. Near-invisible dark color.
-- **Active path:** Travelling dot particle (a `SphereGeometry` r=0.05) moves along the edge at 0.8 units/sec. Multiple particles stagger for visual flow.
+- **Active path:** Travelling dot particle using `assets/edge-particle-sprites/disc.png` moves along the edge at 0.8 units/sec. Multiple particles stagger for visual flow.
 - **Done path:** Edge color transitions to done-green over 600ms. Particles stop.
 - **Blocked path:** Edge remains idle-dark.
 
@@ -150,6 +156,8 @@ MemPalace is the project's memory spine. It renders as a **persistent arc struct
 
 ### Memory Orbs (search results)
 - `SphereGeometry` radius 0.12, material `#9B7EFF` with bloom
+- Use `assets/mempalace/radial-alpha-gradient.png` for arc masking and
+  `assets/mempalace/lensflare0.png` for restrained orb highlights.
 - On search result: orbs float down from arc, orbit the relevant atom for 3s, then drift back
 - Tapping an orb freezes it and opens the memory fragment in FocusPanel
 
@@ -162,6 +170,7 @@ Artifacts are outputs produced by atoms (sprint plan, test report, review, deplo
 ### Geometry
 - `PlaneGeometry` (1.2 x 0.7) - flat card anchored below and to the right of the producing atom
 - Material: `#2A3A2E` dark green with a thin `#3A8C5A` border
+- Material asset: `assets/artifact-textures/canvas-grain.png`
 - Slight tilt (5 degrees toward camera)
 - Artifact type icon + name rendered via `CanvasTexture`
 - Tap to open full artifact text in FocusPanel
@@ -301,6 +310,25 @@ Events from the SSE stream manifest as **travelling particles** in the scene.
 - Use `THREE.Points` with a custom `ShaderMaterial` for performance
 - Maximum 500 simultaneous particles (recycle pool)
 - Each particle has: position, velocity, color, lifetime, curve-follow flag
+- Particle sprites come from `assets/edge-particle-sprites/disc.png` for
+  steady travel and `assets/edge-particle-sprites/spark1.png` for bursts.
+
+---
+
+## Environment Assets
+
+The platform ground uses `assets/environments/hex-grid.png` as a quiet
+substrate. It must stay low contrast; atom, loop, memory, and cost state must
+read above it at all times.
+
+The HDRI `assets/hdris/kloppenheim-02-puresky-1k.hdr` is used for image-based
+lighting after first render unless mobile profiling proves it fits the initial
+payload. If HDRI loading is delayed or fails, use ambient + directional light
+with the same color grammar.
+
+`assets/post-processing-refs/lensDirt1.png` is reference-only. It must not be
+loaded by Phase 1 or included in the service worker precache until a mobile
+runtime derivative is produced.
 
 ---
 

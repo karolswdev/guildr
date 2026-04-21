@@ -38,7 +38,7 @@ World Space (Three.js Scene)
 |   Service Worker * Routing * Offline Cache   |
 |||||||||||||||||||||||||||||||||||||||||||||||
 |          GameShell (GameShell.ts)            |
-|  Canvas mount * Orientation * Safe Areas    |
+|  Canvas mount * Orientation * Assets * Safe Areas |
 |||||||||||||||||||||||||||||||||||||||||||||||
 |  Three.js Scene  |   React-free UI overlay  |
 |  (canvas layer)  |   (DOM layer, z-index +1) |
@@ -54,9 +54,11 @@ World Space (Three.js Scene)
 
 ### Layer responsibilities
 
-**GameShell.ts** - mounts the `<canvas>`, manages `THREE.WebGLRenderer`, handles `devicePixelRatio`, safe-area insets, orientation changes, and hands off input events to the scene manager.
+**GameShell.ts** - mounts the `<canvas>`, manages `THREE.WebGLRenderer`, handles `devicePixelRatio`, safe-area insets, orientation changes, initializes `AssetManager`, and hands off input events to the scene manager.
 
 **SceneManager.ts** - owns the `THREE.Scene`, `THREE.Camera`, animation loop (`requestAnimationFrame`), and the set of renderable objects. Translates abstract state changes (atom activated, gate opened) into scene mutations.
+
+**AssetManager.ts** - owns the runtime visual asset manifest, loads vendored assets from `assets/`, caches textures/fonts, exposes placeholders for optional failures, and reports load progress to the PWA shell. Scene systems do not hard-code asset paths.
 
 **EventEngine.ts** - single source of truth for run state. Connects to `/api/projects/{id}/stream` via EventSource. On load, fetches `/api/projects/{id}/events?limit=500` to prime history. Drives an `AtomStateMap` (keyed by step id -> FSM state), `CostSnapshot` (folded from usage and budget events), and `LoopSnapshot` (folded from SDLC loop events). The Three.js scene reads from this map; it never calls the API itself.
 
@@ -98,6 +100,39 @@ Scene
     ||| BloomPass           (active atoms glow)
     ||| FXAAPass
 ```
+
+---
+
+## Asset Integration
+
+The Three.js client must use the vendored asset kit documented in
+`assets/README.md` and governed by `docs/threejs-asset-pipeline.md`.
+
+Runtime rules:
+
+- `AssetManager` is the only loader for scene assets.
+- Texture paths come from a typed manifest, not scattered string literals.
+- The first scene render uses the hex grid substrate, atom material grain,
+  particle disc, and core fonts.
+- HDRI lighting is allowed after first render unless profiling proves it can
+  fit the initial mobile budget.
+- The post-processing lens dirt texture is reference-only until a mobile-sized
+  derivative exists.
+- If optional assets fail, the scene falls back to flat materials and DOM
+  labels while keeping EventEngine interaction intact.
+
+Asset-to-system map:
+
+- Platform: `assets/environments/hex-grid.png`.
+- Atom and gate materials: `assets/atom-meshes/flat-normal.png` and
+  `assets/atom-meshes/canvas-grain.png`.
+- Particles: `assets/edge-particle-sprites/disc.png` and `spark1.png`.
+- Memory arc/orbs: `assets/mempalace/radial-alpha-gradient.png` and
+  `lensflare0.png`.
+- Artifact cards: `assets/artifact-textures/canvas-grain.png`.
+- Icons and fonts: `assets/icon-sprites/tabler-icons.woff2`,
+  `assets/fonts/InterVariable.woff2`, and
+  `assets/fonts/JetBrainsMono-Regular.woff2`.
 
 ---
 
@@ -212,6 +247,9 @@ web/frontend/src/
 |   ||| GameShell.ts
 |   ||| SceneManager.ts
 |   ||| EventEngine.ts
+|   ||| assets/
+|   |   ||| AssetManager.ts
+|   |   ||| manifest.ts
 |   ||| atoms/
 |   |   ||| AtomNode.ts
 |   |   ||| GateNode.ts

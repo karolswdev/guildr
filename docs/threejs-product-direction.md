@@ -40,7 +40,12 @@ This direction is not decorative. It is the product architecture.
    Three.js renders space, state, motion, relationships, pulses, and replay.
    DOM renders readable text, forms, accessibility, and precise controls.
 
-7. Every visible object must answer "why am I here?"
+7. The asset kit is part of the product language.
+   The map must use the vendored textures, fonts, particles, and memory
+   highlights as a coherent runtime asset system. Generic placeholder geometry
+   is acceptable only as a fallback path.
+
+8. Every visible object must answer "why am I here?"
    An atom is not just a node. It must expose goal, inputs, memory, events,
    artifact outputs, current state, and next valid operator actions.
 
@@ -49,7 +54,9 @@ This direction is not decorative. It is the product architecture.
 The correct architecture is a hybrid game shell:
 
 - `GameShell` owns canvas lifecycle, renderer sizing, device pixel ratio,
-  orientation, safe area behavior, and fallback detection.
+  orientation, asset loading, safe area behavior, and fallback detection.
+- `AssetManager` owns the vendored runtime asset manifest and texture/font
+  cache.
 - `EventEngine` owns all run state and all event replay logic.
 - `SceneManager` owns Three.js objects and receives snapshots from
   `EventEngine`.
@@ -128,13 +135,15 @@ Order:
 1. Extract `EventEngine`.
 2. Keep current Progress view working from `EventEngine`.
 3. Add a Three.js canvas shell with static workflow atoms.
-4. Bind atom states to event snapshots.
-5. Add cost snapshots and budget HUD.
-6. Add SDLC loop lanes and atom orbit bands.
-7. Add replay scrubber.
-8. Add memory arc.
-9. Add artifact crystals.
-10. Replace default Progress route with game shell when stable.
+4. Wire `AssetManager` and render the scene with the vendored hex grid, atom
+   material grain, fonts, and particle sprites.
+5. Bind atom states to event snapshots.
+6. Add cost snapshots and budget HUD.
+7. Add SDLC loop lanes and atom orbit bands.
+8. Add replay scrubber.
+9. Add memory arc.
+10. Add artifact crystals.
+11. Replace default Progress route with game shell when stable.
 
 This gives the council-facing experience without sacrificing the current
 operator controls.
@@ -151,6 +160,7 @@ operator controls.
 
 - The map is the eventual default, not a nice extra.
 - MemPalace must be spatially persistent, not hidden in a tab.
+- Runtime assets must be local, licensed, and budgeted for mobile.
 - Every atom must expose goal, memory, events, artifacts, and operator actions.
 - Replay must be deterministic from event history and testable as a pure FSM.
 - Cost must be event-sourced so replay shows spend, tokens, source, and budget

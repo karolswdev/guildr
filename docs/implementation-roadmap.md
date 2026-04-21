@@ -8,7 +8,7 @@ Each phase is a self-contained unit of work. Phases are ordered by dependency: c
 
 ## Phase 0 - Foundation Setup (No UI Change)
 
-**Goal:** Install Three.js, scaffold the `game/` directory, extract EventEngine from Progress.ts, and define replayable cost types. The existing Progress.ts view continues to work unchanged.
+**Goal:** Install Three.js, scaffold the `game/` directory, define the asset loader, extract EventEngine from Progress.ts, and define replayable cost types. The existing Progress.ts view continues to work unchanged.
 
 **Done condition for this phase:** `npm run build` succeeds, existing Progress.ts tests pass, EventEngine unit tests pass.
 
@@ -31,6 +31,8 @@ Each phase is a self-contained unit of work. Phases are ordered by dependency: c
 **Files to create:**
 ```
 web/frontend/src/game/
+  assets/manifest.ts     (typed path manifest)
+  assets/AssetManager.ts (empty export class AssetManager {})
   GameShell.ts          (empty export class GameShell {})
   SceneManager.ts       (empty export class SceneManager {})
   EventEngine.ts        (empty export class EventEngine {})
@@ -47,6 +49,25 @@ web/frontend/src/game/
 ```
 
 **Done:** All files exist, TypeScript compiles without errors.
+
+---
+
+### Task 0.2a - Define game asset manifest
+
+**Files to create:**
+```
+web/frontend/src/game/assets/manifest.ts
+web/frontend/src/game/assets/AssetManager.ts
+```
+
+**Actions:**
+1. Define the typed `GameAssetManifest` from `docs/threejs-asset-pipeline.md`.
+2. Point manifest entries at the vendored `assets/` paths.
+3. Implement `AssetManager` stubs for `loadCore()`, `loadDeferred()`,
+   `getTexture(id)`, `getFont(id)`, and `onProgress(listener)`.
+4. Do not load reference-only assets.
+
+**Done:** TypeScript compiles and no scene file hard-codes asset paths.
 
 ---
 
@@ -150,6 +171,7 @@ Progress behavior is unchanged.
 4. Handle `devicePixelRatio` capping at 2x for performance.
 5. Handle `resize` events using `ResizeObserver`.
 6. Handle safe-area insets via CSS `env(safe-area-inset-*)` - set canvas padding/margin accordingly.
+7. Initialize `AssetManager.loadCore()` before first scene render.
 
 **Done:** Canvas mounts, renderer runs `requestAnimationFrame` loop, no WebGL errors.
 
@@ -164,9 +186,10 @@ Progress behavior is unchanged.
 2. On `buildFromWorkflow(steps: WorkflowStep[])`: create one `AtomNode` per step, lay them out in a vertical line spaced 2.5 units apart.
 3. Create `EdgeMesh` between consecutive steps.
 4. Add all nodes and edges to scene.
-5. Run animation loop (no animation yet - just a static render).
+5. Add a ground plane using `assets/environments/hex-grid.png`.
+6. Run animation loop (no animation yet - just a static render).
 
-**Done:** Scene renders atom nodes in a column. Camera default view shows all atoms.
+**Done:** Scene renders atom nodes in a column on the vendored hex-grid substrate. Camera default view shows all atoms.
 
 ---
 
@@ -176,7 +199,9 @@ Progress behavior is unchanged.
 
 **Actions:**
 1. Implement `AtomNode` using `BoxGeometry` (1.6 x 0.18 x 1.0) for Phase 1 (defer `RoundedBoxGeometry` to Phase 3).
-2. Material: `MeshStandardMaterial` with color from `STATE_MATERIALS['idle']`.
+2. Material: `MeshStandardMaterial` with color from `STATE_MATERIALS['idle']`,
+   using `assets/atom-meshes/flat-normal.png` and
+   `assets/atom-meshes/canvas-grain.png` when available.
 3. Implement `setState(status: AtomStatus)`: immediately (no tween) sets material color to match state.
 4. Add label using `CanvasTexture` on a `PlaneGeometry` child mesh below the atom.
 
@@ -194,6 +219,25 @@ Progress behavior is unchanged.
 3. No animation yet.
 
 **Done:** Edges render between consecutive atom nodes.
+
+---
+
+### Task 1.6 - Core asset loading verification
+
+**Files to modify:**
+```
+web/frontend/src/game/assets/AssetManager.ts
+web/frontend/src/game/GameShell.ts
+```
+
+**Actions:**
+1. Verify core assets load from local vendored paths, not upstream URLs.
+2. Verify `post-processing-refs/lensDirt1.png` is not requested.
+3. Verify HDRI loading happens after first render or behind a feature flag.
+4. Emit asset load progress to the PWA shell.
+
+**Done:** Browser network panel shows local asset requests only, first render
+does not request lens dirt, and missing optional assets fall back gracefully.
 
 ---
 
@@ -397,6 +441,8 @@ cost without calling a live llama.cpp server.
 3. Per-frame `tick(dt)`: update positions, decrement lifetime, zero-out expired particles.
 4. `THREE.Points` with `ShaderMaterial` (vertex: position + alpha attributes; fragment: soft circle + alpha).
 5. Wire `SceneManager._onEvent()` to call `this._particles.emit(event)`.
+6. Use `assets/edge-particle-sprites/disc.png` for travelling pulses and
+   `assets/edge-particle-sprites/spark1.png` for bursts.
 
 **Done:** Phase transitions emit visible particles. No memory leaks after 1000+ events (pool recycles).
 
@@ -442,6 +488,8 @@ cost without calling a live llama.cpp server.
 5. Three status orbs on arc surface: `SphereGeometry(0.15)` at arc positions 20%, 50%, 80%.
 6. On `engine.on('snapshot')` where `snapshot.memPalaceStatus` changes: update orb colors.
 7. Tap detection via raycaster -> notify `FocusPanel` to open memory search mode.
+8. Use `assets/mempalace/radial-alpha-gradient.png` for arc alpha shaping and
+   `assets/mempalace/lensflare0.png` for memory orb highlight sprites.
 
 **Done:** Arc renders above map. Orb colors reflect MemPalace status from API.
 
@@ -536,8 +584,11 @@ Apply to camera moves, panel slides, atom transitions.
 
 Configure the Service Worker (already in place) to cache:
 - Three.js bundle
-- Game assets (CanvasTexture sources)
+- Runtime-critical game assets listed in `docs/threejs-asset-pipeline.md`
 - Last known project state (store `engine.snapshot()` in IndexedDB on each snapshot)
+
+Do not precache `assets/post-processing-refs/lensDirt1.png`. HDRI precache is
+allowed only after mobile profiling confirms the payload is acceptable.
 
 On offline: load from cache, show `OFFLINE` badge, disable controls.
 
@@ -606,11 +657,11 @@ sequential. Within later phases, some tasks can be parallelized (see notes).
 
 ```
 Phase 0 (all sequential):
-  0.1 -> 0.2 -> 0.3 -> 0.4 -> 0.5 -> 0.6 -> 0.7
+  0.1 -> 0.2 -> 0.2a -> 0.3 -> 0.4 -> 0.5 -> 0.6 -> 0.7
                                           |
                                           v
 Phase 1 (0.6 must be done; within phase: 1.2 requires 1.3 importable first):
-  1.1 -> 1.2 -> 1.3 -> 1.4 -> 1.5
+  1.1 -> 1.2 -> 1.3 -> 1.4 -> 1.5 -> 1.6
                                   |
                                   v
 Phase 2 (1.5 must be done; 2.4 focus panel integration depends on 2.5 raycaster):
