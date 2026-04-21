@@ -11,9 +11,9 @@ from orchestrator.lib.control import (
     PHASES,
     append_instruction,
     validate_phase,
-    validate_run_step,
     write_compact_context,
 )
+from orchestrator.lib.workflow import load_workflow, save_workflow, valid_start_steps
 from web.backend.routes.projects import get_store
 
 router = APIRouter()
@@ -33,6 +33,10 @@ class ResumeRunRequest(BaseModel):
     instruction: str | None = None
     compact_context: bool = False
     max_chars: int = Field(default=18000, ge=2000, le=100000)
+
+
+class WorkflowRequest(BaseModel):
+    steps: list[dict[str, Any]]
 
 
 def _project(project_id: str):
@@ -64,10 +68,13 @@ async def resume_run(project_id: str, body: ResumeRunRequest) -> dict[str, Any]:
     from web.backend.runner import start_run_async
 
     project = _project(project_id)
-    try:
-        start_at = validate_run_step(body.start_at)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    valid_steps = valid_start_steps(project.project_dir)
+    start_at = body.start_at.strip()
+    if start_at not in valid_steps:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown run step '{start_at}'. Expected one of: {', '.join(valid_steps)}",
+        )
 
     if body.instruction:
         phase = start_at if start_at in PHASES else None
@@ -81,8 +88,28 @@ async def resume_run(project_id: str, body: ResumeRunRequest) -> dict[str, Any]:
             effective_phase = "architect"
         elif start_at == "approve_review":
             effective_phase = "review"
-    validate_phase(effective_phase)
-    get_store().update_phase(project_id, effective_phase)
+    if effective_phase in PHASES:
+        validate_phase(effective_phase)
+        get_store().update_phase(project_id, effective_phase)
 
     started = await start_run_async(project_id, initial_idea=None, start_at=start_at)
     return {"project_id": project_id, "started": started, "start_at": start_at}
+
+
+@router.get("/{project_id}/control/workflow")
+async def get_workflow(project_id: str) -> dict[str, Any]:
+    project = _project(project_id)
+    return {
+        "project_id": project_id,
+        "steps": load_workflow(project.project_dir),
+    }
+
+
+@router.put("/{project_id}/control/workflow")
+async def put_workflow(project_id: str, body: WorkflowRequest) -> dict[str, Any]:
+    project = _project(project_id)
+    try:
+        steps = save_workflow(project.project_dir, body.steps)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"project_id": project_id, "steps": steps}

@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from orchestrator.lib.config import Config
-from orchestrator.lib.control import RUN_STEPS
 from orchestrator.lib.logger import setup_phase_logger
 from orchestrator.lib.state import State
+from orchestrator.lib.workflow import enabled_steps
 
 logger = logging.getLogger(__name__)
 
@@ -78,31 +78,24 @@ class Orchestrator:
         """Execute the full SDLC pipeline, optionally resuming at one step."""
         self._ensure_git_repo()
         self._ensure_qwendea()
-        steps: list[tuple[str, str, Callable[..., None]]] = [
-            ("architect", "phase", self._architect),
-            ("approve_sprint_plan", "gate", self._gate),
-            ("implementation", "phase", self._coder),
-            ("testing", "phase", self._tester),
-            ("review", "phase", self._reviewer),
-            ("approve_review", "gate", self._gate),
-            ("deployment", "phase", self._deployer),
-        ]
+        steps = enabled_steps(self.config.project_dir)
         start_index = 0
         if start_at is not None:
-            if start_at not in RUN_STEPS:
-                allowed = ", ".join(RUN_STEPS)
+            valid_steps = [step["id"] for step in steps]
+            if start_at not in valid_steps:
+                allowed = ", ".join(valid_steps)
                 raise ValueError(f"Unknown run step '{start_at}'. Expected one of: {allowed}")
-            start_index = next(i for i, (name, _, _) in enumerate(steps) if name == start_at)
+            start_index = next(i for i, step in enumerate(steps) if step["id"] == start_at)
 
-        for name, kind, fn in steps[start_index:]:
-            if kind == "phase":
-                self._run_phase(name, fn)
+        for step in steps[start_index:]:
+            if step["type"] == "phase":
+                self._run_phase(step["id"], self._resolve_phase_handler(step["handler"]), step=step)
             else:
-                fn(name)
+                self._run_gate_or_checkpoint(step)
 
     # -- phase execution -----------------------------------------------------
 
-    def _run_phase(self, name: str, fn: Callable) -> None:
+    def _run_phase(self, name: str, fn: Callable, *, step: dict[str, Any] | None = None) -> None:
         """Run a phase function with retry logic and validation.
 
         Retries on validator failure up to config.max_retries.
@@ -121,10 +114,7 @@ class Orchestrator:
                 attempt=attempt,
             )
             try:
-                if self._accepts_phase_logger(fn):
-                    fn(phase_logger=phase_logger)
-                else:
-                    fn()
+                self._invoke_handler(fn, phase_logger=phase_logger, step=step)
             except Exception as e:
                 self._events_obj.emit("phase_error", name=name, error=str(e))
                 self._log_phase_event(
@@ -166,6 +156,38 @@ class Orchestrator:
             )
 
         raise PhaseFailure(name)
+
+    def _resolve_phase_handler(self, handler_name: str) -> Callable[..., None]:
+        mapping: dict[str, Callable[..., None]] = {
+            "architect": self._architect,
+            "micro_task_breakdown": self._micro_task_breakdown,
+            "implementation": self._coder,
+            "testing": self._tester,
+            "guru_escalation": self._guru_escalation,
+            "review": self._reviewer,
+            "deployment": self._deployer,
+        }
+        try:
+            return mapping[handler_name]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported phase handler '{handler_name}'") from exc
+
+    def _run_gate_or_checkpoint(self, step: dict[str, Any]) -> None:
+        handler = step["handler"]
+        if step["type"] == "gate":
+            self._gate(handler)
+            return
+        if handler == "operator_checkpoint":
+            phase_logger = self._make_phase_logger(step["id"])
+            self._log_phase_event(
+                phase_logger,
+                logging.INFO,
+                "checkpoint",
+                step.get("description") or f"Checkpoint '{step['id']}' reached",
+            )
+            self._events_obj.emit("checkpoint", name=step["id"], title=step.get("title", step["id"]))
+            return
+        raise ValueError(f"Unsupported workflow checkpoint handler '{handler}'")
 
     def _validate(self, name: str) -> bool:
         """Run the validator for a phase. Returns True if passed."""
@@ -247,7 +269,7 @@ class Orchestrator:
         )
 
     @staticmethod
-    def _accepts_phase_logger(fn: Callable[..., Any]) -> bool:
+    def _accepts_kwarg(fn: Callable[..., Any], name: str) -> bool:
         try:
             sig = inspect.signature(fn)
         except (TypeError, ValueError):
@@ -255,9 +277,16 @@ class Orchestrator:
         for param in sig.parameters.values():
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 return True
-            if param.name == "phase_logger":
+            if param.name == name:
                 return True
         return False
+
+    def _invoke_handler(self, fn: Callable[..., Any], **kwargs: Any) -> Any:
+        accepted = {
+            key: value for key, value in kwargs.items()
+            if self._accepts_kwarg(fn, key)
+        }
+        return fn(**accepted)
 
     @staticmethod
     def _log_phase_event(
@@ -294,6 +323,17 @@ class Orchestrator:
         # path. Don't overwrite the file with the returned string.
         architect.execute()
 
+    def _micro_task_breakdown(
+        self,
+        *,
+        phase_logger: logging.Logger | None = None,
+        step: dict[str, Any] | None = None,
+    ) -> None:
+        from orchestrator.roles.micro_task_breaker import MicroTaskBreaker
+
+        breaker = MicroTaskBreaker(self.state, _phase_logger=phase_logger)
+        breaker.execute("sprint-plan.md")
+
     def _coder(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run the Coder role."""
         from orchestrator.roles.coder import Coder
@@ -315,6 +355,21 @@ class Orchestrator:
 
         tester = Tester(llm, self.state, phase_logger=phase_logger)
         tester.execute("sprint-plan.md")
+
+    def _guru_escalation(
+        self,
+        *,
+        phase_logger: logging.Logger | None = None,
+        step: dict[str, Any] | None = None,
+    ) -> None:
+        from orchestrator.roles.guru_escalation import GuruEscalation
+
+        escalation = GuruEscalation(
+            self.state,
+            step_config=(step or {}).get("config") if step else None,
+            _phase_logger=phase_logger,
+        )
+        escalation.execute()
 
     def _reviewer(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run the Reviewer role."""

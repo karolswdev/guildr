@@ -68,7 +68,7 @@ class Coder(BaseRole):
         self, plan_text: str, task: Task, sprint_plan_path: str
     ) -> str:
         """Execute a single task: call LLM, parse patch, apply file writes."""
-        context = slice_task(plan_text, task.id)
+        context = self._task_context(plan_text, task.id)
 
         system_prompt = self._load_prompt("coder", "generate")
         user_prompt = system_prompt.format(
@@ -101,6 +101,12 @@ class Coder(BaseRole):
         self._apply_file_patch(patch)
 
         return plan_text
+
+    def _task_context(self, plan_text: str, task_id: int) -> str:
+        packet_path = self.state.project_dir / "phase-files" / f"task-{task_id:03d}-implement.md"
+        if packet_path.exists():
+            return packet_path.read_text(encoding="utf-8")
+        return slice_task(plan_text, task_id)
 
     # -- JSON parsing (same robustness as Architect) -------------------------
 

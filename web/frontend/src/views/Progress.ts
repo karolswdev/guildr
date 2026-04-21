@@ -15,17 +15,22 @@ type LogResponse = {
   phases: PhaseSummary[];
 };
 
-type ResumeStep = "architect" | "approve_sprint_plan" | "implementation" | "testing" | "review" | "approve_review" | "deployment";
+type WorkflowStep = {
+  id: string;
+  title: string;
+  type: string;
+  handler: string;
+  enabled: boolean;
+  description?: string;
+  config?: Record<string, unknown>;
+};
 
-const RUN_STEPS: ResumeStep[] = [
-  "architect",
-  "approve_sprint_plan",
-  "implementation",
-  "testing",
-  "review",
-  "approve_review",
-  "deployment",
-];
+type WorkflowResponse = {
+  project_id: string;
+  steps: WorkflowStep[];
+};
+
+const PIPELINE_PHASES = ["architect", "micro_task_breakdown", "implementation", "testing", "guru_escalation", "review", "deployment"];
 
 export function renderProgress(container: Element, navigate: (route: string) => void, projectId: string): void {
   container.innerHTML = `
@@ -46,11 +51,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
           <span id="phase-name" style="font-size: 16px; font-weight: 600;">Loading...</span>
         </div>
         <div style="display: flex; gap: 4px;">
-          <div class="phase-step" style="flex: 1; height: 6px; background: #333; border-radius: 3px;"></div>
-          <div class="phase-step" style="flex: 1; height: 6px; background: #333; border-radius: 3px;"></div>
-          <div class="phase-step" style="flex: 1; height: 6px; background: #333; border-radius: 3px;"></div>
-          <div class="phase-step" style="flex: 1; height: 6px; background: #333; border-radius: 3px;"></div>
-          <div class="phase-step" style="flex: 1; height: 6px; background: #333; border-radius: 3px;"></div>
+          ${PIPELINE_PHASES.map(() => `<div class="phase-step" style="flex: 1; height: 6px; background: #333; border-radius: 3px;"></div>`).join("")}
         </div>
         <div style="display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: 13px;">
           <span style="color: #888;">Tokens/sec <span id="tok-s" style="color: #4fc3f7;">—</span></span>
@@ -61,9 +62,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       <section style="padding: 12px; background: #141414; border: 1px solid #2d2d2d; border-radius: 8px;">
         <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">Run Control</div>
         <label style="display: block; font-size: 12px; color: #888; margin-bottom: 6px;">Resume From</label>
-        <select id="resume-step" style="width: 100%; padding: 10px; margin-bottom: 10px; background: #0b0b0b; color: #f1f1f1; border: 1px solid #333; border-radius: 6px;">
-          ${RUN_STEPS.map((step) => `<option value="${step}">${step}</option>`).join("")}
-        </select>
+        <select id="resume-step" style="width: 100%; padding: 10px; margin-bottom: 10px; background: #0b0b0b; color: #f1f1f1; border: 1px solid #333; border-radius: 6px;"></select>
         <label style="display: block; font-size: 12px; color: #888; margin-bottom: 6px;">Instruction</label>
         <textarea
           id="operator-instruction"
@@ -81,6 +80,22 @@ export function renderProgress(container: Element, navigate: (route: string) => 
           <button id="btn-resume" style="padding: 12px; background: #4fc3f7; color: #0a0a0a; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Resume</button>
         </div>
         <div id="control-status" style="margin-top: 10px; min-height: 20px; font-size: 13px; color: #888;"></div>
+      </section>
+
+      <section style="padding: 12px; background: #141414; border: 1px solid #2d2d2d; border-radius: 8px;">
+        <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px;">
+          <div style="font-size: 14px; font-weight: 600;">Workflow</div>
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-reload-workflow" style="padding: 8px 10px; background: #0f3460; color: white; border: none; border-radius: 6px; cursor: pointer;">Reload</button>
+            <button id="btn-save-workflow" style="padding: 8px 10px; background: #184b35; color: white; border: none; border-radius: 6px; cursor: pointer;">Save</button>
+          </div>
+        </div>
+        <div style="font-size: 12px; color: #888; margin-bottom: 8px;">Edit the live workflow JSON. Add checkpoints, enable guru escalation, or reorder supported steps.</div>
+        <textarea
+          id="workflow-editor"
+          rows="14"
+          style="width: 100%; padding: 10px; background: #0b0b0b; color: #f1f1f1; border: 1px solid #333; border-radius: 6px; resize: vertical; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5;"
+        ></textarea>
       </section>
 
       <section style="padding: 12px; background: #141414; border: 1px solid #2d2d2d; border-radius: 8px;">
@@ -118,8 +133,11 @@ export function renderProgress(container: Element, navigate: (route: string) => 
   const btnInject = container.querySelector("#btn-inject") as HTMLButtonElement;
   const btnCompact = container.querySelector("#btn-compact") as HTMLButtonElement;
   const btnResume = container.querySelector("#btn-resume") as HTMLButtonElement;
+  const workflowEditor = container.querySelector("#workflow-editor") as HTMLTextAreaElement;
+  const btnReloadWorkflow = container.querySelector("#btn-reload-workflow") as HTMLButtonElement;
+  const btnSaveWorkflow = container.querySelector("#btn-save-workflow") as HTMLButtonElement;
 
-  const phases = ["architect", "implementation", "testing", "review", "deployment"];
+  let workflowSteps: WorkflowStep[] = [];
   let evtSource: EventSource | null = null;
   let refreshTimer: number | null = null;
 
@@ -176,7 +194,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
 
   function updatePhase(phase: string): void {
     phaseName.textContent = phase.charAt(0).toUpperCase() + phase.slice(1);
-    const idx = phases.indexOf(phase);
+    const idx = PIPELINE_PHASES.indexOf(phase);
     phaseDot.style.background = idx >= 0 ? "#4fc3f7" : "#555";
     for (let i = 0; i < phaseSteps.length; i++) {
       const step = phaseSteps[i] as HTMLDivElement;
@@ -200,6 +218,34 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       throw new Error(`API ${resp.status}: ${resp.statusText}`);
     }
     return resp.json() as Promise<T>;
+  }
+
+  async function apiPut<T>(url: string, body: unknown): Promise<T> {
+    const resp = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error(`API ${resp.status}: ${resp.statusText}`);
+    return resp.json() as Promise<T>;
+  }
+
+  function renderResumeOptions(steps: WorkflowStep[]): void {
+    const enabled = steps.filter((step) => step.enabled);
+    resumeStep.innerHTML = enabled
+      .map((step) => `<option value="${escapeHtml(step.id)}">${escapeHtml(step.id)}</option>`)
+      .join("");
+  }
+
+  async function loadWorkflow(): Promise<void> {
+    try {
+      const response = await apiGet<WorkflowResponse>(`/api/projects/${projectId}/control/workflow`);
+      workflowSteps = response.steps;
+      workflowEditor.value = JSON.stringify(response.steps, null, 2);
+      renderResumeOptions(response.steps);
+    } catch (err: unknown) {
+      workflowEditor.value = err instanceof Error ? err.message : "Failed to load workflow";
+    }
   }
 
   async function refreshLogs(): Promise<void> {
@@ -252,7 +298,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       const phase = (data.name as string) || (data.phase as string) || "";
       appendEvent(eventType, describeEvent(data));
 
-      if (phase && phases.includes(phase)) {
+      if (phase && PIPELINE_PHASES.includes(phase)) {
         updatePhase(phase);
       }
       if (data.tok_s !== undefined) {
@@ -309,7 +355,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     setBusy(btnResume, true, "Resuming...");
     try {
       const payload = {
-        start_at: resumeStep.value as ResumeStep,
+        start_at: resumeStep.value,
         instruction: instructionInput.value.trim() || null,
         compact_context: compactCheckbox.checked,
         max_chars: 18000,
@@ -328,7 +374,36 @@ export function renderProgress(container: Element, navigate: (route: string) => 
     }
   });
 
+  btnReloadWorkflow.addEventListener("click", async () => {
+    setBusy(btnReloadWorkflow, true, "Reloading...");
+    try {
+      await loadWorkflow();
+      setStatus("Workflow reloaded.");
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : "Workflow reload failed", true);
+    } finally {
+      setBusy(btnReloadWorkflow, false, "Reload");
+    }
+  });
+
+  btnSaveWorkflow.addEventListener("click", async () => {
+    setBusy(btnSaveWorkflow, true, "Saving...");
+    try {
+      const steps = JSON.parse(workflowEditor.value) as WorkflowStep[];
+      const response = await apiPut<WorkflowResponse>(`/api/projects/${projectId}/control/workflow`, { steps });
+      workflowSteps = response.steps;
+      workflowEditor.value = JSON.stringify(response.steps, null, 2);
+      renderResumeOptions(response.steps);
+      setStatus("Workflow updated.");
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : "Workflow save failed", true);
+    } finally {
+      setBusy(btnSaveWorkflow, false, "Save");
+    }
+  });
+
   connectStream();
+  loadWorkflow();
   refreshLogs();
   refreshTimer = window.setInterval(() => {
     void refreshLogs();

@@ -7,13 +7,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-PHASES = ("architect", "implementation", "testing", "review", "deployment")
+PHASES = (
+    "architect",
+    "micro_task_breakdown",
+    "implementation",
+    "testing",
+    "guru_escalation",
+    "review",
+    "deployment",
+)
 GATES = ("approve_sprint_plan", "approve_review")
 RUN_STEPS = (
     "architect",
     "approve_sprint_plan",
+    "micro_task_breakdown",
     "implementation",
     "testing",
+    "guru_escalation",
     "review",
     "approve_review",
     "deployment",

@@ -114,3 +114,32 @@ async def test_resume_route_passes_named_step_to_runner(app: FastAPI, fresh_stor
     assert payload["started"] is True
     assert payload["start_at"] == "testing"
     assert start_mock.await_args.kwargs["start_at"] == "testing"
+
+
+@pytest.mark.asyncio
+async def test_workflow_route_can_enable_guru_escalation(app: FastAPI) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        create_resp = await client.post(
+            "/api/projects",
+            json={"name": "Workflow Project", "initial_idea": "Build it"},
+        )
+        project_id = create_resp.json()["id"]
+
+        workflow_resp = await client.get(f"/api/projects/{project_id}/control/workflow")
+        steps = workflow_resp.json()["steps"]
+        for step in steps:
+            if step["id"] == "guru_escalation":
+                step["enabled"] = True
+                step["config"] = {"providers": [{"kind": "openrouter", "model": "anthropic/claude-3.5-sonnet"}]}
+
+        save_resp = await client.put(
+            f"/api/projects/{project_id}/control/workflow",
+            json={"steps": steps},
+        )
+
+    assert workflow_resp.status_code == 200
+    assert save_resp.status_code == 200
+    saved_steps = {step["id"]: step for step in save_resp.json()["steps"]}
+    assert saved_steps["guru_escalation"]["enabled"] is True
+    assert saved_steps["guru_escalation"]["config"]["providers"][0]["kind"] == "openrouter"
