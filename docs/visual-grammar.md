@@ -23,6 +23,9 @@ Edge (done)             #1E5C42   settled green
 MemPalace arc           #5B3FBF   indigo-purple, semi-transparent
 Memory orb              #9B7EFF   lavender glow
 Artifact card           #2A3A2E   dark green panel
+Cost ring               #D9B84D   muted gold, thin
+Budget warning          #E09B2A   amber pulse
+Budget exceeded         #CC3333   red pulse
 Gate (waiting)          #E09B2A   amber
 Gate (decided/pass)     #1A8C5A
 Gate (decided/fail)     #CC3333
@@ -166,6 +169,53 @@ Artifacts are outputs produced by atoms (sprint plan, test report, review, deplo
 | `DEPLOY.md` | `upload` | cyan |
 | `PERSONA_FORUM.md` | `target` | amber |
 | `FOUNDING_TEAM.json` | `targettargettarget` | gold |
+
+---
+
+## Cost And Budget Layer
+
+Cost is visible but secondary. It must inform the operator without turning the
+map into a finance dashboard.
+
+### Atom Cost Rings
+
+Atoms with recorded usage render a thin ring around their base.
+
+- Ring thickness: 0.03 world units.
+- Ring color: muted gold `#D9B84D`.
+- Ring progress: proportional to phase budget consumed when a phase budget is
+  configured; otherwise proportional to that atom's share of run spend.
+- Provider-reported cost uses a solid ring.
+- Estimated local or rate-card cost uses a dashed ring.
+- Unknown cost adds a small red notch at the top of the ring.
+
+### Budget States
+
+| Budget State | Visual |
+|---|---|
+| normal | static muted-gold ring |
+| warning | amber pulse every 1.5s |
+| exceeded | red pulse plus budget gate marker |
+| approved continuation | ring returns to amber with a small check notch |
+| rejected continuation | ring stays red and atom enters blocked state |
+
+### Cost HUD
+
+The top HUD shows:
+
+- run cost,
+- budget remaining,
+- current phase cost,
+- unknown-cost count when nonzero.
+
+Values fit in one line on iPhone portrait. Detailed tables live in a bottom
+sheet, not inside the Three.js scene.
+
+### Replay Cost Density
+
+The replay timeline can switch from event density to cost density. Cost density
+bars use muted gold for provider-reported cost, lavender for local estimates,
+and red ticks for unknown cost.
 
 ---
 

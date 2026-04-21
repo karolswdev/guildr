@@ -39,6 +39,8 @@ and direct manipulation of workflow atoms.
   atomic task or verification step.
 - Event ledger: Durable JSONL stream of all run events, used for live PWA
   updates and replay.
+- Cost ledger: Replayable usage and economics state emitted into the event
+  ledger for every model, advisor, retry, and escalation call.
 - Guru advisor: A stronger or external model/tool invoked for a bounded
   unblock plan, such as Codex CLI, Claude CLI, or an OpenAI-compatible model
   through OpenRouter.
@@ -76,7 +78,11 @@ and direct manipulation of workflow atoms.
    The PWA must show why an atom exists, what it consumed, what it produced,
    and how it affected later atoms.
 
-9. Batteries are provided, boundaries are programmable.
+9. Cost is visible state.
+   Token usage, provider spend, local estimates, and budget gates must be
+   recorded as events so live operation and replay agree.
+
+10. Batteries are provided, boundaries are programmable.
    The system must work out of the box with local defaults, while every
    serious boundary remains configurable through durable provider, hook, and
    workflow contracts.
@@ -95,6 +101,7 @@ and direct manipulation of workflow atoms.
 - Human gates and operator checkpoints.
 - Guru escalation through CLI and OpenAI-compatible providers.
 - Durable event ledger and live SSE streaming.
+- Replayable cost and token tracking.
 - Replay viewer foundation.
 - PWA control room for workflow, memory, logs, events, and intervention.
 - Compact context generation for models under or around 128k tokens.
@@ -306,6 +313,7 @@ Requirements:
 - The PWA must load durable event history before or alongside SSE.
 - The PWA must support filtering by event type and step.
 - The PWA must support replay from durable history.
+- Model and advisor usage must be recorded through `usage_recorded` events.
 
 Replay viewer requirements:
 
@@ -315,6 +323,7 @@ Replay viewer requirements:
 - Show event detail payload.
 - Show artifact diffs if event references artifacts.
 - Show memory state before/after when available.
+- Show cost and token counters as of the selected replay point.
 - Export replay as a diagnostic bundle.
 
 Future replay requirements:
@@ -322,6 +331,47 @@ Future replay requirements:
 - Branch from a prior event into a new run.
 - Mark a successful run as a template.
 - Compare two runs side-by-side.
+
+### 8.1 Cost Ledger And Budget Replay
+
+Cost tracking is a first-class projection over the event ledger.
+
+Requirements:
+
+- Every LLM, local model, advisor, retry, and escalation call must emit one
+  `usage_recorded` event.
+- `usage_recorded` events must include provider kind, provider name, model,
+  call id, role, step, atom id, token usage, runtime, cost, source, confidence,
+  and budget state when known.
+- Cost source must be explicit: `provider_reported`, `rate_card_estimate`,
+  `local_estimate`, or `unknown`.
+- Provider-returned usage and cost metadata must be preserved when available.
+- Local model calls must be tracked with wall time, throughput, and configured
+  machine-cost estimates.
+- Historical replay must use recorded events and recorded rate-card snapshots,
+  not today's pricing.
+- Budget warnings, budget gates, and budget decisions must be durable events.
+
+Budget levels:
+
+- Project budget.
+- Run budget.
+- Phase budget.
+- Provider budget.
+- Escalation budget.
+- Per-call hard cap.
+
+Replay cost snapshots must expose:
+
+- Total effective run cost.
+- Provider-reported total.
+- Estimated total.
+- Unknown-cost count.
+- Cost by provider, model, role, phase, and atom.
+- Token totals by input, output, cache, and reasoning.
+- Budget remaining at the selected replay point.
+
+The detailed design is governed by `docs/cost-tracking.md`.
 
 ## 9. PWA Requirements
 
@@ -336,6 +386,7 @@ Core screens:
 - Gates.
 - Artifacts.
 - Replay viewer.
+- Economics and budget panel.
 - Memory palace browser.
 - Workflow editor.
 
@@ -344,6 +395,7 @@ Mission Control must include:
 - Current focus.
 - Next step.
 - Live telemetry.
+- Live cost and token telemetry.
 - Latest signal.
 - Workflow board.
 - Step inspector.
@@ -368,6 +420,8 @@ Interaction requirements:
 - Search memory.
 - Inspect durable logs with indentation preserved.
 - Load prior event history.
+- Inspect spend by provider, model, role, phase, and atom.
+- Pause or resume through budget gates.
 
 Game-like UX direction:
 
@@ -429,6 +483,8 @@ Provider config must include:
 - Temperature.
 - Context budget.
 - Retry limits.
+- Budget limits.
+- Cost profile or rate-card source.
 
 The context budget must be explicit per phase. The default design target is
 128k tokens or below, with smaller packets preferred.
@@ -451,6 +507,8 @@ Provider configuration must be programmable:
 - Replay can show which provider produced which artifact.
 - The PWA can expose provider health, model, cost/risk hints, and context
   budget per atom.
+- Replay can show token and cost totals exactly as they were recorded at the
+  selected event index.
 
 The goal is not to lock the user into our infrastructure. The goal is to
 provide strong defaults while allowing the user to mix local models, hosted
@@ -468,6 +526,9 @@ Project-local durable files:
 - `.orchestrator/control/instructions.jsonl`
 - `.orchestrator/events.jsonl`
 - `.orchestrator/logs/*.jsonl`
+- `.orchestrator/costs/run-summary.json`
+- `.orchestrator/costs/provider-ledger.jsonl`
+- `.orchestrator/costs/rate-cards/*.json`
 - `.orchestrator/memory/wake-up.md`
 - `.orchestrator/memory/status.txt`
 - `.orchestrator/memory/last-search.txt`
@@ -520,6 +581,7 @@ Observability:
 - Every run writes events.
 - Every memory operation writes status artifacts.
 - Every escalation writes advisor output.
+- Every model and advisor call writes usage and cost events.
 
 ## 14. Milestones
 
@@ -549,12 +611,15 @@ Observability:
 - Fast-forward controls.
 - Event detail pane.
 - Artifact links.
+- Replayable cost snapshots.
 - Replay export bundle.
 
 ### Milestone 4: Provider And Guru Mesh
 
 - OpenAI-compatible provider abstraction.
 - OpenRouter config UI.
+- Cost adapters for hosted, OpenAI-compatible, CLI, and local providers.
+- Budget gates.
 - Provider health checks.
 - Advisor output contracts.
 - Escalation-to-microtask decomposition.
@@ -581,6 +646,8 @@ The Council Engine is on target when:
 - A failed phase can request advisor escalation.
 - Advisor output can be broken into atomic remediation tasks.
 - A successful run can be replayed from durable events.
+- Replay shows the cost, tokens, source, confidence, and budget state that were
+  known at that replay point.
 - The system can run locally without cloud dependencies, while still allowing
   configured OpenRouter or other OpenAI-compatible advisors.
 
@@ -595,6 +662,7 @@ The Council Engine is on target when:
 - How should conflicting persona/forum advice be resolved deterministically?
 - Which visual grammar should the atom map use for phases, gates, checkpoints,
   memory, and advisors?
+- What default local machine cost profile should ship for first-run setup?
 
 ## 17. Current Implementation Status
 
@@ -606,6 +674,7 @@ Implemented:
 - Palace wake-up included in compact context and operator prompt context.
 - Durable event ledger written from live SSE events.
 - Event history API.
+- Cost tracking design.
 - PWA Palace Memory panel.
 - PWA event history loading.
 - Workflow board, step inspector, founding team editor, terminal peek.
@@ -616,6 +685,8 @@ Not yet implemented:
 - Visual atom map.
 - Hook engine and hook permissions.
 - OpenRouter provider UI.
+- Runtime cost event emission.
+- Budget gates.
 - Event-to-artifact cross-links.
 - Agent diary mining.
 - Replay branching.
@@ -630,6 +701,7 @@ The PWA direction is now governed by the following design documents:
 - `docs/visual-grammar.md`
 - `docs/threejs-integration-plan.md`
 - `docs/implementation-roadmap.md`
+- `docs/cost-tracking.md`
 
 These documents supersede the idea of the Progress view as a conventional
 admin console. The long-term default project run view is a Three.js strategy

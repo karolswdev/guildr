@@ -7,7 +7,8 @@ software with agents, memory, events, and human intervention.
 
 The user is the operator. The project is the battlefield. Workflow steps are
 atoms. Agents are specialists. MemPalace is the memory spine. The event stream
-is time. Replay is how the operator learns from a run and proves what happened.
+is time. Cost is the run economy. Replay is how the operator learns from a run
+and proves what happened.
 
 This direction is not decorative. It is the product architecture.
 
@@ -27,7 +28,7 @@ This direction is not decorative. It is the product architecture.
 4. Replay must be first-class.
    A past run should be scrubbed like a timeline in a tactics game. The user
    must be able to see atoms activate, gates open, memory sync, agents fail,
-   escalations happen, and artifacts crystallize.
+   escalations happen, costs accumulate, and artifacts crystallize.
 
 5. The phone is the reference device.
    Desktop can be richer, but iOS portrait must feel native: safe areas,
@@ -51,7 +52,7 @@ The correct architecture is a hybrid game shell:
 - `SceneManager` owns Three.js objects and receives snapshots from
   `EventEngine`.
 - `HudLayer` owns native-feeling DOM overlays: command sheets, focus panels,
-  memory search, replay controls, and logs.
+  memory search, cost panels, replay controls, and logs.
 - `FallbackProgressView` remains available for accessibility, old devices,
   testing, and emergency operation.
 
@@ -67,6 +68,8 @@ The scene should be built from five core object types:
 - Memory structures: MemPalace wing, rooms, drawers, search results, wake-up
   packet state.
 - Artifacts: PRD, sprint plan, phase files, test report, review, deploy notes.
+- Cost markers: spend rings, budget gates, source confidence, and burn-rate
+  traces.
 - Event pulses: live or replayed state transitions moving through the graph.
 
 The graph should not look like a generic flowchart. It should look like an
@@ -83,9 +86,10 @@ Required flow:
 2. Load event history.
 3. Build idle atom map.
 4. Replay events from index zero to target index.
-5. Emit snapshot.
-6. Scene renders snapshot.
-7. DOM overlays render selected detail.
+5. Fold usage and budget events into the cost snapshot.
+6. Emit snapshot.
+7. Scene renders snapshot.
+8. DOM overlays render selected detail.
 
 This makes replay deterministic, testable, and compatible with low-context
 debugging.
@@ -103,6 +107,7 @@ On iPhone:
 - Drag timeline: scrub.
 - Tap memory arc: open memory search sheet.
 - Tap gate atom: open decision sheet.
+- Tap cost badge: open economics sheet.
 
 On desktop:
 
@@ -119,10 +124,11 @@ Order:
 2. Keep current Progress view working from `EventEngine`.
 3. Add a Three.js canvas shell with static workflow atoms.
 4. Bind atom states to event snapshots.
-5. Add replay scrubber.
-6. Add memory arc.
-7. Add artifact crystals.
-8. Replace default Progress route with game shell when stable.
+5. Add cost snapshots and budget HUD.
+6. Add replay scrubber.
+7. Add memory arc.
+8. Add artifact crystals.
+9. Replace default Progress route with game shell when stable.
 
 This gives the council-facing experience without sacrificing the current
 operator controls.
@@ -141,6 +147,8 @@ operator controls.
 - MemPalace must be spatially persistent, not hidden in a tab.
 - Every atom must expose goal, memory, events, artifacts, and operator actions.
 - Replay must be deterministic from event history and testable as a pure FSM.
+- Cost must be event-sourced so replay shows spend, tokens, source, and budget
+  state exactly as the operator saw it.
 - The iPhone experience is the baseline, not a later polish pass.
 
 ## Acceptance Test For The Direction
@@ -152,6 +160,7 @@ If a user opens a project on an iPhone, they should immediately understand:
 - where memory is coming from,
 - what has already happened,
 - what failed or is waiting,
+- what the current run has spent,
 - what they can touch,
 - how to replay the run,
 - and how to intervene.

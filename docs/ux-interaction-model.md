@@ -4,7 +4,7 @@
 
 1. **Touch-first, pointer-enhanced.** Every action must be completable with one thumb. Mouse/trackpad is an enhancement, not the primary surface.
 2. **Physics and spring, not linear.** Transitions use spring curves (stiffness ~300, damping ~30). Snapping feels physical, not mechanical.
-3. **Progressive disclosure.** The map starts sparse. Atom detail, memory, logs, and artifacts reveal themselves as the user zooms and taps.
+3. **Progressive disclosure.** The map starts sparse. Atom detail, memory, logs, artifacts, and cost reveal themselves as the user zooms and taps.
 4. **Operator, not spectator.** The UI never reads as a passive log viewer. Every visible element is tappable, inspectable, or actionable.
 5. **Safe area awareness.** All HUD elements respect `env(safe-area-inset-*)`. Bottom bar sits above home indicator. Top elements clear the notch/Dynamic Island.
 
@@ -14,7 +14,7 @@
 
 ```
 ||||||||||||||||||||||||||||||  <- safe area top
-|  [menu] Guildr    [*LIVE] [gear] |  <- top bar (44pt)
+| [menu] Guildr  $0.42 [*LIVE] [gear] | <- top bar (44pt)
 ||||||||||||||||||||||||||||||
 |                            |
 |                            |
@@ -39,16 +39,17 @@
 1. User taps project card -> router navigates to `/project/:id/run`.
 2. `GameShell` mounts canvas, starts renderer.
 3. `EventEngine` fetches history (`/events?limit=500`), primes `AtomStateMap`.
-4. Camera auto-frames the full workflow graph with a 400ms spring-in zoom.
-5. If run is live: `EventEngine` opens SSE connection. `LIVE` indicator pulses green in top bar.
-6. If run is history: `LIVE` indicator is absent. Timeline is pre-loaded. Replay controls are immediately active.
+4. `EventEngine` folds usage events into `CostSnapshot`.
+5. Camera auto-frames the full workflow graph with a 400ms spring-in zoom.
+6. If run is live: `EventEngine` opens SSE connection. `LIVE` indicator pulses green in top bar.
+7. If run is history: `LIVE` indicator is absent. Timeline is pre-loaded. Replay controls are immediately active.
 
 ### 2. Tapping an Atom
 
 1. Tap detected via `Raycaster` on pointer-up (< 200ms, < 8px movement = tap).
 2. Camera springs to center the atom with slight zoom-in (0.6x the full-map zoom, 300ms).
 3. `FocusPanel` slides up from bottom (portrait) or from right (landscape) - 320ms spring.
-4. Panel shows: atom name, current state, last event detail, token count, elapsed time, memory accesses.
+4. Panel shows: atom name, current state, last event detail, token count, elapsed time, memory accesses, and atom cost.
 5. If atom is `waiting` (gate): panel shows approve/reject/escalate buttons prominently.
 6. Tap outside FocusPanel or tap same atom again -> panel dismisses with reverse spring.
 
@@ -68,8 +69,9 @@ Long-press (500ms) opens a context sheet (iOS-style action sheet from bottom):
 3. Atoms animate backward/forward through their state transitions.
 4. Edges animate particle direction (forward or backward).
 5. FocusPanel, if open, updates to show event at scrub position.
-6. Tap `>` to resume live following from current scrub position.
-7. Tap `[]` to return to map overview.
+6. Cost HUD and economics sheet update to the selected replay point.
+7. Tap `>` to resume live following from current scrub position.
+8. Tap `[]` to return to map overview.
 
 ### 5. Memory Search
 
@@ -94,6 +96,17 @@ Long-press (500ms) opens a context sheet (iOS-style action sheet from bottom):
 3. Buttons are min 56pt tall (Apple HIG minimum for critical actions).
 4. After decision: gate node animates to `done` or `error` state, SSE continues.
 
+### 8. Economics Sheet
+
+1. Tap the top-bar cost badge or an atom cost ring.
+2. Bottom sheet opens with run total, budget remaining, unknown-cost count, and
+   source split.
+3. User can switch group by: provider, model, role, phase, or atom.
+4. Hosted provider-reported cost, rate-card estimate, local estimate, and
+   unknown cost are visually distinct.
+5. In replay mode, all values are computed from events up to the scrub index.
+6. Budget gates appear as normal gate decisions with extra spend context.
+
 ---
 
 ## Gesture Reference Table
@@ -109,6 +122,7 @@ Long-press (500ms) opens a context sheet (iOS-style action sheet from bottom):
 | Swipe down | FocusPanel | Dismiss panel |
 | Drag | Timeline scrubber | Replay scrub |
 | Tap | MemPalace arc | Open memory search |
+| Tap | Cost badge / cost ring | Open economics sheet |
 | Two-finger swipe | Timeline (expanded) | Fast scrub |
 
 ---

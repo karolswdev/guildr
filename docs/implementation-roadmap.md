@@ -8,7 +8,7 @@ Each phase is a self-contained unit of work. Phases are ordered by dependency: c
 
 ## Phase 0 - Foundation Setup (No UI Change)
 
-**Goal:** Install Three.js, scaffold the `game/` directory, extract EventEngine from Progress.ts. The existing Progress.ts view continues to work unchanged.
+**Goal:** Install Three.js, scaffold the `game/` directory, extract EventEngine from Progress.ts, and define replayable cost types. The existing Progress.ts view continues to work unchanged.
 
 **Done condition for this phase:** `npm run build` succeeds, existing Progress.ts tests pass, EventEngine unit tests pass.
 
@@ -87,6 +87,24 @@ web/frontend/src/game/
 4. Style with `.sr-only` CSS class (clip-path hidden, position absolute).
 
 **Done:** Mounting `AccessibilityTree` and emitting a fixture snapshot produces the correct ARIA list in the DOM.
+
+---
+
+### Task 0.6 - Define cost snapshot types
+
+**Files to modify:**
+```
+web/frontend/src/game/types.ts
+web/frontend/src/game/EventEngine.ts
+```
+
+**Actions:**
+1. Add `CostSource`, `CostBucket`, and `CostSnapshot` from `docs/threejs-integration-plan.md`.
+2. Add `cost: CostSnapshot` to `EngineSnapshot`.
+3. Add an `emptyCostSnapshot()` helper.
+4. Do not render cost yet.
+
+**Done:** EventEngine emits snapshots with a zeroed `cost` object. Existing Progress behavior is unchanged.
 
 ---
 
@@ -252,6 +270,45 @@ web/frontend/src/game/
 
 ---
 
+### Task 2.6 - Fold usage and budget events
+
+**File:** `web/frontend/src/game/EventEngine.ts`
+
+**Actions:**
+1. Handle `usage_recorded`, `budget_warning`, `budget_exceeded`,
+   `budget_gate_opened`, and `budget_gate_decided`.
+2. Fold usage events into `CostSnapshot` using recorded event payloads only.
+3. Group totals by provider, model, role, and atom.
+4. Recompute cost from scratch during `scrubTo(index)`.
+5. Add fixture tests where replay index changes the visible cost total.
+
+**Done:** Live snapshots and replay snapshots produce identical cost totals for
+the same event prefix. No pricing API is called during replay.
+
+---
+
+### Task 2.7 - Cost HUD and economics sheet
+
+**Files to create or modify:**
+```
+web/frontend/src/game/hud/CostHud.ts
+web/frontend/src/game/hud/EconomicsSheet.ts
+web/frontend/src/game/hud/CommandBar.ts
+```
+
+**Actions:**
+1. Show run cost, budget remaining, and unknown-cost count in the top HUD.
+2. Add a tap target that opens the economics sheet.
+3. Economics sheet groups by provider, model, role, phase, and atom.
+4. Each row shows source: provider-reported, estimate, local estimate, or
+   unknown.
+5. On mobile, render as a bottom sheet with 56pt minimum touch targets.
+
+**Done:** Opening a replay at different indexes updates the economics sheet to
+the selected point in time.
+
+---
+
 ## Phase 3 - Particle System and Animation
 
 **Goal:** Events produce visible particles. State transitions animate. The scene feels alive.
@@ -334,6 +391,27 @@ web/frontend/src/game/
 
 ---
 
+### Task 3.6 - CostLayer visual rings
+
+**Files to create or modify:**
+```
+web/frontend/src/game/cost/CostLayer.ts
+web/frontend/src/game/cost/CostRing.ts
+web/frontend/src/game/SceneManager.ts
+```
+
+**Actions:**
+1. Render a thin ring around atoms with recorded usage.
+2. Use solid rings for provider-reported cost and dashed rings for estimates.
+3. Add a red notch for unknown cost.
+4. Animate warning and exceeded budget states.
+5. Keep labels and numeric detail in DOM overlays only.
+
+**Done:** Cost rings update from `CostSnapshot.byAtom` during live execution and
+replay scrubbing.
+
+---
+
 ## Phase 4 - Polish and Native Feel
 
 **Goal:** Performance targets met, offline works, transitions feel iOS-native.
@@ -386,18 +464,39 @@ Bottom-left corner, 96x96pt. Renders a 2D `<canvas>` projection of atom position
 
 ---
 
+### Task 4.6 - Budget gates and cost replay export
+
+**Files to modify:**
+```
+web/frontend/src/game/EventEngine.ts
+web/frontend/src/game/hud/ReplayTimeline.ts
+web/frontend/src/game/hud/EconomicsSheet.ts
+```
+
+**Actions:**
+1. Add a replay timeline toggle for event density vs cost density.
+2. Render budget gate events as timeline markers.
+3. Add export for replay economics: totals, groups, source/confidence labels,
+   and unknown-cost events.
+4. Verify exported totals match `CostSnapshot` at the selected replay index.
+
+**Done:** A replay bundle can prove what the run spent, what was estimated, and
+what was unknown at the selected point in time.
+
+---
+
 ## Dependency Graph (Phases)
 
 ```
-0.1 -> 0.2 -> 0.3 -> 0.4 -> 0.5
+0.1 -> 0.2 -> 0.3 -> 0.4 -> 0.5 -> 0.6
                     v
               1.1 -> 1.2 -> 1.3 -> 1.4 -> 1.5
                                         v
-                              2.1 -> 2.2 -> 2.3 -> 2.4 -> 2.5
+                              2.1 -> 2.2 -> 2.3 -> 2.4 -> 2.5 -> 2.6 -> 2.7
                                                         v
-                                              3.1 -> 3.2 -> 3.3 -> 3.4 -> 3.5
+                                              3.1 -> 3.2 -> 3.3 -> 3.4 -> 3.5 -> 3.6
                                                                         v
-                                                              4.1 -> 4.2 -> 4.3 -> 4.4 -> 4.5
+                                                              4.1 -> 4.2 -> 4.3 -> 4.4 -> 4.5 -> 4.6
 ```
 
 Tasks within the same phase can be parallelized except where noted (1.2 depends on 1.3 mesh being importable; 2.4 depends on 2.5 raycaster).

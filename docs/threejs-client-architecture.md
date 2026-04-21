@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the architecture for replacing the current tab-based HTML/CSS Progress view with a Three.js-based strategy-game client. The client is mobile-first, native-feeling, and treats the workflow run as a living map of atoms, connections, memory, and events - not a log viewer.
+This document defines the architecture for replacing the current tab-based HTML/CSS Progress view with a Three.js-based strategy-game client. The client is mobile-first, native-feeling, and treats the workflow run as a living map of atoms, connections, memory, cost, and events - not a log viewer.
 
 The current `web/frontend/src/views/Progress.ts` remains the reference data model and API contract. The Three.js client is a new rendering layer on top of the same SSE stream and event-history endpoints.
 
@@ -20,6 +20,7 @@ World Space (Three.js Scene)
 |   ||| GateNode[]            <- decision gates (require input)
 |   ||| MemPalaceOverlay      <- floating memory wing above the map
 |   ||| ArtifactLayer         <- outputs anchored to producing atoms
+|   ||| CostLayer             <- spend rings, budget gates, burn-rate traces
 ||| ReplayTimeline            <- bottom HUD bar
 ||| FocusPanel                <- right side-drawer (atom detail)
 ||| CommandBar                <- top input area (inject instruction)
@@ -43,7 +44,7 @@ World Space (Three.js Scene)
 |                  |   HUD * Panels * Dialogs  |
 |||||||||||||||||||||||||||||||||||||||||||||||
 |           EventEngine (EventEngine.ts)       |
-|  SSE consumer * history loader * atom FSM   |
+|  SSE consumer * history loader * atom/cost FSM |
 |||||||||||||||||||||||||||||||||||||||||||||||
 |           Backend API (unchanged)            |
 |  /stream * /events * /control * /memory     |
@@ -56,9 +57,9 @@ World Space (Three.js Scene)
 
 **SceneManager.ts** - owns the `THREE.Scene`, `THREE.Camera`, animation loop (`requestAnimationFrame`), and the set of renderable objects. Translates abstract state changes (atom activated, gate opened) into scene mutations.
 
-**EventEngine.ts** - single source of truth for run state. Connects to `/api/projects/{id}/stream` via EventSource. On load, fetches `/api/projects/{id}/events?limit=500` to prime history. Drives an `AtomStateMap` (keyed by step id -> FSM state). The Three.js scene reads from this map; it never calls the API itself.
+**EventEngine.ts** - single source of truth for run state. Connects to `/api/projects/{id}/stream` via EventSource. On load, fetches `/api/projects/{id}/events?limit=500` to prime history. Drives an `AtomStateMap` (keyed by step id -> FSM state) and `CostSnapshot` (folded from usage and budget events). The Three.js scene reads from this map; it never calls the API itself.
 
-**HUDLayer (DOM overlay)** - thin HTML elements absolutely positioned over the canvas for text-heavy content: event detail pane, instruction input, memory search. Styled with CSS variables that mirror the Three.js color grammar. These elements are `pointer-events: none` by default; only active panels capture input.
+**HUDLayer (DOM overlay)** - thin HTML elements absolutely positioned over the canvas for text-heavy content: event detail pane, instruction input, memory search, and economics panels. Styled with CSS variables that mirror the Three.js color grammar. These elements are `pointer-events: none` by default; only active panels capture input.
 
 **AccessibilityTree** - hidden `<ul>` updated in sync with AtomStateMap. Screen readers and fallback-no-WebGL users use this. It mirrors the current tab-based Progress view structure.
 
@@ -83,6 +84,10 @@ Scene
 |   ||| MemoryOrb[N]        (one per loaded memory fragment)
 ||| ArtifactGroup
 |   ||| ArtifactCard[N]     (flat planes anchored to atoms)
+||| CostGroup
+|   ||| AtomCostRing[N]     (thin rings around atoms that spent budget)
+|   ||| BudgetGate[N]       (warning/approval markers)
+|   ||| BurnRateTrace       (optional replay timeline overlay source)
 ||| ParticleSystem          (event pulses travelling along edges)
 ||| PostProcessing
     ||| BloomPass           (active atoms glow)
@@ -131,6 +136,34 @@ Memory search results surface as `MemoryOrb` nodes that briefly orbit the releva
 
 ---
 
+## Cost Integration
+
+Cost is rendered from the event ledger, not from live-only counters. `EventEngine`
+folds `usage_recorded`, `budget_warning`, `budget_exceeded`,
+`budget_gate_opened`, and `budget_gate_decided` events into a `CostSnapshot`.
+
+Scene responsibilities:
+
+- `CostLayer` renders a thin spend ring around each atom that has usage.
+- Budget warnings pulse the atom ring, not the whole scene.
+- Budget gates render as gate nodes with a cost badge and require the same
+  resumable decision flow as other gates.
+- The replay timeline can switch between event density and cost density.
+
+DOM overlay responsibilities:
+
+- The top HUD shows run cost, budget remaining, and unknown-cost count.
+- The focus panel shows atom cost by provider, model, source, and confidence.
+- The economics sheet groups spend by provider, model, role, phase, and atom.
+
+Replay behavior:
+
+- Scrubbing to event index `N` recomputes cost by folding events `0..N`.
+- Historical cost never changes when current provider pricing changes.
+- Provider-reported cost and local estimates stay visually distinct.
+
+---
+
 ## Fallback
 
 If `WebGL` is unavailable or the user opts out, `GameShell.ts` renders the `AccessibilityTree` as a styled HTML list - functionally equivalent to the current tab-based Progress view. No logic is duplicated; both views consume `EventEngine`.
@@ -152,6 +185,9 @@ web/frontend/src/
 |   ||| memory/
 |   |   ||| MemPalaceGroup.ts
 |   |   ||| MemoryOrb.ts
+|   ||| cost/
+|   |   ||| CostLayer.ts
+|   |   ||| CostRing.ts
 |   ||| hud/
 |   |   ||| ReplayTimeline.ts
 |   |   ||| FocusPanel.ts

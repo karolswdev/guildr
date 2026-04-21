@@ -41,6 +41,7 @@ export interface EngineSnapshot {
   scrubIndex: number                  // -1 = live
   isLive: boolean
   memPalaceStatus: MemPalaceStatus | null
+  cost: CostSnapshot
 }
 
 export interface MemPalaceStatus {
@@ -48,6 +49,31 @@ export interface MemPalaceStatus {
   wing: string | null
   cached_wakeup: string | null
   last_search: string | null
+}
+
+export type CostSource = 'provider_reported' | 'rate_card_estimate' | 'local_estimate' | 'unknown'
+
+export interface CostBucket {
+  effectiveUsd: number
+  providerReportedUsd: number
+  estimatedUsd: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  reasoningTokens: number
+  unknownCostCount: number
+}
+
+export interface CostSnapshot extends CostBucket {
+  currency: 'USD'
+  remainingRunBudgetUsd: number | null
+  byProvider: Record<string, CostBucket>
+  byModel: Record<string, CostBucket>
+  byRole: Record<string, CostBucket>
+  byAtom: Record<string, CostBucket>
+  sources: Record<CostSource, number>
+  lastUsageEvent: RunEvent | null
 }
 
 // EventEngine is an EventEmitter
@@ -65,6 +91,7 @@ class EventEngine extends EventEmitter {
   private _eventSource: EventSource | null = null
   private _history: RunEvent[] = []
   private _atoms: Record<string, AtomStatus> = {}
+  private _cost: CostSnapshot = emptyCostSnapshot()
   private _scrubIndex = -1            // -1 = live tail
 
   async init(projectId: string, workflow: WorkflowStep[]) {
@@ -87,12 +114,18 @@ class EventEngine extends EventEmitter {
       case 'gate_opened':   this._setAtomState(e.step, 'waiting', e); break
       case 'gate_decided':  this._applyGateDecision(e); break
       case 'checkpoint':    this._setAtomState(e.step, 'done', e); break
+      case 'usage_recorded': this._applyUsage(e); break
+      case 'budget_warning':
+      case 'budget_exceeded':
+      case 'budget_gate_opened':
+      case 'budget_gate_decided': this._applyBudgetEvent(e); break
     }
   }
 
   scrubTo(index: number) {
-    // Recompute atom states by replaying _history[0..index]
+    // Recompute atom and cost states by replaying _history[0..index]
     this._atoms = this._buildIdleAtoms()
+    this._cost = emptyCostSnapshot()
     for (let i = 0; i <= index; i++) this.applyEvent(this._history[i])
     this._scrubIndex = index
     this.emit('scrub', index, this.snapshot())
@@ -104,6 +137,25 @@ class EventEngine extends EventEmitter {
   }
 }
 ```
+
+### Cost folding rules
+
+`usage_recorded` events are folded into `CostSnapshot` using recorded values
+only. EventEngine must not call a pricing API during replay.
+
+Rules:
+
+- `cost.effective_cost` increments `effectiveUsd`.
+- `cost.provider_reported_cost` increments `providerReportedUsd`.
+- `cost.estimated_cost` increments `estimatedUsd`.
+- Missing cost increments `unknownCostCount`.
+- Token fields increment both top-level totals and grouped buckets.
+- Group keys are provider name, model, role, and atom id.
+- Budget fields update `remainingRunBudgetUsd` when present.
+- Source counters increment from `cost.source`.
+
+The same fold runs for live mode and replay mode, so the HUD and timeline never
+diverge.
 
 ### Migration from Progress.ts
 
