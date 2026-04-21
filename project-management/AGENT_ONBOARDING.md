@@ -118,12 +118,12 @@ These three join on `call_id` (also written as `request_id` in raw-io and
 STATUS.md is the source of truth; repeating it here rots. At time of
 writing (2026-04-21):
 
-- H0/H1/H3/H4 done. H2 blocked on manual walk + live endpoints.
-- H5.1 + H5.2 done. `SyncPoolClient` wires roles to the async pool; the
-  `endpoints:` + `routing:` YAML block is the live-path entry point in
-  both `cli/run.py` and `web/backend/runner.py`. Multi-provider
-  (llama.cpp / OpenRouter / OpenAI / Ollama) is a config choice. H5.3
-  (end-to-end two-endpoint test against real live endpoints) pending.
+- H0/H1/H3/H4/H5 done. H2 blocked on manual walk + live endpoints.
+- `SyncPoolClient` wires roles to the async pool; the `endpoints:` +
+  `routing:` YAML block is the live-path entry point in both
+  `cli/run.py` and `web/backend/runner.py`. Multi-provider (llama.cpp /
+  OpenRouter / OpenAI / Ollama) is a config choice. The two-endpoint
+  wire-up is guarded by `tests/test_integration_h5_two_endpoint_wireup.py`.
 - Phase 0 tasks 0.1 and 0.2 done; 0.3 pending.
 - Visual phases 1..8 paused behind the harness.
 
@@ -188,12 +188,11 @@ For each pending item in STATUS, here is the concrete unblock path:
   (desktop browser + mobile Safari). See `harness-2-…md` for the script.
   Programmatic rehearsal (`tests/test_integration_h2_1_rehearsal.py`)
   already covers the automatable surface.
-- **H2.2 live run against a real endpoint** — H5.1 + H5.2 shipped;
-  declare an `endpoints:` + `routing:` block in `config.yaml` and point
+- **H2.2 live run against a real endpoint** — H5 shipped; declare an
+  `endpoints:` + `routing:` block in `config.yaml` and point
   `ORCHESTRATOR_CONFIG` at it (PWA path) or pass `--config` (CLI path).
-- **H5.3** — end-to-end test that boots a two-endpoint pool against
-  fake inner clients, runs the engine, asserts each role's call
-  landed on the expected endpoint in `pool.jsonl`.
+  The two-endpoint wire-up invariant is now guarded by
+  `tests/test_integration_h5_two_endpoint_wireup.py`.
 - **Phase 0 Task 0.3** — write the mobile smoke procedure in
   `project-management/phases/00-baseline-and-invariants.md`.
   Scriptable only insofar as the *document* is the deliverable; the
