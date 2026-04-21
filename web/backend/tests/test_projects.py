@@ -113,7 +113,7 @@ async def test_start_project(app: FastAPI) -> None:
         )
         project_id = create_resp.json()["id"]
 
-        async def _fake_start(project_id: str, initial_idea=None):
+        async def _fake_start(project_id: str, initial_idea=None, **kwargs):
             return True
 
         with patch("web.backend.runner.start_run_async", side_effect=_fake_start):
@@ -126,6 +126,49 @@ async def test_start_project(app: FastAPI) -> None:
         # Verify phase was updated
         get_resp = await client.get(f"/api/projects/{project_id}")
         assert get_resp.json()["current_phase"] == "architect"
+
+
+@pytest.mark.asyncio
+async def test_start_project_defaults_to_idle_rpg_mode(app: FastAPI) -> None:
+    """Without a body, the start route leaves gates off (idle-RPG default)."""
+    transport = ASGITransport(app=app)
+    captured: dict = {}
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        create_resp = await client.post("/api/projects", json={"name": "Idle"})
+        project_id = create_resp.json()["id"]
+
+        async def _fake_start(project_id: str, initial_idea=None, **kwargs):
+            captured.update(kwargs)
+            return True
+
+        with patch("web.backend.runner.start_run_async", side_effect=_fake_start):
+            response = await client.post(f"/api/projects/{project_id}/start")
+    assert response.status_code == 200
+    assert captured["require_human_approval"] is False
+    assert response.json()["require_human_approval"] is False
+
+
+@pytest.mark.asyncio
+async def test_start_project_honors_gate_opt_in(app: FastAPI) -> None:
+    """Passing require_human_approval=True threads through to start_run_async."""
+    transport = ASGITransport(app=app)
+    captured: dict = {}
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        create_resp = await client.post("/api/projects", json={"name": "Attended"})
+        project_id = create_resp.json()["id"]
+
+        async def _fake_start(project_id: str, initial_idea=None, **kwargs):
+            captured.update(kwargs)
+            return True
+
+        with patch("web.backend.runner.start_run_async", side_effect=_fake_start):
+            response = await client.post(
+                f"/api/projects/{project_id}/start",
+                json={"require_human_approval": True},
+            )
+    assert response.status_code == 200
+    assert captured["require_human_approval"] is True
+    assert response.json()["require_human_approval"] is True
 
 
 @pytest.mark.asyncio
@@ -283,7 +326,7 @@ async def test_recovered_project_can_start(tmp_path: Path) -> None:
     store = ProjectStore(base_dir=str(tmp_path))
     app = create_app()
 
-    async def _fake_start(project_id: str, initial_idea=None):
+    async def _fake_start(project_id: str, initial_idea=None, **kwargs):
         return True
 
     with (

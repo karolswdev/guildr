@@ -48,6 +48,34 @@ def test_argparse_wiring(project: Path) -> None:
     assert args.project == project
 
 
+def test_gate_flag_forces_require_human_approval_true(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--gate` opts into attended mode even when Config defaults would drift."""
+    monkeypatch.setenv("LLAMA_SERVER_URL", "http://x")
+    monkeypatch.setenv("PROJECT_DIR", str(project))
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="cmd")
+    add_run_subparser(sub)
+    args = parser.parse_args(
+        ["run", "--from-env", "--dry-run", "--gate", "--project", str(project)]
+    )
+    cfg = _load_config(args)
+    assert cfg.require_human_approval is True
+
+
+def test_gate_and_no_gates_are_mutually_exclusive(project: Path) -> None:
+    """Can't ask for attended-and-unattended in the same run."""
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="cmd")
+    add_run_subparser(sub)
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ["run", "--from-env", "--dry-run", "--gate", "--no-gates",
+             "--project", str(project)]
+        )
+
+
 def test_load_config_applies_overrides(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLAMA_SERVER_URL", "http://x")
     monkeypatch.setenv("PROJECT_DIR", str(project))

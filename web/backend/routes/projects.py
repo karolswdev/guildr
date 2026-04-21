@@ -43,9 +43,17 @@ class ProjectListResponse(BaseModel):
     projects: list[ProjectResponse]
 
 
+class StartRequest(BaseModel):
+    # Idle-RPG default: don't block on gates unless the caller explicitly
+    # opts in. The PWA surfaces this as a "Gate my approval at each phase"
+    # toggle on the start panel.
+    require_human_approval: bool = False
+
+
 class StartResponse(BaseModel):
     started: bool
     project_id: str
+    require_human_approval: bool
 
 
 def _now_iso() -> str:
@@ -337,7 +345,9 @@ def _setup_routes(router_obj: Any) -> Any:
         )
 
     @router_obj.post("/{project_id}/start", response_model=StartResponse)
-    async def start_project(project_id: str) -> StartResponse:
+    async def start_project(
+        project_id: str, body: StartRequest | None = None
+    ) -> StartResponse:
         # Lazy import to avoid a hard dependency cycle: runner.py imports
         # this module's get_event_store sibling, and importing runner at
         # module load time would force the engine + every role to load
@@ -350,13 +360,19 @@ def _setup_routes(router_obj: Any) -> Any:
             raise HTTPException(status_code=404, detail="Project not found")
         store.update_phase(project_id, "architect")
 
-        # Fire-and-forget: the run streams events via the SSE bus.
-        # PWA gate-approval flow is not wired yet, so the engine runs
-        # with require_human_approval=False (set inside runner.py).
+        req = body or StartRequest()
         # initial_idea was persisted to project_dir/initial_idea.txt by
         # ProjectStore.create; the runner re-reads it from there.
-        started = await start_run_async(project_id, initial_idea=None)
-        return StartResponse(started=started, project_id=project_id)
+        started = await start_run_async(
+            project_id,
+            initial_idea=None,
+            require_human_approval=req.require_human_approval,
+        )
+        return StartResponse(
+            started=started,
+            project_id=project_id,
+            require_human_approval=req.require_human_approval,
+        )
 
     return router_obj
 

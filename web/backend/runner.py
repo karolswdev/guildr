@@ -30,6 +30,7 @@ from typing import Any
 from orchestrator.engine import Orchestrator, PhaseFailure
 from orchestrator.lib.config import Config
 from orchestrator.lib.events import EventBus
+from web.backend.routes.gates import get_gate_store
 from web.backend.routes.stream import EventStore, SimpleEventBus, get_event_store
 
 logger = logging.getLogger(__name__)
@@ -47,12 +48,13 @@ class BridgingEventBus(EventBus):
         super().__init__()
         self._sink = sink
 
-    def emit(self, type: str, **fields: Any) -> None:  # noqa: A002 — match parent signature
-        super().emit(type, **fields)
+    def emit(self, type: str, **fields: Any) -> dict[str, Any]:  # noqa: A002 — match parent signature
+        event = super().emit(type, **fields)
         try:
-            self._sink.emit(type, **fields)
+            self._sink.emit(type, **{key: value for key, value in event.items() if key != "type"})
         except Exception:
             logger.debug("SSE sink emit failed", exc_info=True)
+        return event
 
 
 class RunRegistry:
@@ -144,6 +146,7 @@ def _run_orchestrator(
     llama_url: str,
     *,
     start_at: str | None = None,
+    require_human_approval: bool = False,
 ) -> None:
     """Run the engine to completion in this thread, mirroring events to ``bus``.
 
@@ -156,10 +159,13 @@ def _run_orchestrator(
             llama_server_url=llama_url,
             project_dir=project_dir,
             architect_max_passes=5,
-            require_human_approval=False,  # PWA gate flow not wired yet — see TODO in projects.py
+            require_human_approval=require_human_approval,
         )
         llm = _build_llm(dry_run, llama_url)
-        orch = Orchestrator(config=config, fake_llm=llm, events=bridge)
+        gate_registry = get_gate_store().ensure(project_id)
+        orch = Orchestrator(
+            config=config, fake_llm=llm, events=bridge, gate_registry=gate_registry
+        )
         bus.emit("run_started", project_id=project_id, dry_run=dry_run, start_at=start_at)
         orch.run(start_at=start_at)
         bus.emit("run_complete", project_id=project_id)
@@ -179,12 +185,17 @@ def start_run(
     llama_url: str | None = None,
     event_store: EventStore | None = None,
     start_at: str | None = None,
+    require_human_approval: bool = False,
 ) -> bool:
     """Schedule a background orchestrator run for ``project_id``.
 
     Returns True if a new run was started, False if one was already
     in flight for this project. ``dry_run`` defaults to True unless
     ``LLAMA_SERVER_URL`` is set in the environment.
+
+    ``require_human_approval`` is a per-run opt-in. The default is False —
+    the PWA is an idle-RPG touch surface, not a "human is watching so gate
+    everything" trigger. Callers that want attended runs pass True.
     """
     if event_store is None:
         event_store = get_event_store()
@@ -205,7 +216,7 @@ def start_run(
     thread = threading.Thread(
         target=_run_orchestrator,
         args=(project_id, project_dir, bus, dry_run, llama_url),
-        kwargs={"start_at": start_at},
+        kwargs={"start_at": start_at, "require_human_approval": require_human_approval},
         name=f"guildr-run-{project_id[:8]}",
         daemon=True,
     )

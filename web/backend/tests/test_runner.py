@@ -14,7 +14,7 @@ def test_web_runner_allows_extra_architect_refine_passes(tmp_path: Path) -> None
     captured = {}
 
     class FakeOrchestrator:
-        def __init__(self, *, config, fake_llm, events):
+        def __init__(self, *, config, fake_llm, events, gate_registry=None):
             captured["config"] = config
 
         def run(self) -> None:
@@ -37,7 +37,7 @@ def test_web_runner_passes_resume_step_to_engine(tmp_path: Path) -> None:
     captured = {}
 
     class FakeOrchestrator:
-        def __init__(self, *, config, fake_llm, events):
+        def __init__(self, *, config, fake_llm, events, gate_registry=None):
             return None
 
         def run(self, *, start_at=None) -> None:
@@ -54,3 +54,51 @@ def test_web_runner_passes_resume_step_to_engine(tmp_path: Path) -> None:
         )
 
     assert captured["start_at"] == "testing"
+
+
+def test_web_runner_defaults_to_idle_rpg_mode(tmp_path: Path) -> None:
+    """Runner defaults to require_human_approval=False — PWA is a touch
+    surface, not a coercion. Caller must explicitly opt into gates."""
+    captured = {}
+
+    class FakeOrchestrator:
+        def __init__(self, *, config, fake_llm, events, gate_registry=None):
+            captured["config"] = config
+
+        def run(self, *, start_at=None) -> None:
+            return None
+
+    with patch("web.backend.runner.Orchestrator", FakeOrchestrator):
+        _run_orchestrator(
+            "project-id",
+            tmp_path,
+            SimpleEventBus(),
+            dry_run=True,
+            llama_url="http://127.0.0.1:8080",
+        )
+
+    assert captured["config"].require_human_approval is False
+
+
+def test_web_runner_threads_gate_opt_in_into_config(tmp_path: Path) -> None:
+    """When the caller opts into gates, the flag lands in the engine's Config."""
+    captured = {}
+
+    class FakeOrchestrator:
+        def __init__(self, *, config, fake_llm, events, gate_registry=None):
+            captured["config"] = config
+
+        def run(self, *, start_at=None) -> None:
+            return None
+
+    with patch("web.backend.runner.Orchestrator", FakeOrchestrator):
+        _run_orchestrator(
+            "project-id",
+            tmp_path,
+            SimpleEventBus(),
+            dry_run=True,
+            llama_url="http://127.0.0.1:8080",
+            require_human_approval=True,
+        )
+
+    assert captured["config"].require_human_approval is True

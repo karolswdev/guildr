@@ -49,10 +49,16 @@ def add_run_subparser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Use FakeLLMClient with canned responses; do not contact any LLM server.",
     )
-    p.add_argument(
+    gate_group = p.add_mutually_exclusive_group()
+    gate_group.add_argument(
+        "--gate",
+        action="store_true",
+        help="Attended run: block at every human gate until approved (sets require_human_approval=True).",
+    )
+    gate_group.add_argument(
         "--no-gates",
         action="store_true",
-        help="Auto-approve all human gates (sets require_human_approval=False).",
+        help="Idle-RPG run: auto-approve all human gates (sets require_human_approval=False). Default unless --gate is passed.",
     )
     p.add_argument(
         "--verbose", "-v",
@@ -81,7 +87,9 @@ def _load_config(args: argparse.Namespace) -> Config:
         cfg = Config.from_env()
     if args.project is not None:
         cfg.project_dir = args.project
-    if args.no_gates:
+    if args.gate:
+        cfg.require_human_approval = True
+    elif args.no_gates:
         cfg.require_human_approval = False
     return cfg
 

@@ -9,6 +9,8 @@ import { renderQuiz } from "./views/Quiz.js";
 import { renderProgress } from "./views/Progress.js";
 import { renderGate } from "./views/Gate.js";
 import { renderArtifacts } from "./views/Artifacts.js";
+import { renderMap } from "./views/Map.js";
+import { AssetManager } from "./game/assets/AssetManager.js";
 
 // -- hash-based router -------------------------------------------------------
 
@@ -78,6 +80,7 @@ const state: AppState = {
 };
 
 const stateChangeListeners: Set<() => void> = new Set();
+const assetManager = new AssetManager();
 
 function setState(partial: Partial<AppState>): void {
   Object.assign(state, partial);
@@ -89,6 +92,42 @@ function setState(partial: Partial<AppState>): void {
 function subscribe(listener: () => void): () => void {
   stateChangeListeners.add(listener);
   return () => stateChangeListeners.delete(listener);
+}
+
+function initAssetLoading(): void {
+  const status = document.createElement("div");
+  status.id = "asset-loading-status";
+  status.style.cssText = [
+    "position: fixed",
+    "left: 12px",
+    "right: 12px",
+    "bottom: 12px",
+    "z-index: 50",
+    "padding: 8px 10px",
+    "background: rgba(7, 10, 16, 0.92)",
+    "border: 1px solid #24324b",
+    "border-radius: 8px",
+    "color: #cfe2ff",
+    "font-size: 12px",
+    "display: none",
+    "pointer-events: none",
+  ].join("; ");
+  document.body.appendChild(status);
+
+  assetManager.onProgress((progress) => {
+    if (progress.total === 0 || progress.loaded >= progress.total) {
+      status.style.display = "none";
+      return;
+    }
+    status.style.display = "block";
+    status.textContent = `Loading visual assets ${progress.loaded}/${progress.total}`;
+  });
+
+  void assetManager.preloadCore().catch((err: unknown) => {
+    status.style.display = "block";
+    status.style.color = "#ffd0d7";
+    status.textContent = err instanceof Error ? err.message : "Visual asset loading failed.";
+  });
 }
 
 // -- view rendering ----------------------------------------------------------
@@ -128,6 +167,9 @@ function renderProjectView(container: Element, view: string, params: Record<stri
       break;
     case "progress":
       renderProgress(container, navigate, projectId);
+      break;
+    case "map":
+      renderMap(container, navigate, projectId, assetManager);
       break;
     case "gate":
       renderGate(container, navigate, projectId, params.id || "");
@@ -228,12 +270,19 @@ function renderProjectDetail(container: Element, params: Record<string, string>)
         <button class="tap-target" id="btn-progress" style="width: 100%; padding: 14px; background: #0f3460; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">
             Progress
         </button>
+        <button class="tap-target" id="btn-map" style="width: 100%; padding: 14px; background: #16274a; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">
+            Map
+        </button>
         <button class="tap-target" id="btn-gates" style="width: 100%; padding: 14px; background: #0f3460; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">
             Gates
         </button>
         <button class="tap-target" id="btn-artifacts" style="width: 100%; padding: 14px; background: #0f3460; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">
             Artifacts
         </button>
+        <label for="gate-toggle" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #16274a; color: #ddd; border-radius: 8px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="gate-toggle" style="width: 18px; height: 18px; accent-color: #4fc3f7;">
+            <span>Gate my approval at each phase</span>
+        </label>
         <button class="tap-target" id="btn-start" style="width: 100%; padding: 14px; background: #4fc3f7; color: #0a0a0a; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: 600;">
             Start Run
         </button>
@@ -244,18 +293,23 @@ function renderProjectDetail(container: Element, params: Record<string, string>)
   loadProjectInfo(container, projectId);
 
   const btnProgress = container.querySelector("#btn-progress") as HTMLButtonElement;
+  const btnMap = container.querySelector("#btn-map") as HTMLButtonElement;
   const btnGates = container.querySelector("#btn-gates") as HTMLButtonElement;
   const btnArtifacts = container.querySelector("#btn-artifacts") as HTMLButtonElement;
   const btnStart = container.querySelector("#btn-start") as HTMLButtonElement;
 
   btnProgress.addEventListener("click", () => navigate(`#project/${projectId}/progress`));
+  btnMap.addEventListener("click", () => navigate(`#project/${projectId}/map`));
   btnGates.addEventListener("click", () => navigate(`#project/${projectId}/gates`));
   btnArtifacts.addEventListener("click", () => navigate(`#project/${projectId}/artifacts`));
+  const gateToggle = container.querySelector("#gate-toggle") as HTMLInputElement;
   btnStart.addEventListener("click", async () => {
     btnStart.disabled = true;
     btnStart.textContent = "Starting...";
     try {
-      await apiPost(`/api/projects/${projectId}/start`, {});
+      await apiPost(`/api/projects/${projectId}/start`, {
+        require_human_approval: gateToggle.checked,
+      });
       btnStart.textContent = "Run Started!";
       setTimeout(() => navigate(`#project/${projectId}/progress`), 1000);
     } catch (err: unknown) {
@@ -324,7 +378,8 @@ function renderNotFound(container: Element, view: string): void {
 // -- initialization ----------------------------------------------------------
 
 window.addEventListener("hashchange", render);
+initAssetLoading();
 render();
 
 // Export for testing and view modules
-export { navigate, apiGet, apiPost, state, setState, subscribe, render };
+export { navigate, apiGet, apiPost, state, setState, subscribe, render, assetManager };
