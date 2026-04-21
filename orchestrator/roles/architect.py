@@ -114,6 +114,7 @@ class Architect:
             f"```\n{qwendea}\n```\n\n"
             f"Produce a sprint-plan.md following the structure specification."
         )
+        user_prompt = self._append_forum_context(user_prompt)
         user_prompt = append_operator_context(self.state.project_dir, self._phase, user_prompt)
 
         messages = [
@@ -164,6 +165,7 @@ class Architect:
 
         current_plan_text = f"Here is your previous sprint-plan.md:\n\n```\n{prior}\n```"
         failures_text = refine_template.format(failures=failures, current_plan=current_plan_text)
+        failures_text = self._append_forum_context(failures_text)
         failures_text = append_operator_context(self.state.project_dir, self._phase, failures_text)
 
         messages = [
@@ -216,6 +218,7 @@ class Architect:
             f"Here is the sprint plan to evaluate:\n\n"
             f"```\n{plan}\n```"
         )
+        user_prompt = self._append_forum_context(user_prompt)
         user_prompt = append_operator_context(self.state.project_dir, self._phase, user_prompt)
 
         messages = [
@@ -260,25 +263,54 @@ class Architect:
         evaluation: dict[str, Any],
     ) -> None:
         """Enforce verifier invariants even if the LLM judge misses them."""
-        issues: list[str] = []
+        completeness_issues = cls._plan_structure_issues(plan)
+        specificity_issues: list[str] = []
+        evidence_issues: list[str] = []
         for task in parse_tasks(plan):
             for evidence in task.evidence_required:
                 issue = cls._evidence_issue(evidence)
                 if issue:
-                    issues.append(f"Task {task.id}: {issue}: {evidence}")
+                    evidence_issues.append(f"Task {task.id}: {issue}: {evidence}")
+            task_issues = cls._task_traceability_issues(task.body)
+            specificity_issues.extend(f"Task {task.id}: {issue}" for issue in task_issues)
 
+        cls._merge_issues(evaluation, "completeness", completeness_issues)
+        cls._merge_issues(evaluation, "specificity", specificity_issues)
+        cls._merge_issues(evaluation, "evidence", evidence_issues)
+
+    @staticmethod
+    def _merge_issues(
+        evaluation: dict[str, Any],
+        criterion: str,
+        issues: list[str],
+    ) -> None:
         if not issues:
             return
-
-        entry = evaluation.setdefault("evidence", {"score": 1, "issues": []})
+        entry = evaluation.setdefault(criterion, {"score": 1, "issues": []})
         if not isinstance(entry, dict):
             entry = {"score": 1, "issues": []}
-            evaluation["evidence"] = entry
+            evaluation[criterion] = entry
         entry["score"] = 0
         existing = entry.get("issues")
         if not isinstance(existing, list):
             existing = []
         entry["issues"] = existing + issues
+
+    @staticmethod
+    def _plan_structure_issues(plan: str) -> list[str]:
+        issues: list[str] = []
+        for section in ("## Memory Tiers", "## Traceability Matrix"):
+            if section not in plan:
+                issues.append(f"missing required section '{section}'")
+        return issues
+
+    @staticmethod
+    def _task_traceability_issues(task_body: str) -> list[str]:
+        issues: list[str] = []
+        for marker in ("Source Requirements:", "Task Memory:", "Determinism Notes:"):
+            if marker not in task_body:
+                issues.append(f"missing '{marker}' in task notes")
+        return issues
 
     @staticmethod
     def _evidence_issue(evidence: str) -> str | None:
@@ -453,3 +485,18 @@ class Architect:
                 issue_text = "; ".join(issues) if issues else "no details provided"
                 lines.append(f"FAILED: [{criterion.capitalize()}] — {issue_text}")
         return "\n".join(lines) if lines else "No specific feedback available."
+
+    def _append_forum_context(self, prompt: str) -> str:
+        forum_path = self.state.project_dir / "PERSONA_FORUM.md"
+        if not forum_path.exists():
+            return prompt
+        forum = forum_path.read_text(encoding="utf-8", errors="replace").strip()
+        if not forum:
+            return prompt
+        if len(forum) > 6000:
+            forum = forum[:6000].rstrip() + "\n\n[persona forum truncated]"
+        return (
+            f"{prompt.rstrip()}\n\n"
+            "Founding team forum context:\n\n"
+            f"{forum}\n"
+        )

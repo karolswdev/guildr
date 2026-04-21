@@ -7,7 +7,17 @@ The sprint-plan.md MUST follow this exact structure:
 # Sprint Plan
 
 ## Overview
-2-3 sentences covering the implementation strategy.
+2-3 sentences covering the implementation strategy and the main decomposition shape.
+
+## Memory Tiers
+- **Global Memory:** invariant project truths that every downstream phase must preserve
+- **Sprint Memory:** the working set the current sprint needs in order to stay coherent
+- **Task Packet Memory:** what must survive when context is reduced to one atomic task packet
+
+## Traceability Matrix
+- `REQ-1` → Task N, Task M
+- `FORUM-1` → Task N
+- `RISK-1` → Task N mitigation
 
 ## Architecture Decisions
 - Decision 1 (with rationale)
@@ -37,7 +47,10 @@ The sprint-plan.md MUST follow this exact structure:
 
 
 **Implementation Notes:**
-<Specific guidance, edge cases, gotchas>
+Source Requirements: `REQ-*`, `FORUM-*`, `RISK-*`
+Task Memory: what the downstream packet absolutely needs to remember
+Determinism Notes: interfaces, invariants, evidence dependencies, rollback assumptions
+Specific guidance, edge cases, gotchas
 
 ### Task 2: ...
 
@@ -67,6 +80,10 @@ Rules:
 - Priority: P0 blocks everything, P1 core feature, P2 deferrable, P3 polish.
 - No more than 3 P0 tasks (feasibility criterion).
 - Every qwendea.md requirement must map to at least one task.
+- Every major founding-team/forum concern must map to at least one task or risk mitigation.
+- The `Memory Tiers` section must explicitly separate global invariants from sprint working memory and task-packet memory.
+- The `Traceability Matrix` must let a later phase explain why every task exists.
+- Every task's Implementation Notes must include `Source Requirements`, `Task Memory`, and `Determinism Notes`.
 - Risks & Mitigations section must have at least 3 risks with concrete mitigations.
 - Task headers must use the format: `### Task <N>: <Name>`
 - Dependencies reference task numbers (e.g., "Task 1", "Task 2"), not task names.

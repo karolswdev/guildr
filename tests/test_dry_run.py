@@ -188,9 +188,12 @@ class TestDryRunIntegration:
             # We verify by checking is_dry_run
             architect_called_with.append(orchestrator.is_dry_run())
 
+        orchestrator._persona_forum = MagicMock()
         orchestrator._architect = mock_architect
+        orchestrator._micro_task_breakdown = MagicMock()
         orchestrator._coder = MagicMock()
         orchestrator._tester = MagicMock()
+        orchestrator._guru_escalation = MagicMock()
         orchestrator._reviewer = MagicMock()
         orchestrator._deployer = MagicMock()
 
@@ -272,9 +275,12 @@ class TestDryRunIntegration:
                 "Deployment plan", encoding="utf-8"
             )
 
+        orchestrator._persona_forum = MagicMock()
         orchestrator._architect = mock_architect
+        orchestrator._micro_task_breakdown = MagicMock()
         orchestrator._coder = mock_coder
         orchestrator._tester = mock_tester
+        orchestrator._guru_escalation = MagicMock()
         orchestrator._reviewer = mock_reviewer
         orchestrator._deployer = mock_deployer
 
@@ -348,9 +354,12 @@ class TestZeroRealCalls:
             git_ops=mock_git_ops,
         )
         orchestrator._gate = MagicMock()
+        orchestrator._persona_forum = MagicMock()
         orchestrator._architect = MagicMock()
+        orchestrator._micro_task_breakdown = MagicMock()
         orchestrator._coder = MagicMock()
         orchestrator._tester = MagicMock()
+        orchestrator._guru_escalation = MagicMock()
         orchestrator._reviewer = MagicMock()
         orchestrator._deployer = MagicMock()
 

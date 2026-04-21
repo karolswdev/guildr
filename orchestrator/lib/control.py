@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 PHASES = (
+    "persona_forum",
     "architect",
     "micro_task_breakdown",
     "implementation",
@@ -18,6 +19,7 @@ PHASES = (
 )
 GATES = ("approve_sprint_plan", "approve_review")
 RUN_STEPS = (
+    "persona_forum",
     "architect",
     "approve_sprint_plan",
     "micro_task_breakdown",
@@ -232,6 +234,8 @@ def write_compact_context(project_dir: Path, *, max_chars: int = 18000) -> dict[
     artifact_budget = max(3000, max_chars // 4)
     for name in (
         "qwendea.md",
+        "PERSONA_FORUM.md",
+        "FOUNDING_TEAM.json",
         "PRD.md",
         "prd.md",
         "project-context.md",

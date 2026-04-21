@@ -159,6 +159,7 @@ class Orchestrator:
 
     def _resolve_phase_handler(self, handler_name: str) -> Callable[..., None]:
         mapping: dict[str, Callable[..., None]] = {
+            "persona_forum": self._persona_forum,
             "architect": self._architect,
             "micro_task_breakdown": self._micro_task_breakdown,
             "implementation": self._coder,
@@ -322,6 +323,23 @@ class Orchestrator:
         # Architect.execute() writes sprint-plan.md itself and returns the
         # path. Don't overwrite the file with the returned string.
         architect.execute()
+
+    def _persona_forum(
+        self,
+        *,
+        phase_logger: logging.Logger | None = None,
+        step: dict[str, Any] | None = None,
+    ) -> None:
+        from orchestrator.roles.persona_forum import PersonaForum
+
+        llm = self._fake_llm or (self._pool.chat if self._pool else None)
+        forum = PersonaForum(
+            llm,
+            self.state,
+            step_config=(step or {}).get("config") if step else None,
+            _phase_logger=phase_logger,
+        )
+        forum.execute()
 
     def _micro_task_breakdown(
         self,

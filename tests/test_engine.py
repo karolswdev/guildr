@@ -114,6 +114,15 @@ class TestRunOrder:
         def mock_architect():
             call_order.append("architect")
 
+        def mock_persona_forum():
+            call_order.append("persona_forum")
+
+        def mock_micro_task_breakdown():
+            call_order.append("micro_task_breakdown")
+
+        def mock_guru_escalation():
+            call_order.append("guru_escalation")
+
         def mock_coder():
             call_order.append("implementation")
 
@@ -136,16 +145,21 @@ class TestRunOrder:
         orchestrator._gate = MagicMock()
 
         # Patch role methods
+        orchestrator._persona_forum = mock_persona_forum
         orchestrator._architect = mock_architect
+        orchestrator._micro_task_breakdown = mock_micro_task_breakdown
         orchestrator._coder = mock_coder
         orchestrator._tester = mock_tester
+        orchestrator._guru_escalation = mock_guru_escalation
         orchestrator._reviewer = mock_reviewer
         orchestrator._deployer = mock_deployer
 
         orchestrator.run()
 
         assert call_order == [
+            "persona_forum",
             "architect",
+            "micro_task_breakdown",
             "implementation",
             "testing",
             "review",
@@ -176,9 +190,12 @@ class TestRunOrder:
             git_ops=mock_git_ops,
         )
         orchestrator._gate = MagicMock()
+        orchestrator._persona_forum = MagicMock()
         orchestrator._architect = MagicMock()
+        orchestrator._micro_task_breakdown = MagicMock()
         orchestrator._coder = MagicMock()
         orchestrator._tester = MagicMock()
+        orchestrator._guru_escalation = MagicMock()
         orchestrator._reviewer = MagicMock()
         orchestrator._deployer = MagicMock()
 
@@ -210,9 +227,12 @@ class TestRunOrder:
             git_ops=mock_git_ops,
         )
         orchestrator._gate = MagicMock()
+        orchestrator._persona_forum = MagicMock()
         orchestrator._architect = MagicMock()
+        orchestrator._micro_task_breakdown = MagicMock()
         orchestrator._coder = MagicMock()
         orchestrator._tester = MagicMock()
+        orchestrator._guru_escalation = MagicMock()
         orchestrator._reviewer = MagicMock()
         orchestrator._deployer = MagicMock()
 

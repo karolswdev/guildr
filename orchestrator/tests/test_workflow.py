@@ -9,14 +9,29 @@ from orchestrator.lib.workflow import load_workflow, save_workflow, valid_start_
 from orchestrator.lib.state import State
 from orchestrator.roles.guru_escalation import GuruEscalation
 from orchestrator.roles.micro_task_breaker import MicroTaskBreaker
+from orchestrator.roles.persona_forum import PersonaForum
 
 
-def test_default_workflow_contains_microtask_and_guru_steps(tmp_path: Path) -> None:
+def test_default_workflow_contains_persona_microtask_and_guru_steps(tmp_path: Path) -> None:
     steps = load_workflow(tmp_path)
     ids = [step["id"] for step in steps]
+    assert "persona_forum" in ids
     assert "micro_task_breakdown" in ids
     assert "guru_escalation" in ids
-    assert "architect" in valid_start_steps(tmp_path)
+    assert "persona_forum" in valid_start_steps(tmp_path)
+
+
+def test_persona_forum_writes_roster_and_forum_artifacts(tmp_path: Path) -> None:
+    state = State(tmp_path)
+    state.write_file("qwendea.md", "# Project\n\nBuild a game with tactical combat.\n")
+
+    forum = PersonaForum(None, state)
+    result = forum.execute()
+
+    assert result == "PERSONA_FORUM.md"
+    assert (tmp_path / "PERSONA_FORUM.md").exists()
+    assert (tmp_path / "FOUNDING_TEAM.json").exists()
+    assert "Player Advocate" in (tmp_path / "PERSONA_FORUM.md").read_text(encoding="utf-8")
 
 
 def test_micro_task_breaker_writes_phase_files(tmp_path: Path) -> None:
@@ -73,3 +88,29 @@ def test_custom_checkpoint_can_be_saved(tmp_path: Path) -> None:
 
     ids = [step["id"] for step in saved]
     assert "user_checkpoint" in ids
+
+
+def test_legacy_workflow_is_migrated_with_new_persona_forum_step(tmp_path: Path) -> None:
+    legacy = [
+        {
+            "id": "architect",
+            "title": "Architect",
+            "type": "phase",
+            "handler": "architect",
+            "enabled": True,
+        },
+        {
+            "id": "deployment",
+            "title": "Deployment",
+            "type": "phase",
+            "handler": "deployment",
+            "enabled": True,
+        },
+    ]
+    save_workflow(tmp_path, legacy)
+
+    steps = load_workflow(tmp_path)
+
+    ids = [step["id"] for step in steps]
+    assert "persona_forum" in ids
+    assert ids.index("persona_forum") < ids.index("architect")

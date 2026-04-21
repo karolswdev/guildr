@@ -184,7 +184,25 @@ class TestRetryDraftTracking:
                 finish_reason="stop",
             ),
             LLMResponse(
-                content="# Sprint Plan\n\n## Overview\nRefined.\n",
+                content="# Sprint Plan\n\n"
+                "## Overview\nRefined.\n\n"
+                "## Memory Tiers\n"
+                "- **Global Memory:** keep scope crisp.\n"
+                "- **Sprint Memory:** deliver one coherent task.\n"
+                "- **Task Packet Memory:** preserve file, evidence, and invariants.\n\n"
+                "## Traceability Matrix\n"
+                "- `REQ-1` -> Task 1\n\n"
+                "## Tasks\n\n"
+                "### Task 1: Refined\n"
+                "- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `x.py`\n\n"
+                "**Acceptance Criteria:**\n- [ ] Works\n\n"
+                "**Evidence Required:**\n- Run `pytest`\n\n"
+                "**Evidence Log:**\n- [ ] Done\n\n"
+                "**Implementation Notes:**\n"
+                "Source Requirements: `REQ-1`\n"
+                "Task Memory: keep the task small.\n"
+                "Determinism Notes: use pytest as the deciding signal.\n\n"
+                "## Risks & Mitigations\n1. Risk — Mitigation\n",
                 reasoning="",
                 prompt_tokens=1,
                 completion_tokens=1,

@@ -3,6 +3,7 @@ You are the Architect. Your previous sprint-plan.md failed evaluation on:
 {failures}
 
 Revise sprint-plan.md addressing ONLY these failures. Keep all passing
-sections unchanged.
+sections unchanged. Preserve and tighten memory tiers, traceability, and
+task-level determinism notes where present.
 
 {current_plan}

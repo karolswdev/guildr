@@ -9,6 +9,7 @@ from typing import Any
 
 STEP_TYPES = ("phase", "gate", "checkpoint")
 PHASE_HANDLERS = (
+    "persona_forum",
     "architect",
     "micro_task_breakdown",
     "implementation",
@@ -22,6 +23,17 @@ CHECKPOINT_HANDLERS = ("operator_checkpoint",)
 SUPPORTED_HANDLERS = PHASE_HANDLERS + GATE_HANDLERS + CHECKPOINT_HANDLERS
 
 DEFAULT_WORKFLOW: list[dict[str, Any]] = [
+    {
+        "id": "persona_forum",
+        "title": "Founding Team Forum",
+        "type": "phase",
+        "handler": "persona_forum",
+        "enabled": True,
+        "config": {
+            "auto_generate": True,
+            "personas": [],
+        },
+    },
     {
         "id": "architect",
         "title": "Architect",
@@ -150,6 +162,26 @@ def default_workflow() -> list[dict[str, Any]]:
     return deepcopy(DEFAULT_WORKFLOW)
 
 
+def _merge_missing_default_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Insert newly introduced default steps into legacy saved workflows."""
+    merged = list(steps)
+    ids = {step["id"] for step in merged}
+    for index, default_step in enumerate(default_workflow()):
+        if default_step["id"] in ids:
+            continue
+        insert_at = len(merged)
+        for later_default in DEFAULT_WORKFLOW[index + 1:]:
+            for pos, existing in enumerate(merged):
+                if existing["id"] == later_default["id"]:
+                    insert_at = pos
+                    break
+            if insert_at != len(merged):
+                break
+        merged.insert(insert_at, default_step)
+        ids.add(default_step["id"])
+    return merged
+
+
 def load_workflow(project_dir: Path) -> list[dict[str, Any]]:
     path = workflow_path(project_dir)
     if not path.exists():
@@ -162,7 +194,11 @@ def load_workflow(project_dir: Path) -> list[dict[str, Any]]:
         raise ValueError(f"Failed to read workflow: {exc}") from exc
     if not isinstance(data, list):
         raise ValueError("Workflow file must contain a list")
-    return validate_workflow(data)
+    normalized = validate_workflow(data)
+    merged = _merge_missing_default_steps(normalized)
+    if merged != normalized:
+        save_workflow(project_dir, merged)
+    return merged
 
 
 def save_workflow(project_dir: Path, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:

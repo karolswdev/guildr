@@ -15,6 +15,30 @@ from orchestrator.roles.architect import Architect
 
 PROMPT_DIR = Path(__file__).resolve().parent.parent / "orchestrator" / "roles" / "prompts" / "architect"
 
+MIN_TRACEABLE_PLAN = (
+    "# Sprint Plan\n\n"
+    "## Overview\n"
+    "Build the minimal slice with explicit traceability.\n\n"
+    "## Memory Tiers\n"
+    "- **Global Memory:** preserve the user outcome and bounded evidence.\n"
+    "- **Sprint Memory:** keep the work centered on one task and one file.\n"
+    "- **Task Packet Memory:** remember the file, command, and expected outcome.\n\n"
+    "## Traceability Matrix\n"
+    "- `REQ-1` -> Task 1\n"
+    "- `RISK-1` -> Task 1\n\n"
+    "## Tasks\n\n"
+    "### Task 1: Test\n"
+    "- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `test.py`\n\n"
+    "**Acceptance Criteria:**\n- [ ] Works\n\n"
+    "**Evidence Required:**\n- Run `pytest`\n\n"
+    "**Evidence Log:**\n- [ ] Done\n\n"
+    "**Implementation Notes:**\n"
+    "Source Requirements: `REQ-1`, `RISK-1`\n"
+    "Task Memory: Keep the task isolated and verifier-safe.\n"
+    "Determinism Notes: `test.py` is the only mutable file and `pytest` is the deciding evidence.\n\n"
+    "## Risks & Mitigations\n1. Risk — Mitigation\n"
+)
+
 
 @pytest.fixture
 def state(tmp_path):
@@ -98,7 +122,7 @@ def test_local_plan_checks_fail_interactive_evidence(state, config) -> None:
         finish_reason="stop",
     )
     architect = Architect(llm, state, config)
-    plan = "# Sprint Plan\n\n## Tasks\n\n### Task 1: Frontend\n- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `package.json`\n\n**Acceptance Criteria:**\n- [ ] Builds\n\n**Evidence Required:**\n- Run `npm run dev` and observe the browser.\n\n**Evidence Log:**\n- [ ] Done\n\n## Risks & Mitigations\n1. Risk - Mitigation"
+    plan = MIN_TRACEABLE_PLAN.replace("Task 1: Test", "Task 1: Frontend").replace("`test.py`", "`package.json`").replace("Run `pytest`", "Run `npm run dev` and observe the browser.")
 
     score, evaluation = architect._self_evaluate("# Project: Test", plan)
 
@@ -134,7 +158,7 @@ class TestReprompt:
         ]
         architect = Architect(llm, state, config)
 
-        score, evaluation = architect._self_evaluate("# Project: Test\n\n## Description\nTest.", "# Sprint Plan\n\n## Tasks\n\n### Task 1: Test\n- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `test.py`\n\n**Acceptance Criteria:**\n- [ ] Works\n\n**Evidence Required:**\n- Run `pytest`\n\n**Evidence Log:**\n- [ ] Done\n\n## Risks & Mitigations\n1. Risk — Mitigation")
+        score, evaluation = architect._self_evaluate("# Project: Test\n\n## Description\nTest.", MIN_TRACEABLE_PLAN)
 
         assert score == 5  # 5/6 (testability=0)
         assert evaluation["testability"]["score"] == 0
@@ -163,7 +187,7 @@ class TestReprompt:
         ]
         architect = Architect(llm, state, config)
 
-        score, evaluation = architect._self_evaluate("# Project: Test\n\n## Description\nTest.", "# Sprint Plan\n\n## Tasks\n\n### Task 1: Test\n- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `test.py`\n\n**Acceptance Criteria:**\n- [ ] Works\n\n**Evidence Required:**\n- Run `pytest`\n\n**Evidence Log:**\n- [ ] Done\n\n## Risks & Mitigations\n1. Risk — Mitigation")
+        score, evaluation = architect._self_evaluate("# Project: Test\n\n## Description\nTest.", MIN_TRACEABLE_PLAN)
 
         assert score == 6
         assert evaluation["specificity"]["score"] == 1

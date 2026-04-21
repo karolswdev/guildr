@@ -30,7 +30,7 @@ type WorkflowResponse = {
   steps: WorkflowStep[];
 };
 
-const PIPELINE_PHASES = ["architect", "micro_task_breakdown", "implementation", "testing", "guru_escalation", "review", "deployment"];
+const PIPELINE_PHASES = ["persona_forum", "architect", "micro_task_breakdown", "implementation", "testing", "guru_escalation", "review", "deployment"];
 
 export function renderProgress(container: Element, navigate: (route: string) => void, projectId: string): void {
   container.innerHTML = `

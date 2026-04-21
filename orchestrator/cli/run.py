@@ -88,6 +88,15 @@ def _load_config(args: argparse.Namespace) -> Config:
 
 _DRY_RUN_SPRINT_PLAN = (
     "# Sprint Plan (dry-run)\n\n"
+    "## Overview\n"
+    "Dry-run uses a single tiny slice that still preserves traceability.\n\n"
+    "## Memory Tiers\n"
+    "- **Global Memory:** dry-run stays self-contained and verifier-safe.\n"
+    "- **Sprint Memory:** produce one README artifact and verify it from the shell.\n"
+    "- **Task Packet Memory:** remember the target file, evidence command, and expected output.\n\n"
+    "## Traceability Matrix\n"
+    "- `REQ-1` -> Task 1\n"
+    "- `RISK-1` -> Task 1\n\n"
     "## Architecture Decisions\n"
     "- Keep dry-run self-contained.\n\n"
     "## Tasks\n\n"
@@ -101,6 +110,10 @@ _DRY_RUN_SPRINT_PLAN = (
     "- Run `ls README.md`\n\n"
     "**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)\n"
     "- [ ] README.md check pending\n\n"
+    "**Implementation Notes:**\n"
+    "Source Requirements: `REQ-1`, `RISK-1`\n"
+    "Task Memory: Create README.md and keep verification bounded to a single ls command.\n"
+    "Determinism Notes: Only README.md may change; verifier expects README.md to exist.\n\n"
     "## Risks & Mitigations\n"
     "1. None - dry-run fixture only.\n"
 )

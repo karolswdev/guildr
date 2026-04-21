@@ -158,10 +158,10 @@ def _parse_evidence_log(body: str) -> list[dict[str, Any]]:
 
 
 def slice_task(sprint_plan_md: str, task_id: int) -> str:
-    """Return the task's section plus the Architecture Decisions header.
+    """Return the task's section plus the sprint preamble.
 
     This keeps context-bounds small by only including:
-    - The ## Architecture Decisions section
+    - The pre-task sprint memory/traceability sections
     - The specific task's full section
     """
     tasks = parse_tasks(sprint_plan_md)
@@ -174,14 +174,14 @@ def slice_task(sprint_plan_md: str, task_id: int) -> str:
     if target is None:
         raise ValueError(f"Task {task_id} not found in sprint plan")
 
-    arch_match = re.search(
-        r"(## Architecture Decisions\n(?:(?!## ).)*?)(?=\n## Tasks|\n## Risks|\Z)",
+    preamble_match = re.search(
+        r"(## Overview\n.*?)(?=\n## Tasks|\n## Risks|\Z)",
         sprint_plan_md,
         re.DOTALL,
     )
-    arch_section = arch_match.group(1) if arch_match else "## Architecture Decisions\n(no decisions recorded)\n"
+    preamble = preamble_match.group(1).strip() if preamble_match else "## Overview\n(no sprint memory recorded)\n"
 
-    return f"{arch_section}\n\n{target.body}"
+    return f"{preamble}\n\n{target.body}"
 
 
 def apply_evidence_patch(sprint_plan_md: str, patch: dict) -> str:
