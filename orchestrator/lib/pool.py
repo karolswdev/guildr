@@ -67,31 +67,72 @@ class UpstreamPool:
         self,
         role: str,
         messages: list[dict],
+        *,
+        project_dir: Any | None = None,
+        call_id: str | None = None,
         **kw: Any,
     ) -> LLMResponse:
         """Send a chat completion through the pool.
 
         Routes through [preferred, fallback] endpoints.
         Serializes within each endpoint via lock.
+
+        When ``project_dir`` + ``call_id`` are both provided, one routing
+        decision is appended to ``<project_dir>/.orchestrator/logs/pool.jsonl``
+        so downstream tools can answer "where did each call land."
         """
+        from orchestrator.lib.event_schema import new_event_id
+        from orchestrator.lib.pool_log import write_decision
+
+        resolved_call_id = call_id or new_event_id()
         labels = self._routing.get(role, [])
+        attempted: list[str] = []
+
         if not labels:
+            write_decision(
+                project_dir,
+                call_id=resolved_call_id,
+                role=role,
+                chosen_endpoint=None,
+                attempted_endpoints=attempted,
+                fell_back=False,
+                reason="no_routing_configured",
+            )
             raise NoHealthyEndpoint(role)
 
         for label in labels:
             ep = self._by_label.get(label)
             if not ep or not ep.healthy:
+                attempted.append(label)
                 continue
+            attempted.append(label)
             async with ep.lock:
                 try:
                     resp = await asyncio.to_thread(ep.client.chat, messages, **kw)
                     resp.endpoint = label  # type: ignore[attr-defined]
+                    write_decision(
+                        project_dir,
+                        call_id=resolved_call_id,
+                        role=role,
+                        chosen_endpoint=label,
+                        attempted_endpoints=attempted,
+                        fell_back=len(attempted) > 1,
+                    )
                     return resp
                 except ConnectionError:
                     ep.healthy = False
                     logger.warning("Endpoint %s marked unhealthy", label)
                     continue
 
+        write_decision(
+            project_dir,
+            call_id=resolved_call_id,
+            role=role,
+            chosen_endpoint=None,
+            attempted_endpoints=attempted,
+            fell_back=True,
+            reason="no_healthy_endpoint",
+        )
         raise NoHealthyEndpoint(role)
 
     async def health_check(self, label: str) -> bool:
