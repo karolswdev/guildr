@@ -29,11 +29,17 @@ def write_decision(
     attempted_endpoints: list[str],
     fell_back: bool,
     reason: str = "",
+    chosen_model: str | None = None,
 ) -> None:
     """Append one routing decision to ``.orchestrator/logs/pool.jsonl``.
 
     Silent no-op when ``project_dir`` is None — matches the usage_writer
     pattern so in-process tests without a project tree keep working.
+
+    ``chosen_model`` is the model the pool actually asked the endpoint to
+    run (route-level override or endpoint default), so cost attribution
+    in ``usage_summary.rollup`` can group by model without re-joining
+    against raw-io.
     """
     if project_dir is None:
         return
@@ -42,6 +48,7 @@ def write_decision(
         "call_id": call_id,
         "role": role,
         "chosen_endpoint": chosen_endpoint,
+        "chosen_model": chosen_model,
         "attempted_endpoints": attempted_endpoints,
         "fell_back": fell_back,
         "reason": reason,

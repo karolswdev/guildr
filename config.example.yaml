@@ -23,3 +23,36 @@ require_human_approval: true
 
 # Expose server to non-RFC1918 IPs (LAN-only by default)
 expose_public: false
+
+# -----------------------------------------------------------------------------
+# Multi-endpoint pool (H5.2) — optional.
+#
+# Declare one or more OpenAI-compatible endpoints (local llama.cpp, OpenRouter,
+# OpenAI, Ollama, ...) and a per-role routing table. If both blocks are
+# omitted, the orchestrator falls back to the single `llama_server_url` above.
+#
+# Env overrides: ORCHESTRATOR_ENDPOINT_<NAME>_{BASE_URL,MODEL,API_KEY}
+# (<NAME> is upper-cased, non-alphanumerics → underscore).
+# -----------------------------------------------------------------------------
+# endpoints:
+#   - name: local-gpu
+#     base_url: http://127.0.0.1:8080
+#     model: qwen3-coder:30b
+#   - name: openrouter
+#     base_url: https://openrouter.ai/api
+#     model: anthropic/claude-sonnet-4.5
+#     api_key_env: OPENROUTER_API_KEY
+#     headers:
+#       HTTP-Referer: https://guildr.local
+#       X-Title: guildr
+#     extra_body: {}   # omit the Qwen thinking hint for strict providers
+#
+# routing:
+#   architect:
+#     - openrouter                   # short form: endpoint default model
+#     - endpoint: local-gpu          # long form: per-role model override
+#       model: qwen3-coder:30b
+#   coder:
+#     - local-gpu
+#   reviewer:
+#     - openrouter

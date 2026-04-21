@@ -37,19 +37,54 @@ class ThinkingTruncation(Exception):
         )
 
 
+_DEFAULT_EXTRA_BODY: dict[str, Any] = {
+    # Qwen thinking can consume the entire completion budget before emitting
+    # artifact content. llama.cpp accepts this OpenAI extra body field and
+    # disables that reasoning channel at the template. Harmless for providers
+    # that ignore unknown extras; some strict providers (OpenRouter,
+    # upstream OpenAI) reject it — pass ``extra_body={}`` per-endpoint
+    # to omit, or ``extra_body={...}`` to customize.
+    "chat_template_kwargs": {"enable_thinking": False},
+}
+
+_UNSET: Any = object()
+
+
 class LLMClient:
-    """Wraps the OpenAI SDK pointed at llama-server.
+    """OpenAI-SDK wrapper pointed at any OpenAI-compatible chat endpoint.
+
+    Provider-agnostic by construction: local llama.cpp, OpenRouter, OpenAI,
+    vLLM, Ollama, etc. all work the same way as long as they speak the
+    chat-completions protocol. Per-endpoint quirks (API key, request
+    headers, ``extra_body``) are injected at construction; per-call
+    ``model`` override lets the pool pick a different model per route.
 
     Handles reasoning_content parsing, truncation detection, and retry logic.
     """
 
-    def __init__(self, base_url: str, api_key: str = "placeholder") -> None:
-        self._client = OpenAI(
-            base_url=f"{base_url}/v1",
-            api_key=api_key,
-            timeout=600,
-        )
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        model: str = "default",
+        api_key: str = "placeholder",
+        extra_body: Any = _UNSET,
+        default_headers: dict[str, str] | None = None,
+        timeout: float = 600,
+    ) -> None:
+        resolved_extra = _DEFAULT_EXTRA_BODY if extra_body is _UNSET else extra_body
+        self._extra_body: dict[str, Any] | None = resolved_extra if resolved_extra else None
+
+        client_kwargs: dict[str, Any] = {
+            "base_url": f"{base_url}/v1",
+            "api_key": api_key,
+            "timeout": timeout,
+        }
+        if default_headers:
+            client_kwargs["default_headers"] = default_headers
+        self._client = OpenAI(**client_kwargs)
         self.base_url = base_url
+        self.default_model = model
 
     def chat(
         self,
@@ -57,23 +92,25 @@ class LLMClient:
         *,
         max_tokens: int = 8192,
         temperature: float | None = None,
+        model: str | None = None,
         call_id: str | None = None,  # noqa: ARG002 — accepted so SyncPoolClient/base role can thread the H4 join key uniformly
     ) -> LLMResponse:
         """Send a chat completion request.
+
+        ``model`` overrides ``self.default_model`` for this call — the
+        pool uses it when a route entry declares a per-role model override.
 
         Raises:
             ThinkingTruncation: if finish_reason=length and content is empty.
             APIConnectionError: if connection is refused (not retried).
         """
         kwargs: dict = {
-            "model": "qwen36",
+            "model": model or self.default_model,
             "max_tokens": max_tokens,
             "messages": messages,
-            # Qwen thinking can consume the entire completion budget before
-            # emitting artifact content. llama.cpp accepts this OpenAI extra
-            # body field and disables that reasoning channel at the template.
-            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
         }
+        if self._extra_body:
+            kwargs["extra_body"] = self._extra_body
         if temperature is not None:
             kwargs["temperature"] = temperature
 

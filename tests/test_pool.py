@@ -33,6 +33,8 @@ class _FakeClient:
     call_count: int = 0
     last_start: float = 0.0
     last_end: float = 0.0
+    default_model: str = "fake-default"
+    last_model: str | None = None
 
     def chat(self, messages: list[dict[str, Any]], **kw: Any) -> LLMResponse:
         self.last_start = time.monotonic()
@@ -41,6 +43,7 @@ class _FakeClient:
         if self.delay_s:
             time.sleep(self.delay_s)
         self.call_count += 1
+        self.last_model = kw.get("model")
         self.last_end = time.monotonic()
         return LLMResponse(
             content=f"served by {self.label}",
@@ -153,6 +156,38 @@ async def test_concurrent_calls_across_endpoints_run_in_parallel() -> None:
     assert elapsed < 0.18, f"endpoints serialized (elapsed={elapsed:.3f}s)"
     assert primary.call_count == 1
     assert alien.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_route_model_override_wins_over_endpoint_default() -> None:
+    from orchestrator.lib.endpoints import RouteEntry
+
+    primary = _FakeClient(label="primary", default_model="default-m")
+    pool = _pool(primary, routing={"coder": [RouteEntry(endpoint="primary", model="override-m")]})
+
+    await pool.chat("coder", [])
+
+    assert primary.last_model == "override-m"
+
+
+@pytest.mark.asyncio
+async def test_caller_model_used_when_no_route_override() -> None:
+    primary = _FakeClient(label="primary", default_model="default-m")
+    pool = _pool(primary, routing={"coder": ["primary"]})
+
+    await pool.chat("coder", [], model="caller-m")
+
+    assert primary.last_model == "caller-m"
+
+
+@pytest.mark.asyncio
+async def test_endpoint_default_model_used_when_nothing_specified() -> None:
+    primary = _FakeClient(label="primary", default_model="default-m")
+    pool = _pool(primary, routing={"coder": ["primary"]})
+
+    await pool.chat("coder", [])
+
+    assert primary.last_model == "default-m"
 
 
 @pytest.mark.asyncio

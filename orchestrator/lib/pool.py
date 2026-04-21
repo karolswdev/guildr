@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class Endpoint:
     """A llama.cpp server endpoint."""
 
-    label: str  # "primary" | "alien"
+    label: str  # operator-chosen name, e.g. "local-gpu" or "openrouter"
     client: LLMClient
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     healthy: bool = True
@@ -40,19 +40,38 @@ class LLMResponseExtended(LLMResponse):
 
 
 class UpstreamPool:
-    """Manages a pool of llama.cpp servers with role-based routing.
+    """Manages a pool of OpenAI-compatible chat endpoints with role-based routing.
 
-    Within one endpoint, calls serialize via its lock (honors -np 1).
-    Across endpoints, calls run concurrently.
+    Within one endpoint, calls serialize via its lock (honors single-slot
+    servers like llama.cpp ``-np 1``). Across endpoints, calls run
+    concurrently. Routing entries may be bare endpoint labels (use the
+    endpoint's default model) or ``RouteEntry`` records that carry a
+    per-role model override — so the same endpoint can serve different
+    roles with different models.
     """
 
     def __init__(
         self,
         endpoints: list[Endpoint],
-        routing: dict[str, list[str]],
+        routing: dict[str, list[Any]],
     ) -> None:
+        from orchestrator.lib.endpoints import RouteEntry
+
         self._by_label: dict[str, Endpoint] = {e.label: e for e in endpoints}
-        self._routing = routing  # role -> [preferred, fallback]
+        self._routing: dict[str, list[RouteEntry]] = {}
+        for role, entries in routing.items():
+            normalized: list[RouteEntry] = []
+            for entry in entries:
+                if isinstance(entry, RouteEntry):
+                    normalized.append(entry)
+                elif isinstance(entry, str):
+                    normalized.append(RouteEntry(endpoint=entry))
+                else:
+                    raise TypeError(
+                        f"routing[{role!r}] entries must be str or RouteEntry, "
+                        f"got {type(entry).__name__}"
+                    )
+            self._routing[role] = normalized
         self._orchestrator: Any | None = None
 
     def set_orchestrator(self, orchestrator: Any) -> None:
@@ -85,10 +104,10 @@ class UpstreamPool:
         from orchestrator.lib.pool_log import write_decision
 
         resolved_call_id = call_id or new_event_id()
-        labels = self._routing.get(role, [])
+        routes = self._routing.get(role, [])
         attempted: list[str] = []
 
-        if not labels:
+        if not routes:
             write_decision(
                 project_dir,
                 call_id=resolved_call_id,
@@ -100,21 +119,35 @@ class UpstreamPool:
             )
             raise NoHealthyEndpoint(role)
 
-        for label in labels:
+        # Caller may already pass ``model`` — route override wins over
+        # caller intent only when caller didn't specify (routes encode the
+        # operator's declared policy).
+        caller_model = kw.pop("model", None)
+        for route in routes:
+            label = route.endpoint
             ep = self._by_label.get(label)
             if not ep or not ep.healthy:
                 attempted.append(label)
                 continue
             attempted.append(label)
+            model_for_call = (
+                route.model
+                or caller_model
+                or getattr(ep.client, "default_model", None)
+            )
+            call_kw = dict(kw)
+            if model_for_call is not None:
+                call_kw["model"] = model_for_call
             async with ep.lock:
                 try:
-                    resp = await asyncio.to_thread(ep.client.chat, messages, **kw)
+                    resp = await asyncio.to_thread(ep.client.chat, messages, **call_kw)
                     resp.endpoint = label  # type: ignore[attr-defined]
                     write_decision(
                         project_dir,
                         call_id=resolved_call_id,
                         role=role,
                         chosen_endpoint=label,
+                        chosen_model=model_for_call,
                         attempted_endpoints=attempted,
                         fell_back=len(attempted) > 1,
                     )

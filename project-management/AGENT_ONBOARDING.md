@@ -45,8 +45,9 @@ build/workspace/
 │   ├── roles/             # architect, coder, tester, reviewer, deployer
 │   ├── lib/
 │   │   ├── llm.py         # LLMClient interface + LLMResponse dataclass
-│   │   ├── pool.py        # UpstreamPool (async) — PRIMARY/ALIEN routing
+│   │   ├── pool.py        # UpstreamPool (async) — operator-labelled endpoint routing
 │   │   ├── sync_pool.py   # SyncPoolClient — sync facade roles call through (H5.1)
+│   │   ├── endpoints.py   # declarative `endpoints:` + `routing:` YAML loader (H5.2)
 │   │   ├── pool_log.py    # pool.jsonl decision persistence (H3)
 │   │   ├── raw_io.py      # raw-io.jsonl per-call prompt/response audit (H0)
 │   │   ├── usage_writer.py# usage.jsonl per-call cost/tokens (H4)
@@ -90,9 +91,19 @@ These three join on `call_id` (also written as `request_id` in raw-io and
 - **GateRegistry** — canonical in `orchestrator/lib/gates.py`. There used
   to be a shadow copy in `web/backend/routes/gates.py`; it is gone (H1.1).
   HTTP routes now facade through `GateRegistryStore`.
-- **UpstreamPool** — routes a role request to PRIMARY or ALIEN endpoint,
-  serializes per-endpoint via `asyncio.Lock` (honors llama.cpp `-np 1`),
-  runs cross-endpoint in parallel. Writes one `pool.jsonl` record per call.
+- **UpstreamPool** — routes a role request across operator-declared
+  endpoints (free-form labels like `local-gpu`, `openrouter`, `ollama-mac`).
+  Serializes per-endpoint via `asyncio.Lock` (honors llama.cpp `-np 1`),
+  runs cross-endpoint in parallel. Route entries may carry a per-role
+  model override. Writes one `pool.jsonl` record (incl. `chosen_model`)
+  per call.
+- **EndpointsConfig** (`orchestrator/lib/endpoints.py`) — parses the
+  `endpoints:` + `routing:` blocks from `config.yaml` into
+  `EndpointSpec` / `RouteEntry`; resolves `api_key_env` indirection;
+  honors `ORCHESTRATOR_ENDPOINT_<NAME>_{BASE_URL,MODEL,API_KEY}` env
+  overrides. `build_pool(cfg)` materialises an `UpstreamPool`. This is
+  the seam that makes "local llama.cpp + remote OpenRouter + any
+  OpenAI-compatible provider" a config choice, not a code change.
 - **SyncPoolClient** (`orchestrator/lib/sync_pool.py`) — per-role sync
   adapter over `UpstreamPool`. Exposes `.chat(messages, *, call_id=None,
   **kw)`, threads `call_id` into the pool so `pool.jsonl` joins cleanly
@@ -107,10 +118,12 @@ These three join on `call_id` (also written as `request_id` in raw-io and
 STATUS.md is the source of truth; repeating it here rots. At time of
 writing (2026-04-21):
 
-- H0/H1/H3/H4 done. H2 blocked on manual walk + live endpoints + H5.
-- H5.1 done (sync facade lands; engine wires it per-role). H5.2/H5.3
-  pending — env URL plumbing + an end-to-end two-endpoint wire-up test
-  are what remain between the project and a real live run.
+- H0/H1/H3/H4 done. H2 blocked on manual walk + live endpoints.
+- H5.1 + H5.2 done. `SyncPoolClient` wires roles to the async pool; the
+  `endpoints:` + `routing:` YAML block is the live-path entry point in
+  both `cli/run.py` and `web/backend/runner.py`. Multi-provider
+  (llama.cpp / OpenRouter / OpenAI / Ollama) is a config choice. H5.3
+  (end-to-end two-endpoint test against real live endpoints) pending.
 - Phase 0 tasks 0.1 and 0.2 done; 0.3 pending.
 - Visual phases 1..8 paused behind the harness.
 
@@ -140,10 +153,10 @@ you changed, plus `git diff --check`.
    `async def`. Roles call `self.llm.chat(...)` synchronously. H5.1
    landed `SyncPoolClient` (`orchestrator/lib/sync_pool.py`) — the engine
    now builds one per role via `Orchestrator._llm_for(role)` and the
-   facade `asyncio.run`s `pool.chat(role, messages, ...)`. The live path
-   still needs H5.2 (parse `PRIMARY_URL`/`ALIEN_URL` env + construct a
-   pool in `runner.py`/`cli/run.py`) before H2.2 can be attempted. If
-   you see a role receive `pool.chat` directly, something un-did H5.1.
+   facade `asyncio.run`s `pool.chat(role, messages, ...)`. H5.2 landed
+   the declarative `endpoints:` + `routing:` YAML block consumed by both
+   `cli/run.py` and `web/backend/runner.py` (via `ORCHESTRATOR_CONFIG`).
+   If you see a role receive `pool.chat` directly, something un-did H5.1.
 2. **Python 3.14 on this Mac cannot reach the LAN.** Build venvs on 3.13.
    If a script silently fails to hit a `192.168.x` llama-server from
    Python, you are probably on 3.14. (See user memory.)
@@ -175,16 +188,12 @@ For each pending item in STATUS, here is the concrete unblock path:
   (desktop browser + mobile Safari). See `harness-2-…md` for the script.
   Programmatic rehearsal (`tests/test_integration_h2_1_rehearsal.py`)
   already covers the automatable surface.
-- **H2.2 live run against PRIMARY** — blocked on H5. Do H5 first.
-- **H5 pool live wiring** — H5.1 shipped the sync facade (`SyncPoolClient`).
-  Remaining work:
-  - **H5.2** — parse `PRIMARY_URL` / `ALIEN_URL` from env in
-    `web/backend/runner.py` and `orchestrator/cli/run.py`, build an
-    `UpstreamPool` with a default role→endpoint routing dict, and pass
-    it in as `Orchestrator(pool=...)` instead of `fake_llm=...`.
-  - **H5.3** — end-to-end test that boots a two-endpoint pool against
-    fake inner clients, runs the engine, asserts each role's call
-    landed on the expected endpoint in `pool.jsonl`.
+- **H2.2 live run against a real endpoint** — H5.1 + H5.2 shipped;
+  declare an `endpoints:` + `routing:` block in `config.yaml` and point
+  `ORCHESTRATOR_CONFIG` at it (PWA path) or pass `--config` (CLI path).
+- **H5.3** — end-to-end test that boots a two-endpoint pool against
+  fake inner clients, runs the engine, asserts each role's call
+  landed on the expected endpoint in `pool.jsonl`.
 - **Phase 0 Task 0.3** — write the mobile smoke procedure in
   `project-management/phases/00-baseline-and-invariants.md`.
   Scriptable only insofar as the *document* is the deliverable; the

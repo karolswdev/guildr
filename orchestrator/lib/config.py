@@ -44,10 +44,14 @@ class Config:
             raise ValueError(f"Config YAML must be a mapping, got {type(data).__name__}")
 
         # Map yaml keys to dataclass fields (allow hyphenated yaml keys)
+        # and silently drop keys that belong to other loaders (e.g.
+        # ``endpoints`` / ``routing`` → ``orchestrator.lib.endpoints``).
+        known_fields = {f.name for f in fields(cls)}
         normalised: dict[str, object] = {}
         for key, value in data.items():
             normal_key = key.replace("-", "_")
-            normalised[normal_key] = value
+            if normal_key in known_fields:
+                normalised[normal_key] = value
 
         # Only llama_server_url and project_dir are strictly required
         required = {"llama_server_url", "project_dir"}

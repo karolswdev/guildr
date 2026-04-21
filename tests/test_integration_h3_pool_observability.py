@@ -114,3 +114,46 @@ async def test_fallback_writes_fell_back_true(tmp_path: Path) -> None:
     assert decision["chosen_endpoint"] == "alien"
     assert decision["attempted_endpoints"] == ["primary", "alien"]
     assert decision["fell_back"] is True
+
+
+@pytest.mark.asyncio
+async def test_h5_2_per_role_model_override_recorded(tmp_path: Path) -> None:
+    """H5.2: route-level model override lands in pool.jsonl as chosen_model."""
+    from orchestrator.lib.endpoints import RouteEntry
+
+    @dataclass
+    class _ModelClient:
+        label: str
+        default_model: str = "default-m"
+        last_model: str | None = None
+
+        def chat(self, messages: list[dict[str, Any]], **kw: Any) -> LLMResponse:
+            self.last_model = kw.get("model")
+            return LLMResponse(
+                content="ok",
+                reasoning="",
+                model=self.last_model or self.default_model,
+                prompt_tokens=0,
+                completion_tokens=0,
+                reasoning_tokens=0,
+                finish_reason="stop",
+            )
+
+        def health(self) -> bool:
+            return True
+
+    shared = _ModelClient(label="shared", default_model="fallback-m")
+    pool = UpstreamPool(
+        endpoints=[Endpoint(label="shared", client=shared)],
+        routing={
+            "architect": [RouteEntry(endpoint="shared", model="big-m")],
+            "coder": [RouteEntry(endpoint="shared", model="small-m")],
+        },
+    )
+
+    await pool.chat("architect", [], project_dir=tmp_path, call_id="call-a")
+    await pool.chat("coder", [], project_dir=tmp_path, call_id="call-c")
+
+    decisions = {d["call_id"]: d for d in _read_decisions(tmp_path)}
+    assert decisions["call-a"]["chosen_model"] == "big-m"
+    assert decisions["call-c"]["chosen_model"] == "small-m"

@@ -211,11 +211,12 @@ def _build_dry_run_llm() -> object:
 
 
 def _build_real_llm(cfg: Config) -> object:
-    """Construct a sync LLMClient pointed at cfg.llama_server_url.
+    """Construct a single-endpoint sync LLMClient for legacy configs.
 
-    The engine consumes this via its `fake_llm` slot — that slot is the
-    sync LLM injection point, regardless of name. The async UpstreamPool
-    is for the web backend's request path, not for this CLI.
+    Used when ``config.yaml`` declares only ``llama_server_url`` and no
+    ``endpoints:`` block. Multi-endpoint configs are built via
+    ``orchestrator.lib.endpoints.build_pool`` and passed to
+    ``Orchestrator(pool=...)`` instead.
     """
     from orchestrator.lib.llm import LLMClient
 
@@ -233,16 +234,31 @@ def cmd_run(args: argparse.Namespace) -> int:
     cfg.project_dir = cfg.project_dir.expanduser().resolve()
     cfg.project_dir.mkdir(parents=True, exist_ok=True)
 
-    llm = _build_dry_run_llm() if args.dry_run else _build_real_llm(cfg)
+    endpoints_cfg = None
+    if args.config is not None and not args.dry_run:
+        from orchestrator.lib.endpoints import load_endpoints_from_yaml
+        endpoints_cfg = load_endpoints_from_yaml(args.config)
+
+    orch_kwargs: dict[str, object] = {"config": cfg}
+    if args.dry_run:
+        orch_kwargs["fake_llm"] = _build_dry_run_llm()
+        mode = "dry-run"
+    elif endpoints_cfg is not None:
+        from orchestrator.lib.endpoints import build_pool
+        orch_kwargs["pool"] = build_pool(endpoints_cfg)
+        mode = f"live/pool[{','.join(e.name for e in endpoints_cfg.endpoints)}]"
+    else:
+        orch_kwargs["fake_llm"] = _build_real_llm(cfg)
+        mode = "live/single-endpoint"
 
     log.info(
         "Starting orchestrator: project=%s mode=%s gates=%s",
         cfg.project_dir,
-        "dry-run" if args.dry_run else "live",
+        mode,
         "on" if cfg.require_human_approval else "off",
     )
 
-    orchestrator = Orchestrator(config=cfg, fake_llm=llm)
+    orchestrator = Orchestrator(**orch_kwargs)
     try:
         orchestrator.run()
     except PhaseFailure as exc:

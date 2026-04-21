@@ -165,7 +165,7 @@ def log_llm_call(
         messages: The messages sent to the model.
         response: An ``LLMResponse`` or similar object with token counts.
         latency_ms: Time taken for the call in milliseconds.
-        endpoint: Upstream label (e.g. ``"primary"`` / ``"alien"``), optional.
+        endpoint: Upstream label (operator-defined endpoint name), optional.
         request_id: Stable id for correlating summary and raw records.
             Auto-generated when omitted.
     """

@@ -103,6 +103,23 @@ def _build_llm(dry_run: bool, llama_url: str) -> object:
     return LLMClient(base_url=llama_url)
 
 
+def _build_pool_from_env() -> object | None:
+    """If ``ORCHESTRATOR_CONFIG`` points to a YAML with an ``endpoints:``
+    block, build and return an ``UpstreamPool``. Else ``None``.
+
+    Lets the PWA live path opt into multi-endpoint routing without
+    changing the single-``LLAMA_URL`` demo contract.
+    """
+    path_str = os.environ.get("ORCHESTRATOR_CONFIG")
+    if not path_str:
+        return None
+    from orchestrator.lib.endpoints import build_pool, load_endpoints_from_yaml
+    cfg = load_endpoints_from_yaml(Path(path_str))
+    if cfg is None:
+        return None
+    return build_pool(cfg)
+
+
 def _resolve_project_dir(project_id: str) -> Path:
     """Where the orchestrator should land its artifacts for this project.
 
@@ -161,11 +178,18 @@ def _run_orchestrator(
             architect_max_passes=5,
             require_human_approval=require_human_approval,
         )
-        llm = _build_llm(dry_run, llama_url)
+        pool = None if dry_run else _build_pool_from_env()
         gate_registry = get_gate_store().ensure(project_id)
-        orch = Orchestrator(
-            config=config, fake_llm=llm, events=bridge, gate_registry=gate_registry
-        )
+        orch_kwargs: dict[str, Any] = {
+            "config": config,
+            "events": bridge,
+            "gate_registry": gate_registry,
+        }
+        if pool is not None:
+            orch_kwargs["pool"] = pool
+        else:
+            orch_kwargs["fake_llm"] = _build_llm(dry_run, llama_url)
+        orch = Orchestrator(**orch_kwargs)
         bus.emit("run_started", project_id=project_id, dry_run=dry_run, start_at=start_at)
         orch.run(start_at=start_at)
         bus.emit("run_complete", project_id=project_id)
