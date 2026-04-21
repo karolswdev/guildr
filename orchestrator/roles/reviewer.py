@@ -1,4 +1,15 @@
-"""Reviewer role — code-review-grade pass against sprint plan."""
+"""Reviewer role — code-review-grade pass via opencode (H6.3c).
+
+The Reviewer runs as an opencode agent session, not a direct LLM call.
+It receives the acceptance criteria, the Tester's report, and a git
+diff stat summary, and is asked to produce a markdown verdict that we
+parse into a :class:`ReviewResult`. Writing ``REVIEW.md`` is still the
+orchestrator's job — we don't trust the agent's tool calls for the
+report itself because downstream gates parse the exact shape written
+here. If a future iteration wants the agent to ``read`` source files
+to form its opinion, that works today via opencode's read/grep tools;
+only the final verdict text needs to land in the assistant message.
+"""
 
 from __future__ import annotations
 
@@ -6,50 +17,52 @@ import logging
 import re
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from orchestrator.lib.llm import LLMClient
+from orchestrator.lib.control import append_operator_context
+from orchestrator.lib.opencode import SessionRunner
+from orchestrator.lib.opencode_audit import emit_session_audit
 from orchestrator.lib.sprint_plan import Task, parse_tasks
 from orchestrator.lib.state import State
-from orchestrator.roles.base import BaseRole
 
 logger = logging.getLogger(__name__)
 
+_PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+
 
 class ReviewerError(Exception):
-    """Raised when the Reviewer encounters a fatal error."""
+    """Raised when the Reviewer cannot complete its session."""
 
 
 @dataclass
 class CriterionResult:
-    """Result for a single acceptance criterion."""
-
     text: str
-    verdict: str  # PASS | FAIL | CONCERN
+    verdict: str  # PASS | FAIL | CONCERN | CRITICAL
     notes: str
 
 
 @dataclass
 class ReviewResult:
-    """Overall review result."""
-
     criteria: list[CriterionResult]
     overall: str  # APPROVED | APPROVED_WITH_NOTES | CHANGES_REQUESTED | CRITICAL
 
 
-class Reviewer(BaseRole):
-    """Reviews implementation against sprint plan without re-running tests."""
+class Reviewer:
+    """Runs one opencode session per review pass and parses the verdict."""
 
     _phase: str = "review"
     _role: str = "reviewer"
 
     def __init__(
         self,
-        llm: LLMClient,
+        runner: SessionRunner,
         state: State,
-        phase_logger: Any = None,
+        phase_logger: logging.Logger | None = None,
     ) -> None:
-        super().__init__(llm, state, phase_logger=phase_logger)
+        self.runner = runner
+        self.state = state
+        self._phase_logger = phase_logger
 
     # -- public API ----------------------------------------------------------
 
@@ -58,11 +71,6 @@ class Reviewer(BaseRole):
         sprint_plan_path: str = "sprint-plan.md",
         test_report_path: str = "TEST_REPORT.md",
     ) -> str:
-        """Execute review on the current implementation.
-
-        Returns the path to REVIEW.md.
-        Raises ReviewerError on fatal failure.
-        """
         plan_text = self.state.read_file(sprint_plan_path)
         tasks = parse_tasks(plan_text)
 
@@ -70,33 +78,49 @@ class Reviewer(BaseRole):
         test_report = self._load_test_report(test_report_path)
         git_diff_summary = self._get_git_diff_summary()
 
-        system_prompt = self._load_prompt("reviewer", "generate")
-        user_prompt = system_prompt.format(
+        template = self._load_prompt("reviewer", "generate")
+        prompt = template.format(
             acceptance_criteria=acceptance_criteria,
             test_report=test_report,
             git_diff_summary=git_diff_summary,
         )
-        user_prompt = self._augment_prompt(user_prompt)
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        prompt = self._augment_prompt(prompt)
 
         try:
-            response = self._chat(messages)
+            result = self.runner.run(prompt)
         except Exception as exc:
-            raise ReviewerError(f"LLM call failed: {exc}") from exc
+            raise ReviewerError(f"opencode session failed: {exc}") from exc
 
-        result = self._parse_result(response.content)
-        self._write_review(result)
+        # Emit audit before any failure paths so the trail survives.
+        emit_session_audit(
+            self.state,
+            result,
+            role=self._role,
+            phase=self._phase,
+            step=self._phase,
+            prompt=prompt,
+        )
+
+        if result.exit_code != 0:
+            raise ReviewerError(
+                f"opencode session exited with rc={result.exit_code}: "
+                f"{result.assistant_text[:200]!r}"
+            )
+
+        text = result.assistant_text.strip()
+        if not text:
+            raise ReviewerError(
+                "opencode session returned no assistant text — nothing to parse"
+            )
+
+        parsed = self._parse_result(text)
+        self._write_review(parsed)
         return "REVIEW.md"
 
     # -- data extraction -----------------------------------------------------
 
     @staticmethod
     def _extract_criteria(tasks: list[Task]) -> str:
-        """Extract acceptance criteria from all tasks."""
         lines = []
         has_criteria = False
         for task in tasks:
@@ -110,7 +134,6 @@ class Reviewer(BaseRole):
         return "\n".join(lines)
 
     def _load_test_report(self, path: str) -> str:
-        """Load TEST_REPORT.md content."""
         try:
             return self.state.read_file(path)
         except FileNotFoundError:
@@ -118,7 +141,6 @@ class Reviewer(BaseRole):
 
     @staticmethod
     def _get_git_diff_summary() -> str:
-        """Get a git diff summary (headlines per file, not full diffs)."""
         try:
             result = subprocess.run(
                 ["git", "diff", "--stat", "HEAD"],
@@ -135,13 +157,7 @@ class Reviewer(BaseRole):
     # -- result parsing ------------------------------------------------------
 
     def _parse_result(self, raw: str) -> ReviewResult:
-        """Parse the Reviewer's markdown output into a ReviewResult."""
         criteria: list[CriterionResult] = []
-
-        # Parse per-criterion verdicts
-        # Handles both formats:
-        #   - [PASS] Criterion: text
-        #   - [PASS] text
         criterion_pattern = re.compile(
             r"- \[(PASS|FAIL|CONCERN|CRITICAL)\]\s+"
             r"(?:Criterion:\s*)?"
@@ -153,13 +169,8 @@ class Reviewer(BaseRole):
             verdict = m.group(1)
             text = m.group(2).strip()
             notes = m.group(3).strip() if m.group(3) else ""
-            criteria.append(CriterionResult(
-                text=text,
-                verdict=verdict,
-                notes=notes,
-            ))
+            criteria.append(CriterionResult(text=text, verdict=verdict, notes=notes))
 
-        # Parse overall verdict
         overall_match = re.search(
             r"## Overall\s*\n\s*[-•]?\s*"
             r"(APPROVED(?:\s+WITH\s+NOTES)?|"
@@ -169,33 +180,26 @@ class Reviewer(BaseRole):
         )
         if overall_match:
             overall = overall_match.group(1).strip().upper()
-            # Normalize "APPROVED WITH NOTES" → "APPROVED_WITH_NOTES"
             if overall == "APPROVED WITH NOTES":
                 overall = "APPROVED_WITH_NOTES"
         else:
             overall = "CHANGES_REQUESTED"
 
-        return ReviewResult(
-            criteria=criteria,
-            overall=overall,
-        )
+        return ReviewResult(criteria=criteria, overall=overall)
 
     # -- report writing ------------------------------------------------------
 
     def _write_review(self, result: ReviewResult) -> None:
-        """Write REVIEW.md with per-criterion verdicts."""
         lines = [
             "# Review",
             "",
             f"Overall verdict: {result.overall}",
             "",
         ]
-
         for cr in result.criteria:
             lines.append(f"- [{cr.verdict}] {cr.text}")
             if cr.notes:
                 lines.append(f"  - Notes: {cr.notes}")
-
         lines.append("")
         lines.append("## Overall")
         lines.append("")
@@ -206,17 +210,20 @@ class Reviewer(BaseRole):
             for cr in result.criteria:
                 if cr.verdict in ("FAIL", "CRITICAL"):
                     lines.append(f"- {cr.text}: {cr.notes}")
+        self.state.write_file("REVIEW.md", "\n".join(lines))
 
-        report = "\n".join(lines)
-        self.state.write_file("REVIEW.md", report)
+    # -- helpers -------------------------------------------------------------
+
+    @staticmethod
+    def _load_prompt(role: str, name: str) -> str:
+        return (_PROMPT_DIR / role / f"{name}.txt").read_text(encoding="utf-8")
+
+    def _augment_prompt(self, prompt: str) -> str:
+        return append_operator_context(self.state.project_dir, self._phase, prompt)
 
     # -- convenience ---------------------------------------------------------
 
     def is_critical(self, sprint_plan_path: str = "sprint-plan.md") -> bool:
-        """Check if the current review is CRITICAL.
-
-        Returns True if REVIEW.md exists and has CRITICAL verdict.
-        """
         try:
             review_text = self.state.read_file("REVIEW.md")
             return "CRITICAL" in review_text

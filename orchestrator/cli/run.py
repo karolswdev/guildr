@@ -142,13 +142,6 @@ _DRY_RUN_TESTER_REPORT = (
     "- Notes: dry-run\n"
 )
 
-_DRY_RUN_REVIEWER_REPORT = (
-    "- [PASS] Criterion: README exists\n"
-    "  - Notes: verified by tester\n"
-    "\n## Overall\n"
-    "APPROVED\n"
-)
-
 _DRY_RUN_DEPLOY_REPORT = (
     "# DEPLOY (dry-run)\n\n"
     "1. Deployment target: local\n"
@@ -193,8 +186,6 @@ def _build_dry_run_llm() -> object:
                 return _r(_DRY_RUN_JUDGE_JSON)
             if "you are a qa engineer" in sys_lower:
                 return _r(_DRY_RUN_TESTER_REPORT)
-            if "you are a senior code reviewer" in sys_lower:
-                return _r(_DRY_RUN_REVIEWER_REPORT)
             if "you are a devops engineer" in sys_lower:
                 return _r(_DRY_RUN_DEPLOY_REPORT)
             return _r(_DRY_RUN_SPRINT_PLAN)
@@ -221,7 +212,7 @@ def _build_opencode_session_runners(
     endpoints_by_name = {ep.name: ep for ep in endpoints_cfg.endpoints}  # type: ignore[attr-defined]
 
     runners: dict[str, object] = {}
-    for role in ("coder",):
+    for role in ("coder", "reviewer"):
         routes = endpoints_cfg.routing.get(role) or []  # type: ignore[attr-defined]
         if not routes:
             continue

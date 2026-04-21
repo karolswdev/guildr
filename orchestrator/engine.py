@@ -110,6 +110,11 @@ class Orchestrator:
             runner = DryRunCoderRunner(self.state)
             self._session_runners[role] = runner
             return runner
+        if self._fake_llm is not None and role == "reviewer":
+            from orchestrator.roles.reviewer_dryrun import DryRunReviewerRunner
+            runner = DryRunReviewerRunner(self.state)
+            self._session_runners[role] = runner
+            return runner
         return None
 
     def _llm_for(self, role: str) -> Any:
@@ -516,14 +521,14 @@ class Orchestrator:
         escalation.execute()
 
     def _reviewer(self, *, phase_logger: logging.Logger | None = None) -> None:
-        """Run the Reviewer role."""
+        """Run the Reviewer via an opencode session runner (H6.3c)."""
         from orchestrator.roles.reviewer import Reviewer
 
-        llm = self._llm_for("reviewer")
-        if llm is None:
+        runner = self._session_runner_for("reviewer")
+        if runner is None:
             raise PhaseFailure("review")
 
-        reviewer = Reviewer(llm, self.state, phase_logger=phase_logger)
+        reviewer = Reviewer(runner, self.state, phase_logger=phase_logger)
         reviewer.execute("sprint-plan.md")
 
     def _deployer(self, *, phase_logger: logging.Logger | None = None) -> None:

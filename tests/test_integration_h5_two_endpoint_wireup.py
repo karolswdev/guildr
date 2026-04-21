@@ -28,6 +28,7 @@ from orchestrator.lib.endpoints import RouteEntry
 from orchestrator.lib.pool import Endpoint, UpstreamPool
 from orchestrator.lib.pool_log import pool_log_path
 from orchestrator.roles.coder_dryrun import DryRunCoderRunner
+from orchestrator.roles.reviewer_dryrun import DryRunReviewerRunner
 
 
 class _EndpointFake:
@@ -95,7 +96,11 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
     # Inject a dry-run SessionRunner so the pipeline can still reach the
     # tester/reviewer/deployer phases that *do* still ride the pool.
     from orchestrator.lib.state import State
-    runners = {"coder": DryRunCoderRunner(State(project_dir))}
+    state_for_runners = State(project_dir)
+    runners = {
+        "coder": DryRunCoderRunner(state_for_runners),
+        "reviewer": DryRunReviewerRunner(state_for_runners),
+    }
     Orchestrator(config=cfg, pool=pool, session_runners=runners).run()
 
     # Pipeline advanced through every phase.
@@ -126,11 +131,14 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
         "architect": "big-model",
         "judge": "small-model",
         "tester": "small-model",
-        "reviewer": "small-model",
         "deployer": "small-model",
     }
     assert "coder" not in by_role, (
         "coder was expected to bypass the pool (opencode session, H6.3a), "
+        f"but appeared in pool.jsonl"
+    )
+    assert "reviewer" not in by_role, (
+        "reviewer was expected to bypass the pool (opencode session, H6.3c), "
         f"but appeared in pool.jsonl"
     )
     seen_roles = set(by_role) & set(role_to_expected)
@@ -183,7 +191,11 @@ def test_fallback_when_preferred_endpoint_raises(project_dir: Path) -> None:
     )
 
     from orchestrator.lib.state import State
-    runners = {"coder": DryRunCoderRunner(State(project_dir))}
+    state_for_runners = State(project_dir)
+    runners = {
+        "coder": DryRunCoderRunner(state_for_runners),
+        "reviewer": DryRunReviewerRunner(state_for_runners),
+    }
     Orchestrator(config=cfg, pool=pool, session_runners=runners).run()
 
     decisions = [
