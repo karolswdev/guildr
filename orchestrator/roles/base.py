@@ -37,10 +37,24 @@ class BaseRole:
         **kw: Any,
     ) -> LLMResponse:
         """Send a chat completion request."""
+        from orchestrator.lib.event_schema import new_event_id
+        call_id = new_event_id()
         start = time.monotonic()
         try:
             response = self.llm.chat(messages, **kw)
             elapsed_ms = (time.monotonic() - start) * 1000
+            from orchestrator.lib.usage import emit_llm_usage
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                response,
+                role=getattr(self, "_role", "unknown"),
+                step=getattr(self, "_phase", ""),
+                runtime_ms=elapsed_ms,
+                call_id=call_id,
+                attempt=kw.get("attempt"),
+                atom_id=kw.get("atom_id"),
+            )
             if self._phase_logger is not None:
                 from orchestrator.lib.logger import log_llm_call
                 log_llm_call(
@@ -50,10 +64,37 @@ class BaseRole:
                     messages=messages,
                     response=response,
                     latency_ms=elapsed_ms,
+                    endpoint=getattr(self.llm, "base_url", None),
+                    request_id=call_id,
                 )
             return response
         except Exception as e:
             elapsed_ms = (time.monotonic() - start) * 1000
+            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                None,
+                role=getattr(self, "_role", "unknown"),
+                step=getattr(self, "_phase", ""),
+                runtime_ms=elapsed_ms,
+                call_id=call_id,
+                status="error",
+                error=e,
+                attempt=kw.get("attempt"),
+                atom_id=kw.get("atom_id"),
+            )
+            emit_provider_error(
+                self.state,
+                provider_kind=type(self.llm).__name__,
+                provider_name=type(self.llm).__name__,
+                model="",
+                role=getattr(self, "_role", "unknown"),
+                step=getattr(self, "_phase", ""),
+                runtime_ms=elapsed_ms,
+                error=e,
+                call_id=call_id,
+            )
             if self._phase_logger is not None:
                 from orchestrator.lib.logger import log_llm_error
                 log_llm_error(

@@ -123,10 +123,22 @@ class Architect:
         ]
 
         import time
+        from orchestrator.lib.event_schema import new_event_id
+        call_id = new_event_id()
         start = time.monotonic()
         try:
             response = self.llm.chat(messages, max_tokens=16384)
             elapsed_ms = (time.monotonic() - start) * 1000
+            from orchestrator.lib.usage import emit_llm_usage
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                response,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                call_id=call_id,
+            )
             if self._phase_logger is not None:
                 from orchestrator.lib.logger import log_llm_call
                 log_llm_call(
@@ -136,10 +148,35 @@ class Architect:
                     messages=messages,
                     response=response,
                     latency_ms=elapsed_ms,
+                    endpoint=getattr(self.llm, "base_url", None),
+                    request_id=call_id,
                 )
             return response.content
         except Exception as e:
             elapsed_ms = (time.monotonic() - start) * 1000
+            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                None,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                call_id=call_id,
+                status="error",
+                error=e,
+            )
+            emit_provider_error(
+                self.state,
+                provider_kind=type(self.llm).__name__,
+                provider_name=type(self.llm).__name__,
+                model="",
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                error=e,
+                call_id=call_id,
+            )
             if self._phase_logger is not None:
                 from orchestrator.lib.logger import log_llm_error
                 log_llm_error(
@@ -174,10 +211,22 @@ class Architect:
         ]
 
         import time
+        from orchestrator.lib.event_schema import new_event_id
+        call_id = new_event_id()
         start = time.monotonic()
         try:
             response = self.llm.chat(messages, max_tokens=16384)
             elapsed_ms = (time.monotonic() - start) * 1000
+            from orchestrator.lib.usage import emit_llm_usage
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                response,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                call_id=call_id,
+            )
             if self._phase_logger is not None:
                 from orchestrator.lib.logger import log_llm_call
                 log_llm_call(
@@ -187,10 +236,35 @@ class Architect:
                     messages=messages,
                     response=response,
                     latency_ms=elapsed_ms,
+                    endpoint=getattr(self.llm, "base_url", None),
+                    request_id=call_id,
                 )
             return response.content
         except Exception as e:
             elapsed_ms = (time.monotonic() - start) * 1000
+            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                None,
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                call_id=call_id,
+                status="error",
+                error=e,
+            )
+            emit_provider_error(
+                self.state,
+                provider_kind=type(self.llm).__name__,
+                provider_name=type(self.llm).__name__,
+                model="",
+                role=self._role,
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                error=e,
+                call_id=call_id,
+            )
             if self._phase_logger is not None:
                 from orchestrator.lib.logger import log_llm_error
                 log_llm_error(
@@ -328,10 +402,22 @@ class Architect:
     def _call_judge(self, messages: list[dict]) -> str:
         """Send the judge prompt and return raw response content."""
         import time
+        from orchestrator.lib.event_schema import new_event_id
+        call_id = new_event_id()
         start = time.monotonic()
         try:
             response = self.llm.chat(messages, max_tokens=4096)
             elapsed_ms = (time.monotonic() - start) * 1000
+            from orchestrator.lib.usage import emit_llm_usage
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                response,
+                role="judge",
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                call_id=call_id,
+            )
             if self._phase_logger is not None:
                 from orchestrator.lib.logger import log_llm_call
                 log_llm_call(
@@ -341,10 +427,35 @@ class Architect:
                     messages=messages,
                     response=response,
                     latency_ms=elapsed_ms,
+                    endpoint=getattr(self.llm, "base_url", None),
+                    request_id=call_id,
                 )
             return response.content
         except Exception as e:
             elapsed_ms = (time.monotonic() - start) * 1000
+            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
+            emit_llm_usage(
+                self.state,
+                self.llm,
+                None,
+                role="judge",
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                call_id=call_id,
+                status="error",
+                error=e,
+            )
+            emit_provider_error(
+                self.state,
+                provider_kind=type(self.llm).__name__,
+                provider_name=type(self.llm).__name__,
+                model="",
+                role="judge",
+                step=self._phase,
+                runtime_ms=elapsed_ms,
+                error=e,
+                call_id=call_id,
+            )
             if self._phase_logger is not None:
                 from orchestrator.lib.logger import log_llm_error
                 log_llm_error(

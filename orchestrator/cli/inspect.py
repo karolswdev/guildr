@@ -211,6 +211,42 @@ def show_tokens(project_dir: Path) -> None:
     )
 
 
+def show_costs(project_dir: Path) -> None:
+    """Show the per-run cost + token rollup from raw-io.jsonl + usage.jsonl."""
+    from orchestrator.lib.usage_summary import rollup
+
+    summary = rollup(project_dir)
+
+    if summary.totals.call_count == 0:
+        print("No reconciled LLM calls found.", file=sys.stderr)
+        if summary.orphans["raw_io_only"] or summary.orphans["usage_only"]:
+            print(f"Orphans — raw-io only: {len(summary.orphans['raw_io_only'])}, "
+                  f"usage only: {len(summary.orphans['usage_only'])}",
+                  file=sys.stderr)
+        return
+
+    print(f"Project: {project_dir.name}")
+    print()
+    print(f"{'Role':<14} {'Calls':<8} {'Prompt':<10} {'Compl':<10} "
+          f"{'Reason':<10} {'Total':<10} {'Cost USD':<12} {'Latency ms':<12}")
+    print("-" * 96)
+    for role, t in sorted(summary.per_role.items()):
+        print(f"{role:<14} {t.call_count:<8} {t.prompt_tokens:<10} "
+              f"{t.completion_tokens:<10} {t.reasoning_tokens:<10} "
+              f"{t.total_tokens:<10} {t.cost_usd:<12.6f} {t.latency_ms:<12.1f}")
+
+    print("-" * 96)
+    tt = summary.totals
+    print(f"{'Total':<14} {tt.call_count:<8} {tt.prompt_tokens:<10} "
+          f"{tt.completion_tokens:<10} {tt.reasoning_tokens:<10} "
+          f"{tt.total_tokens:<10} {tt.cost_usd:<12.6f} {tt.latency_ms:<12.1f}")
+
+    if summary.orphans["raw_io_only"] or summary.orphans["usage_only"]:
+        print()
+        print(f"Orphans — raw-io only: {len(summary.orphans['raw_io_only'])}, "
+              f"usage only: {len(summary.orphans['usage_only'])}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
@@ -243,6 +279,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show per-phase token usage",
     )
+    inspect_parser.add_argument(
+        "--costs",
+        action="store_true",
+        help="Show per-role cost + token rollup (joins raw-io.jsonl + usage.jsonl)",
+    )
 
     return parser
 
@@ -266,6 +307,8 @@ def main(argv: list[str] | None = None) -> None:
         dump_session(project_dir, args.phase, args.attempt)
     elif args.tokens:
         show_tokens(project_dir)
+    elif args.costs:
+        show_costs(project_dir)
     else:
         state = load_state(project_dir)
         list_phases(state, project_dir)
