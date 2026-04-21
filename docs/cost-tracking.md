@@ -26,6 +26,36 @@ Each usage record must declare its source:
 The UI must always show source and confidence. A provider-reported hosted call
 and a local llama estimate are not the same quality of evidence.
 
+Each usage record must also declare a confidence level:
+
+- `high`: provider-reported cost from a reliable API response.
+- `medium`: rate-card estimate with a current, verified rate card.
+- `low`: local estimate, stale rate card, or CLI-parsed output.
+- `none`: source is unknown or cost could not be estimated at all.
+
+Valid values are exactly these four strings. No other values are permitted.
+The confidence enum must be defined as `CostConfidence` in all typed clients.
+
+## OpenRouter Cost Extraction
+
+When the provider is OpenRouter, cost must be extracted in this priority order:
+
+1. `usage.cost` and token detail fields in the non-streaming response body.
+   Source: `provider_reported`, confidence: `high`.
+2. `usage.cost` and token detail fields in the final streaming SSE message.
+   Source: `provider_reported`, confidence: `high`.
+3. Follow-up call to `/api/v1/generation?id=<generation_id>` using the response
+   `id`. Use this when usage was not captured from the original response or
+   when an audit refresh is explicitly requested. Source: `provider_reported`,
+   confidence: `medium` if fetched asynchronously after the run.
+4. Rate-card estimate from stored OpenRouter pricing. Source:
+   `rate_card_estimate`, confidence: `medium`.
+
+Adapters must record which extraction path was used in the event payload as
+`cost.extraction_path` (`response_usage`, `stream_usage`, `generation_api`,
+`rate_card`). This allows replay and audit to understand why costs differ
+across calls.
+
 ## Event Schema
 
 Model and advisor calls emit a `usage_recorded` event.
@@ -115,9 +145,35 @@ Local estimates use project or machine config:
 }
 ```
 
-For local llama calls, effective cost may be computed from wall time, optional
-GPU seconds, optional energy, and configured machine cost. The UI must label
-this as an estimate, not an invoice.
+For local llama calls, effective cost is computed using this formula:
+
+```
+compute_cost = hourly_cost_usd * (wall_ms / 3_600_000)
+energy_cost  = energy_cost_usd_per_kwh * (estimated_energy_wh / 1000)
+gpu_cost     = gpu_hourly_cost_usd * (gpu_seconds / 3600)
+effective_cost = compute_cost + energy_cost + gpu_cost
+```
+
+When `estimated_energy_wh` or `gpu_seconds` are null, those terms are zero.
+This formula and the `machine_id` must be recorded in `cost.rate_card_version`
+so replay always uses the formula that was active at run time, not the current
+machine config.
+
+The UI must label this as an estimate, not an invoice.
+
+## Rate Card Immutability
+
+Rate-card files under `.orchestrator/costs/rate-cards/` must be treated as
+write-once. A rate card is identified by its `rate_card_version` field (an
+ISO8601 timestamp of when the card was fetched or configured). Once written,
+a rate-card file must not be modified. If pricing changes, a new file with a
+new timestamp is written. Old files remain so historical replay can resolve
+the version string from any prior event.
+
+Implementations must verify that the rate card referenced in a replayed event
+exists on disk. If it is missing, the replay viewer must show a warning and
+fall back to `source: "unknown"`, `confidence: "none"` for affected calls.
+Replay must never silently substitute a newer rate card.
 
 ## Budgets And Gates
 
@@ -139,6 +195,45 @@ Budget crossing emits events:
 
 Budget gates must be resumable like other gates. The decision becomes part of
 the event ledger and replay state.
+
+The `budget_gate_decided` event schema:
+
+```json
+{
+  "type": "budget_gate_decided",
+  "ts": "2026-04-21T20:18:00.000Z",
+  "run_id": "run-20260421-201501",
+  "gate_id": "budget-gate-01HY",
+  "decision": "approved",
+  "new_run_budget_usd": 15.0,
+  "new_phase_budget_usd": null,
+  "operator_note": "Increasing budget for escalation phase.",
+  "budget_at_decision": {
+    "run_budget_usd": 15.0,
+    "phase_budget_usd": null,
+    "remaining_run_budget_usd": 7.816
+  }
+}
+```
+
+Field rules:
+
+- `decision`: one of `approved`, `rejected`. `rejected` halts the run.
+- `new_run_budget_usd`: present and non-null when the operator increased (or
+  decreased) the run budget. Null if the decision was approval without a
+  budget change.
+- `new_phase_budget_usd`: same semantics for the current phase budget.
+- `budget_at_decision`: the effective budget state immediately after the
+  decision is applied. Replay must update `remainingRunBudgetUsd` from this
+  field when folding a `budget_gate_decided` event. This is the authoritative
+  post-gate budget state, not re-derived from prior usage totals.
+
+The EventEngine fold rule for `budget_gate_decided`:
+1. If `decision === "rejected"`: mark run as halted. No further usage events
+   should appear, but replay must tolerate them if they do.
+2. If `new_run_budget_usd` is present: update the effective run cap to
+   `new_run_budget_usd`.
+3. Always update `remainingRunBudgetUsd` from `budget_at_decision.remaining_run_budget_usd`.
 
 ## Replay Behavior
 

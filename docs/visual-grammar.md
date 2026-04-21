@@ -217,6 +217,13 @@ The replay timeline can switch from event density to cost density. Cost density
 bars use muted gold for provider-reported cost, lavender for local estimates,
 and red ticks for unknown cost.
 
+Cost density bars use a square-root scale, not linear. A $0.001 call must not
+be invisible next to a $1.00 call, and a $1.00 call must not dwarf everything
+else. The bar height for bucket `b` is `sqrt(b.effectiveUsd) / sqrt(max_bucket_cost)`.
+Label the y-axis with the max bucket cost so the operator can interpret scale.
+Unknown-cost events always add a fixed-height red tick regardless of dollar
+value, since their cost cannot be placed on any scale.
+
 ---
 
 ## Event Particles
@@ -291,6 +298,8 @@ The FocusPanel is a DOM overlay (not Three.js) that slides in from the bottom (p
 | o sprint-plan.md   |
 ||||||||||||||||||||||
 | 1,240 tok/s  12GB  |  <- telemetry (if available)
+||||||||||||||||||||||
+| $0.04 provider_rep |  <- atom cost + source badge (omit if zero)
 ||||||||||||||||||||||
 | [View Logs] [JSON] |  <- action buttons
 ||||||||||||||||||||||

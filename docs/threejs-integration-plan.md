@@ -52,6 +52,7 @@ export interface MemPalaceStatus {
 }
 
 export type CostSource = 'provider_reported' | 'rate_card_estimate' | 'local_estimate' | 'unknown'
+export type CostConfidence = 'high' | 'medium' | 'low' | 'none'
 
 export interface CostBucket {
   effectiveUsd: number
@@ -67,12 +68,15 @@ export interface CostBucket {
 
 export interface CostSnapshot extends CostBucket {
   currency: 'USD'
+  runBudgetUsd: number | null
   remainingRunBudgetUsd: number | null
   byProvider: Record<string, CostBucket>
   byModel: Record<string, CostBucket>
   byRole: Record<string, CostBucket>
+  byPhase: Record<string, CostBucket>
   byAtom: Record<string, CostBucket>
   sources: Record<CostSource, number>
+  confidences: Record<CostConfidence, number>
   lastUsageEvent: RunEvent | null
 }
 
@@ -156,6 +160,25 @@ Rules:
 
 The same fold runs for live mode and replay mode, so the HUD and timeline never
 diverge.
+
+`_applyBudgetEvent` fold rules:
+
+- `budget_warning`: set a warning flag on the relevant budget level. No cost
+  totals change.
+- `budget_exceeded`: set an exceeded flag. No cost totals change.
+- `budget_gate_opened`: record gate id and level. No cost totals change.
+- `budget_gate_decided`:
+  - If `event.new_run_budget_usd` is present: update `runBudgetUsd`.
+  - Always set `remainingRunBudgetUsd` from
+    `event.budget_at_decision.remaining_run_budget_usd`. Do not recompute
+    remaining budget from the running total; use the recorded value.
+  - If `event.decision === 'rejected'`: set a `runHalted` flag on the
+    snapshot. Continue folding subsequent events for display but surface the
+    halted state in the HUD.
+
+`_applyUsage` must also increment `byPhase[event.step]` in addition to
+`byAtom`, `byRole`, `byModel`, and `byProvider`. The `event.step` field is
+used as the phase key because it maps 1:1 to workflow step ids.
 
 ### Migration from Progress.ts
 
