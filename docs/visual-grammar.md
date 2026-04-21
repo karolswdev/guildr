@@ -1,8 +1,8 @@
-# Visual Grammar - Atoms, Memory, Agents, Gates, Artifacts, Events, Replay
+# Visual Grammar - Atoms, Memory, Agents, Gates, Artifacts, Loops, Events, Replay
 
 ## Design Language
 
-The visual grammar is **functional minimalism with biological warmth**. Atoms are cells. Edges are axons. MemPalace is a sky structure. Gates are checkpoints. Artifacts are crystallized outputs. Events are pulses of energy. The overall aesthetic: dark environment, glowing active elements, subtle particle flow - closer to Monument Valley or Reigns than to a Gantt chart.
+The visual grammar is **functional minimalism with biological warmth**. Atoms are cells. Edges are axons. SDLC loops are orbiting lifecycle bands. MemPalace is a sky structure. Gates are checkpoints. Artifacts are crystallized outputs. Events are pulses of energy. The overall aesthetic: dark environment, glowing active elements, subtle particle flow - closer to Monument Valley or Reigns than to a Gantt chart.
 
 ---
 
@@ -26,6 +26,14 @@ Artifact card           #2A3A2E   dark green panel
 Cost ring               #D9B84D   muted gold, thin
 Budget warning          #E09B2A   amber pulse
 Budget exceeded         #CC3333   red pulse
+Loop discover           #41C7C7   cyan arc
+Loop plan               #4D6FFF   blue arc
+Loop build              #E8EAF0   white arc
+Loop verify             #1A8C5A   green arc
+Loop repair             #E09B2A   amber arc, red on hard failure
+Loop review             #7A5CFF   purple arc
+Loop ship               #28B8A8   teal arc
+Loop learn              #9B7EFF   lavender arc to MemPalace
 Gate (waiting)          #E09B2A   amber
 Gate (decided/pass)     #1A8C5A
 Gate (decided/fail)     #CC3333
@@ -172,6 +180,45 @@ Artifacts are outputs produced by atoms (sprint plan, test report, review, deplo
 
 ---
 
+## SDLC Loop Bands
+
+SDLC loops render as thin orbit bands around atoms. They make lifecycle state
+physically visible without adding another table.
+
+### Geometry
+
+- `TorusGeometry` or line-loop ring slightly larger than the atom footprint.
+- Each loop stage occupies a different vertical offset around the atom base.
+- Active stage band thickness: 0.035 world units.
+- Inactive historical band thickness: 0.015 world units.
+- Maximum visible bands per atom on iPhone: 3. Older inactive bands collapse
+  into a single history tick in FocusPanel.
+
+### Stage Visuals
+
+| Stage | Color | Motion |
+|---|---|---|
+| discover | cyan `#41C7C7` | slow clockwise scan |
+| plan | blue `#4D6FFF` | segmented orbit |
+| build | white `#E8EAF0` | steady forward rotation |
+| verify | green `#1A8C5A` | pulse when checks run |
+| repair | amber `#E09B2A` | reverse arc back toward build |
+| review | purple `#7A5CFF` | slow gate-like pulse |
+| ship | teal `#28B8A8` | outward release pulse |
+| learn | lavender `#9B7EFF` | beam toward MemPalace arc |
+
+Repair is special: when verification fails, the verify band bends into a
+repair arc and physically pulls the atom backward along the timeline before it
+returns to build or verify. Guru escalation appears inside this repair arc.
+
+### Loop Lane
+
+The replay timeline includes a compact SDLC lane. Each bucket shows the
+dominant stage color. Reopened atoms get a small amber notch. Repair cycles get
+count pips, capped at 3 pips with `3+` in the FocusPanel.
+
+---
+
 ## Cost And Budget Layer
 
 Cost is visible but secondary. It must inform the operator without turning the
@@ -201,15 +248,16 @@ Atoms with recorded usage render a thin ring around their base.
 
 ### Cost HUD
 
-The top HUD shows:
+The top HUD shows a single line on iPhone portrait (44pt bar):
 
-- run cost,
-- budget remaining,
-- current phase cost,
-- unknown-cost count when nonzero.
+  $0.42  |  $9.58 left  |  phase: $0.11  [!2]  [>]
 
-Values fit in one line on iPhone portrait. Detailed tables live in a bottom
-sheet, not inside the Three.js scene.
+Fields in order: run cost, budget remaining (omit if no budget), current phase
+cost (omit if no phase budget), unknown-cost count badge [!N] when N > 0, and
+a tap target for the economics sheet. No provider or model name in the top bar.
+
+Detailed tables live in the economics bottom sheet, not in the HUD. See
+cost-tracking.md and ux-interaction-model.md section 8 for sheet layout.
 
 ### Replay Cost Density
 
@@ -245,6 +293,9 @@ Events from the SSE stream manifest as **travelling particles** in the scene.
 | `run_error` | `#CC3333` red | Full-map shake + red flash |
 | `memory_refresh` | `#9B7EFF` lavender | Arc-to-atom beam |
 | `checkpoint` | `#FFD966` gold | Upward burst from atom |
+| `loop_entered` | stage color | Ignites atom loop band |
+| `loop_repaired` | amber | Reverse arc into repair band |
+| `loop_completed` | stage color | Band closes and fades to history |
 
 ### Particle System Implementation
 - Use `THREE.Points` with a custom `ShaderMaterial` for performance
@@ -301,6 +352,8 @@ The FocusPanel is a DOM overlay (not Three.js) that slides in from the bottom (p
 ||||||||||||||||||||||
 | $0.04 provider_rep |  <- atom cost + source badge (omit if zero)
 ||||||||||||||||||||||
+| loop: verify -> repair x2 | <- lifecycle state
+||||||||||||||||||||||
 | [View Logs] [JSON] |  <- action buttons
 ||||||||||||||||||||||
 ```
@@ -317,3 +370,22 @@ For gates, the approve/reject/escalate buttons replace the bottom actions and ar
 4. **MemPalace arc must always be visible.** Never occlude it with atom layout.
 5. **Particle alpha fades over lifetime.** Start at 0.9, end at 0.0. Never abrupt pop.
 6. **Text on canvas is always high-contrast.** Atom labels: `#E8EAF0` on dark background. Never text on active-blue without testing contrast ratio >= 4.5:1.
+
+## Contrast Ratio Table (WCAG AA minimum 4.5:1)
+
+These are the safety-critical text-on-background pairs. All must pass before
+shipping Phase 3. Verify with a tool such as the Colour Contrast Analyser.
+
+| Text color    | Background         | Pair name                    | Min required |
+|---------------|--------------------|------------------------------|-------------|
+| `#E8EAF0`     | `#1E2235` (idle)   | atom label on idle           | 4.5:1       |
+| `#E8EAF0`     | `#2E4AFF` (active) | atom label on active-blue    | 4.5:1       |
+| `#E8EAF0`     | `#1A8C5A` (done)   | atom label on done-green     | 4.5:1       |
+| `#E8EAF0`     | `#CC3333` (error)  | atom label on error-red      | 4.5:1       |
+| `#E8EAF0`     | `#E09B2A` (waiting)| atom label on gate-amber     | 4.5:1       |
+| `#E8EAF0`     | `#0D0F14` (bg)     | FocusPanel body text on bg   | 7:1         |
+| `#7A7E92`     | `#0D0F14` (bg)     | secondary text on bg         | 4.5:1       |
+| `#E8EAF0`     | `#2A3A2E` (artifact)| artifact label on card      | 4.5:1       |
+
+If `#E8EAF0` on `#2E4AFF` fails 4.5:1 (active-blue is borderline), use white
+`#FFFFFF` for the label text only on active atoms. Do not change the atom fill.

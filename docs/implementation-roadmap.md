@@ -54,7 +54,7 @@ web/frontend/src/game/
 
 **File to create:** `web/frontend/src/game/types.ts`
 
-**Content:** The full TypeScript type definitions from the "API surface emitted by EventEngine" section of `docs/threejs-integration-plan.md`. Include: `AtomState`, `AtomStatus`, `RunEvent`, `EngineSnapshot`, `MemPalaceStatus`, `WorkflowStep`.
+**Content:** The full TypeScript type definitions from the "API surface emitted by EventEngine" section of `docs/threejs-integration-plan.md`. Include: `AtomState`, `AtomStatus`, `RunEvent` (with `event_id: string` and `schema_version: number` as required fields), `EngineSnapshot`, `MemPalaceStatus`, `WorkflowStep`, `CostSource`, `CostConfidence`, `CostBucket`, `CostSnapshot` (with `phaseBudgetUsd`, `remainingPhaseBudgetUsd`, `runHalted`, `burnRateUsdPerHour`).
 
 **Done:** All game/ files can `import { AtomState } from '../types'` without error.
 
@@ -86,7 +86,7 @@ web/frontend/src/game/
 3. Wrap in `<div aria-live="polite" aria-relevant="text">`.
 4. Style with `.sr-only` CSS class (clip-path hidden, position absolute).
 
-**Done:** Mounting `AccessibilityTree` and emitting a fixture snapshot produces the correct ARIA list in the DOM.
+**Done:** Mounting `AccessibilityTree` and emitting a fixture snapshot produces the correct ARIA list in the DOM. Additionally: using VoiceOver (macOS) or TalkBack (Android emulator), a screen reader user can navigate to a gate atom and read its question text without touching the canvas. This test must pass before Phase 2 begins.
 
 ---
 
@@ -108,11 +108,34 @@ web/frontend/src/game/EventEngine.ts
 
 ---
 
+### Task 0.7 - Define SDLC loop snapshot types
+
+**Files to modify:**
+```
+web/frontend/src/game/types.ts
+web/frontend/src/game/EventEngine.ts
+```
+
+**Actions:**
+1. Add `LoopStage`, `AtomLoopStatus`, and `LoopSnapshot` from
+   `docs/threejs-integration-plan.md`.
+2. Add `loops: LoopSnapshot` to `EngineSnapshot`.
+3. Add an `emptyLoopSnapshot()` helper.
+4. Do not render loops yet.
+
+**Done:** EventEngine emits snapshots with a zeroed `loops` object. Existing
+Progress behavior is unchanged.
+
+---
+
 ## Phase 1 - Basic Three.js Scene
 
 **Goal:** Render the workflow graph as a static 3D scene with no animation or live data. Camera navigation works on mobile.
 
-**Done condition:** Running the app shows the Three.js canvas with atom nodes laid out in workflow order, camera pan/zoom works via touch, no console errors.
+**Done condition:** Running the app shows the Three.js canvas with atom nodes laid out in workflow order, camera pan/zoom works via touch, no console errors. Additionally all three of the following performance gates must pass:
+- First Contentful Paint < 2s on a simulated mid-range Android device (Chrome DevTools: 4x CPU slowdown, Fast 3G). Measure with Lighthouse or `performance.now()` from script load to first canvas render.
+- Sustained 60fps during pan and pinch on an iPhone 12 or equivalent (Chrome DevTools touch simulation at 2x CPU throttle is the minimum bar; real device test before Phase 2).
+- WebGL context must initialize without error on iOS Safari 17 (test via BrowserStack or real device). The fallback AccessibilityTree must render correctly when WebGL is disabled in Safari's experimental settings.
 
 ---
 
@@ -192,7 +215,13 @@ web/frontend/src/game/EventEngine.ts
 
 **Goal:** EventEngine drives SceneManager. Atom states update in real-time from SSE stream. Replay timeline is functional.
 
-**Done condition:** Opening a live run shows atom states changing as the run progresses. History loads and shows correct states on page open.
+**Done condition:** Opening a live run shows atom states changing as the run progresses. History loads and shows correct states on page open. Additionally all of the following boundary tests must pass as unit tests in EventEngine:
+- Scrub to index 0: all atoms in `idle` state, CostSnapshot.effectiveUsd === 0, unknownCostCount === 0.
+- Scrub to final index on a completed run: all atoms in `done` or `error` or `skipped` state.
+- Scrub to final index on an error run: at least one atom in `error` state.
+- Economics sheet opened at scrub index 0 shows $0.00 total and no line items.
+- Economics sheet opened at scrub index N shows totals that sum to CostSnapshot.effectiveUsd at that index.
+These tests run against fixture event sequences; no running backend is required.
 
 ---
 
@@ -309,6 +338,47 @@ the selected point in time.
 
 ---
 
+### Task 2.8 - Fold SDLC loop events
+
+**File:** `web/frontend/src/game/EventEngine.ts`
+
+**Actions:**
+1. Handle `loop_entered`, `loop_progressed`, `loop_blocked`,
+   `loop_repaired`, `loop_completed`, and `loop_reopened`.
+2. Fold loop events into `LoopSnapshot` using recorded event payloads only.
+3. Recompute loop state from scratch during `scrubTo(index)`.
+4. Add fixture tests for build -> verify -> repair -> verify -> review.
+5. Add fixture tests for MemPalace sync appearing as the learn loop.
+
+**Done:** Live snapshots and replay snapshots produce identical loop state for
+the same event prefix.
+
+---
+
+### Task 2.9 - llama.cpp telemetry adapter contract
+
+**Files to modify:**
+```
+orchestrator/lib/providers/*.py
+web/frontend/src/game/types.ts
+web/frontend/src/game/EventEngine.ts
+```
+
+**Actions:**
+1. Normalize llama.cpp OpenAI-compatible `usage` fields when present.
+2. Normalize llama.cpp `timings` fields when present.
+3. Preserve `runtime.llamacpp` for focus panel and local inference health UI.
+4. Treat `/metrics` and `/slots` as supplemental only; do not require them for
+   correctness.
+5. Emit `usage_recorded` with `cost.extraction_path` set to one of the
+   llama.cpp extraction paths from `docs/cost-tracking.md`.
+
+**Done:** A fixture llama.cpp response with `timings` produces input tokens,
+output tokens, cache tokens, context tokens, throughput, and local estimated
+cost without calling a live llama.cpp server.
+
+---
+
 ## Phase 3 - Particle System and Animation
 
 **Goal:** Events produce visible particles. State transitions animate. The scene feels alive.
@@ -412,6 +482,29 @@ replay scrubbing.
 
 ---
 
+### Task 3.7 - LoopLayer visual bands
+
+**Files to create or modify:**
+```
+web/frontend/src/game/loops/LoopLayer.ts
+web/frontend/src/game/loops/AtomLoopBand.ts
+web/frontend/src/game/loops/RepairArc.ts
+web/frontend/src/game/SceneManager.ts
+web/frontend/src/game/hud/ReplayTimeline.ts
+```
+
+**Actions:**
+1. Render active SDLC loop bands around atoms from `LoopSnapshot.byAtom`.
+2. Render verify -> repair -> verify cycles as a reverse repair arc.
+3. Connect learn loop events to the MemPalace arc.
+4. Add a compact loop lane to ReplayTimeline.
+5. Cap visible loop bands per atom to preserve iPhone readability.
+
+**Done:** A fixture run physically shows build, verify, repair, review, ship,
+and learn transitions during replay scrubbing.
+
+---
+
 ## Phase 4 - Polish and Native Feel
 
 **Goal:** Performance targets met, offline works, transitions feel iOS-native.
@@ -485,21 +578,58 @@ what was unknown at the selected point in time.
 
 ---
 
+### Task 4.7 - SDLC loop replay export and filters
+
+**Files to modify:**
+```
+web/frontend/src/game/EventEngine.ts
+web/frontend/src/game/hud/ReplayTimeline.ts
+web/frontend/src/game/hud/FocusPanel.ts
+```
+
+**Actions:**
+1. Add replay filters for discover, plan, build, verify, repair, review, ship,
+   and learn.
+2. Add loop state to replay export bundles.
+3. Show repair count and reopened count in FocusPanel.
+4. Verify loop export matches `LoopSnapshot` at the selected replay index.
+
+**Done:** A replay bundle can prove which lifecycle stage every atom occupied
+at the selected point in time.
+
+---
+
 ## Dependency Graph (Phases)
 
+Phase 0 must complete fully before Phase 1 starts. Within Phase 0, tasks are
+sequential. Within later phases, some tasks can be parallelized (see notes).
+
 ```
-0.1 -> 0.2 -> 0.3 -> 0.4 -> 0.5 -> 0.6
-                    v
-              1.1 -> 1.2 -> 1.3 -> 1.4 -> 1.5
+Phase 0 (all sequential):
+  0.1 -> 0.2 -> 0.3 -> 0.4 -> 0.5 -> 0.6 -> 0.7
+                                          |
+                                          v
+Phase 1 (0.6 must be done; within phase: 1.2 requires 1.3 importable first):
+  1.1 -> 1.2 -> 1.3 -> 1.4 -> 1.5
+                                  |
+                                  v
+Phase 2 (1.5 must be done; 2.4 focus panel integration depends on 2.5 raycaster):
+  2.1 -> 2.2 -> 2.3 -> 2.5 -> 2.4 -> 2.6 -> 2.7 -> 2.8 -> 2.9
+                                              |
+                                              v
+Phase 3 (2.9 must be done):
+  3.1 -> 3.2 -> 3.3 -> 3.4 -> 3.5 -> 3.6 -> 3.7
+                                        |
                                         v
-                              2.1 -> 2.2 -> 2.3 -> 2.4 -> 2.5 -> 2.6 -> 2.7
-                                                        v
-                                              3.1 -> 3.2 -> 3.3 -> 3.4 -> 3.5 -> 3.6
-                                                                        v
-                                                              4.1 -> 4.2 -> 4.3 -> 4.4 -> 4.5 -> 4.6
+Phase 4 (3.7 must be done):
+  4.1 -> 4.2 -> 4.3 -> 4.4 -> 4.5 -> 4.6 -> 4.7
 ```
 
-Tasks within the same phase can be parallelized except where noted (1.2 depends on 1.3 mesh being importable; 2.4 depends on 2.5 raycaster).
+Notes:
+- 1.3 (AtomNode mesh) must exist before 1.2 (SceneManager) can import it.
+- 2.5 (raycaster) must exist before 2.4 (FocusPanel) can use it.
+- 0.6 (cost snapshot types) and 0.7 (loop snapshot types) can be done after
+  0.4 (EventEngine) and do not need visual work.
 
 ---
 

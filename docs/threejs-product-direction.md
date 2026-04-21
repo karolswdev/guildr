@@ -6,9 +6,10 @@ Guildr is not an admin console for agents. It is a strategy game about making
 software with agents, memory, events, and human intervention.
 
 The user is the operator. The project is the battlefield. Workflow steps are
-atoms. Agents are specialists. MemPalace is the memory spine. The event stream
-is time. Cost is the run economy. Replay is how the operator learns from a run
-and proves what happened.
+atoms. SDLC loops are orbiting lifecycle bands around those atoms. Agents are
+specialists. MemPalace is the memory spine. The event stream is time. Cost is
+the run economy. Replay is how the operator learns from a run and proves what
+happened.
 
 This direction is not decorative. It is the product architecture.
 
@@ -28,7 +29,8 @@ This direction is not decorative. It is the product architecture.
 4. Replay must be first-class.
    A past run should be scrubbed like a timeline in a tactics game. The user
    must be able to see atoms activate, gates open, memory sync, agents fail,
-   escalations happen, costs accumulate, and artifacts crystallize.
+   escalations happen, costs accumulate, SDLC loops advance, and artifacts
+   crystallize.
 
 5. The phone is the reference device.
    Desktop can be richer, but iOS portrait must feel native: safe areas,
@@ -70,6 +72,8 @@ The scene should be built from five core object types:
 - Artifacts: PRD, sprint plan, phase files, test report, review, deploy notes.
 - Cost markers: spend rings, budget gates, source confidence, and burn-rate
   traces.
+- SDLC loop bands: discover, plan, build, verify, repair, review, ship, and
+  learn cycles orbiting or connecting atoms.
 - Event pulses: live or replayed state transitions moving through the graph.
 
 The graph should not look like a generic flowchart. It should look like an
@@ -87,9 +91,10 @@ Required flow:
 3. Build idle atom map.
 4. Replay events from index zero to target index.
 5. Fold usage and budget events into the cost snapshot.
-6. Emit snapshot.
-7. Scene renders snapshot.
-8. DOM overlays render selected detail.
+6. Fold loop events into the SDLC loop snapshot.
+7. Emit snapshot.
+8. Scene renders snapshot.
+9. DOM overlays render selected detail.
 
 This makes replay deterministic, testable, and compatible with low-context
 debugging.
@@ -125,10 +130,11 @@ Order:
 3. Add a Three.js canvas shell with static workflow atoms.
 4. Bind atom states to event snapshots.
 5. Add cost snapshots and budget HUD.
-6. Add replay scrubber.
-7. Add memory arc.
-8. Add artifact crystals.
-9. Replace default Progress route with game shell when stable.
+6. Add SDLC loop lanes and atom orbit bands.
+7. Add replay scrubber.
+8. Add memory arc.
+9. Add artifact crystals.
+10. Replace default Progress route with game shell when stable.
 
 This gives the council-facing experience without sacrificing the current
 operator controls.
@@ -149,6 +155,8 @@ operator controls.
 - Replay must be deterministic from event history and testable as a pure FSM.
 - Cost must be event-sourced so replay shows spend, tokens, source, and budget
   state exactly as the operator saw it.
+- SDLC loop state must be event-sourced so the operator can physically watch
+  build, verify, repair, review, ship, and learn cycles move through atoms.
 - The iPhone experience is the baseline, not a later polish pass.
 
 ## Acceptance Test For The Direction
@@ -160,6 +168,7 @@ If a user opens a project on an iPhone, they should immediately understand:
 - where memory is coming from,
 - what has already happened,
 - what failed or is waiting,
+- which SDLC loop each atom is in,
 - what the current run has spent,
 - what they can touch,
 - how to replay the run,

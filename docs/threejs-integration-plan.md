@@ -17,6 +17,7 @@ The backend is unchanged. This document specifies only the frontend integration.
 ```typescript
 // EventEngine.ts
 export type AtomState = 'idle' | 'active' | 'done' | 'error' | 'waiting' | 'skipped'
+export type LoopStage = 'discover' | 'plan' | 'build' | 'verify' | 'repair' | 'review' | 'ship' | 'learn'
 
 export interface AtomStatus {
   id: string
@@ -28,6 +29,8 @@ export interface AtomStatus {
 }
 
 export interface RunEvent {
+  event_id: string              // ULID - stable unique id, used for dedup
+  schema_version: number        // integer; currently 1
   type: string
   ts: string                    // ISO8601
   [key: string]: unknown
@@ -42,6 +45,7 @@ export interface EngineSnapshot {
   isLive: boolean
   memPalaceStatus: MemPalaceStatus | null
   cost: CostSnapshot
+  loops: LoopSnapshot
 }
 
 export interface MemPalaceStatus {
@@ -70,6 +74,10 @@ export interface CostSnapshot extends CostBucket {
   currency: 'USD'
   runBudgetUsd: number | null
   remainingRunBudgetUsd: number | null
+  phaseBudgetUsd: number | null        // active phase cap; null if not set
+  remainingPhaseBudgetUsd: number | null
+  runHalted: boolean                   // true after budget_gate_decided rejected
+  burnRateUsdPerHour: number | null    // null until enough recent events exist
   byProvider: Record<string, CostBucket>
   byModel: Record<string, CostBucket>
   byRole: Record<string, CostBucket>
@@ -78,6 +86,38 @@ export interface CostSnapshot extends CostBucket {
   sources: Record<CostSource, number>
   confidences: Record<CostConfidence, number>
   lastUsageEvent: RunEvent | null
+}
+
+export interface LlamaCppTelemetry {
+  cacheTokens: number | null
+  promptTokensProcessed: number | null
+  predictedTokens: number | null
+  promptMs: number | null
+  predictedMs: number | null
+  promptPerSecond: number | null
+  predictedPerSecond: number | null
+  contextTokens: number | null
+  metricsEnabled: boolean | null
+}
+
+export interface AtomLoopStatus {
+  atomId: string
+  currentStage: LoopStage | null
+  previousStage: LoopStage | null
+  nextExpectedStage: LoopStage | null
+  repairCount: number
+  reopenedCount: number
+  artifactRefs: string[]
+  evidenceRefs: string[]
+  memoryRefs: string[]
+  lastEvent: RunEvent | null
+}
+
+export interface LoopSnapshot {
+  byAtom: Record<string, AtomLoopStatus>
+  activeStageCounts: Record<LoopStage, number>
+  selectedStageFilter: LoopStage | null
+  lastLoopEvent: RunEvent | null
 }
 
 // EventEngine is an EventEmitter
@@ -96,6 +136,7 @@ class EventEngine extends EventEmitter {
   private _history: RunEvent[] = []
   private _atoms: Record<string, AtomStatus> = {}
   private _cost: CostSnapshot = emptyCostSnapshot()
+  private _loops: LoopSnapshot = emptyLoopSnapshot()
   private _scrubIndex = -1            // -1 = live tail
 
   async init(projectId: string, workflow: WorkflowStep[]) {
@@ -123,6 +164,12 @@ class EventEngine extends EventEmitter {
       case 'budget_exceeded':
       case 'budget_gate_opened':
       case 'budget_gate_decided': this._applyBudgetEvent(e); break
+      case 'loop_entered':
+      case 'loop_progressed':
+      case 'loop_blocked':
+      case 'loop_repaired':
+      case 'loop_completed':
+      case 'loop_reopened': this._applyLoopEvent(e); break
     }
   }
 
@@ -130,6 +177,7 @@ class EventEngine extends EventEmitter {
     // Recompute atom and cost states by replaying _history[0..index]
     this._atoms = this._buildIdleAtoms()
     this._cost = emptyCostSnapshot()
+    this._loops = emptyLoopSnapshot()
     for (let i = 0; i <= index; i++) this.applyEvent(this._history[i])
     this._scrubIndex = index
     this.emit('scrub', index, this.snapshot())
@@ -149,13 +197,20 @@ only. EventEngine must not call a pricing API during replay.
 
 Rules:
 
-- `cost.effective_cost` increments `effectiveUsd`.
-- `cost.provider_reported_cost` increments `providerReportedUsd`.
-- `cost.estimated_cost` increments `estimatedUsd`.
-- Missing cost increments `unknownCostCount`.
+- When `cost.effective_cost` is non-null: increment `effectiveUsd` by it.
+- When `cost.effective_cost` is null but `cost.provider_reported_cost` is
+  non-null: use `provider_reported_cost` as the effective cost and increment
+  `effectiveUsd` by it.
+- When both are null: increment `unknownCostCount` only. Add nothing to
+  `effectiveUsd` or `providerReportedUsd`. This rule must be applied
+  identically in live mode and replay mode.
+- `cost.provider_reported_cost` increments `providerReportedUsd` when non-null.
+- `cost.estimated_cost` increments `estimatedUsd` when non-null.
 - Token fields increment both top-level totals and grouped buckets.
 - Group keys are provider name, model, role, and atom id.
-- Budget fields update `remainingRunBudgetUsd` when present.
+- `budget.remaining_run_budget_usd` updates `remainingRunBudgetUsd` when
+  present and non-null. `budget.remaining_phase_budget_usd` updates
+  `remainingPhaseBudgetUsd` when present and non-null.
 - Source counters increment from `cost.source`.
 
 The same fold runs for live mode and replay mode, so the HUD and timeline never
@@ -168,17 +223,56 @@ diverge.
 - `budget_exceeded`: set an exceeded flag. No cost totals change.
 - `budget_gate_opened`: record gate id and level. No cost totals change.
 - `budget_gate_decided`:
-  - If `event.new_run_budget_usd` is present: update `runBudgetUsd`.
+  - If `event.new_run_budget_usd` is non-null: update `runBudgetUsd`.
+  - If `event.new_phase_budget_usd` is non-null: update `phaseBudgetUsd`.
   - Always set `remainingRunBudgetUsd` from
     `event.budget_at_decision.remaining_run_budget_usd`. Do not recompute
     remaining budget from the running total; use the recorded value.
-  - If `event.decision === 'rejected'`: set a `runHalted` flag on the
+  - Always set `remainingPhaseBudgetUsd` from
+    `event.budget_at_decision.remaining_phase_budget_usd` (may be null).
+  - If `event.decision === 'rejected'`: set `runHalted = true` on the
     snapshot. Continue folding subsequent events for display but surface the
-    halted state in the HUD.
+    halted state in the HUD. Do not throw or stop the fold loop.
 
 `_applyUsage` must also increment `byPhase[event.step]` in addition to
 `byAtom`, `byRole`, `byModel`, and `byProvider`. The `event.step` field is
 used as the phase key because it maps 1:1 to workflow step ids.
+
+### llama.cpp telemetry rules
+
+When `provider_kind === 'llamacpp'` or `provider_name === 'llama.cpp'`,
+`_applyUsage` must preserve `runtime.llamacpp` fields for the focus panel and
+local inference health views.
+
+Mapping rules:
+
+- `usage.input_tokens` comes from OpenAI-compatible `usage.prompt_tokens` when
+  present; otherwise from llama.cpp `timings.prompt_n`.
+- `usage.output_tokens` comes from OpenAI-compatible
+  `usage.completion_tokens` when present; otherwise from
+  `timings.predicted_n`.
+- `usage.cache_read_tokens` comes from `timings.cache_n` when present.
+- Local context usage is `prompt_n + cache_n + predicted_n` when timings are
+  available.
+- `/metrics` and `/slots` are supplemental only. If disabled, the adapter must
+  still emit `usage_recorded` from response usage or timings when possible.
+
+### Loop folding rules
+
+Loop events are folded into `LoopSnapshot` using recorded values only.
+
+Rules:
+
+- `loop_entered` sets `currentStage` and stores `previousStage`.
+- `loop_progressed` advances `currentStage` and updates artifact, evidence,
+  and memory refs.
+- `loop_blocked` keeps `currentStage` but marks the atom blocked through its
+  associated atom event.
+- `loop_repaired` increments `repairCount` and sets `currentStage = 'repair'`.
+- `loop_completed` clears `currentStage` unless a `next_loop_stage` is present.
+- `loop_reopened` increments `reopenedCount` and sets `currentStage` to the
+  recorded loop stage.
+- `activeStageCounts` is recomputed after each fold from `byAtom`.
 
 ### Migration from Progress.ts
 
@@ -311,13 +405,32 @@ if (!gl) {
 
 ## SSE Edge Cases
 
-**Race condition on page load:** EventEngine fetches history before opening SSE. The backend's `SimpleEventBus` pre-seeds subscribers with the last 256 events on connect, so no events are dropped in the gap. EventEngine deduplicates by timestamp on SSE connect.
+**Race condition on page load:** EventEngine fetches history (last 500 events)
+before opening SSE. The backend's `SimpleEventBus` pre-seeds subscribers with
+the last 256 events on connect. WARNING: if the history fetch completes and
+SSE connects while events 257-500 are still in flight, events in that range
+are covered by the history fetch only. Dedup must use `event_id`, not
+timestamp: two events can share a millisecond timestamp (e.g. parallel advisor
+calls) and timestamp-based dedup will silently drop the second one. On SSE
+connect, EventEngine builds a `Set<string>` of `event_id` values from the
+loaded history and skips any incoming SSE event whose `event_id` is already
+present.
 
-**Reconnect:** `EventSource` auto-reconnects. On reconnect, EventEngine re-fetches history (last 500 events), diffs against current `_history` array, and appends only new events. Atom states are re-derived from the full history to avoid drift.
+**Reconnect:** `EventSource` auto-reconnects. On reconnect, EventEngine
+re-fetches history (last 500 events), diffs against current `_history` array
+by `event_id`, and appends only new events. Atom states are re-derived from
+the full history to avoid drift.
 
-**Scrub then reconnect:** If user is in scrub mode when SSE reconnects, EventEngine buffers new events silently. Resuming live (`resumeLive()`) catches up by replaying buffered events at 10x speed.
+**Scrub then reconnect:** If user is in scrub mode when SSE reconnects,
+EventEngine buffers new live events silently up to a cap of 2000 events.
+If the buffer reaches 2000 before the user resumes live, the oldest buffered
+events are dropped and a warning is shown in the HUD. Resuming live
+(`resumeLive()`) replays buffered events at 10x speed before switching to
+real-time.
 
-**Large histories (> 5000 events):** EventEngine loads only the last 500 events for state derivation. For replay beyond that, it fetches additional pages lazily on `scrubTo(index < loaded_start)`.
+**Large histories (> 5000 events):** EventEngine loads only the last 500
+events for state derivation. For replay beyond that, it fetches additional
+pages lazily on `scrubTo(index < loaded_start)`.
 
 ---
 

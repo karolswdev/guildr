@@ -10,7 +10,7 @@ The current `web/frontend/src/views/Progress.ts` remains the reference data mode
 
 ## Mental Model: The Orchestration Map
 
-Every run is a **directed graph of atoms** executing through time. The player (operator) views this graph from above - a top-down strategy map - and can zoom into any atom to inspect its state, memory access, inputs, and outputs. Time is the third axis: scrubbing the replay timeline moves atoms backward and forward through their states.
+Every run is a **directed graph of atoms** executing through time. The player (operator) views this graph from above - a top-down strategy map - and can zoom into any atom to inspect its state, memory access, SDLC loop, inputs, and outputs. Time is the third axis: scrubbing the replay timeline moves atoms backward and forward through their states.
 
 ```
 World Space (Three.js Scene)
@@ -21,6 +21,7 @@ World Space (Three.js Scene)
 |   ||| MemPalaceOverlay      <- floating memory wing above the map
 |   ||| ArtifactLayer         <- outputs anchored to producing atoms
 |   ||| CostLayer             <- spend rings, budget gates, burn-rate traces
+|   ||| LoopLayer             <- SDLC loop bands and repair cycles
 ||| ReplayTimeline            <- bottom HUD bar
 ||| FocusPanel                <- right side-drawer (atom detail)
 ||| CommandBar                <- top input area (inject instruction)
@@ -44,7 +45,7 @@ World Space (Three.js Scene)
 |                  |   HUD * Panels * Dialogs  |
 |||||||||||||||||||||||||||||||||||||||||||||||
 |           EventEngine (EventEngine.ts)       |
-|  SSE consumer * history loader * atom/cost FSM |
+|  SSE consumer * history loader * atom/cost/loop FSM |
 |||||||||||||||||||||||||||||||||||||||||||||||
 |           Backend API (unchanged)            |
 |  /stream * /events * /control * /memory     |
@@ -57,7 +58,7 @@ World Space (Three.js Scene)
 
 **SceneManager.ts** - owns the `THREE.Scene`, `THREE.Camera`, animation loop (`requestAnimationFrame`), and the set of renderable objects. Translates abstract state changes (atom activated, gate opened) into scene mutations.
 
-**EventEngine.ts** - single source of truth for run state. Connects to `/api/projects/{id}/stream` via EventSource. On load, fetches `/api/projects/{id}/events?limit=500` to prime history. Drives an `AtomStateMap` (keyed by step id -> FSM state) and `CostSnapshot` (folded from usage and budget events). The Three.js scene reads from this map; it never calls the API itself.
+**EventEngine.ts** - single source of truth for run state. Connects to `/api/projects/{id}/stream` via EventSource. On load, fetches `/api/projects/{id}/events?limit=500` to prime history. Drives an `AtomStateMap` (keyed by step id -> FSM state), `CostSnapshot` (folded from usage and budget events), and `LoopSnapshot` (folded from SDLC loop events). The Three.js scene reads from this map; it never calls the API itself.
 
 **HUDLayer (DOM overlay)** - thin HTML elements absolutely positioned over the canvas for text-heavy content: event detail pane, instruction input, memory search, and economics panels. Styled with CSS variables that mirror the Three.js color grammar. These elements are `pointer-events: none` by default; only active panels capture input.
 
@@ -88,6 +89,10 @@ Scene
 |   ||| AtomCostRing[N]     (thin rings around atoms that spent budget)
 |   ||| BudgetGate[N]       (warning/approval markers)
 |   ||| BurnRateTrace       (optional replay timeline overlay source)
+||| LoopGroup
+|   ||| AtomLoopBand[N]     (orbit bands for active lifecycle stages)
+|   ||| RepairArc[N]        (verify -> repair -> verify cycles)
+|   ||| LoopLaneTrace       (replay timeline loop lane source)
 ||| ParticleSystem          (event pulses travelling along edges)
 ||| PostProcessing
     ||| BloomPass           (active atoms glow)
@@ -164,6 +169,35 @@ Replay behavior:
 
 ---
 
+## SDLC Loop Integration
+
+SDLC loops are rendered from event history. `EventEngine` folds `loop_entered`,
+`loop_progressed`, `loop_blocked`, `loop_repaired`, `loop_completed`, and
+`loop_reopened` events into a `LoopSnapshot`.
+
+Scene responsibilities:
+
+- `LoopLayer` renders lifecycle bands around atoms.
+- Active loop bands animate; inactive loop bands remain thin and quiet.
+- Failed verify loops physically route into repair arcs.
+- Guru escalation appears inside repair, not as an unrelated node.
+- MemPalace sync appears as the learn loop and connects to the memory arc.
+
+DOM overlay responsibilities:
+
+- The focus panel shows current loop, next expected loop, evidence required,
+  artifact emitted, repair count, and reopened state.
+- The replay timeline has a loop lane that can filter to build, verify, repair,
+  review, ship, or learn.
+
+Replay behavior:
+
+- Scrubbing to event index `N` recomputes loop state by folding events `0..N`.
+- Loop animation must be deterministic from event order and `event_id`.
+- Loop state must remain readable on iPhone portrait with cost rings enabled.
+
+---
+
 ## Fallback
 
 If `WebGL` is unavailable or the user opts out, `GameShell.ts` renders the `AccessibilityTree` as a styled HTML list - functionally equivalent to the current tab-based Progress view. No logic is duplicated; both views consume `EventEngine`.
@@ -188,6 +222,10 @@ web/frontend/src/
 |   ||| cost/
 |   |   ||| CostLayer.ts
 |   |   ||| CostRing.ts
+|   ||| loops/
+|   |   ||| LoopLayer.ts
+|   |   ||| AtomLoopBand.ts
+|   |   ||| RepairArc.ts
 |   ||| hud/
 |   |   ||| ReplayTimeline.ts
 |   |   ||| FocusPanel.ts

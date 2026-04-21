@@ -41,6 +41,8 @@ and direct manipulation of workflow atoms.
   updates and replay.
 - Cost ledger: Replayable usage and economics state emitted into the event
   ledger for every model, advisor, retry, and escalation call.
+- SDLC loop: A visible lifecycle cycle around an atom, such as discover, plan,
+  build, verify, repair, review, ship, or learn.
 - Guru advisor: A stronger or external model/tool invoked for a bounded
   unblock plan, such as Codex CLI, Claude CLI, or an OpenAI-compatible model
   through OpenRouter.
@@ -102,7 +104,9 @@ and direct manipulation of workflow atoms.
 - Guru escalation through CLI and OpenAI-compatible providers.
 - Durable event ledger and live SSE streaming.
 - Replayable cost and token tracking.
+- Replayable SDLC loop tracking and visualization.
 - Replay viewer foundation.
+- Structured design review protocol for major architecture changes.
 - PWA control room for workflow, memory, logs, events, and intervention.
 - Compact context generation for models under or around 128k tokens.
 
@@ -300,20 +304,26 @@ The event ledger is the canonical run stream.
 Requirements:
 
 - All live SSE events must also be persisted to `.orchestrator/events.jsonl`.
-- Each event must contain:
-  - `ts`
-  - `type`
-  - step or phase identifier when applicable
-  - project id when applicable
-  - attempt when applicable
-  - decision when applicable
-  - error when applicable
-  - metadata payload when applicable
+- Each event must contain these required top-level fields on every record:
+  - `event_id`: ULID. Globally unique. Used for SSE deduplication and audit.
+  - `schema_version`: integer (currently 1). Required for forward-compatible
+    parsing. Readers must not silently misparse events at unknown versions.
+  - `ts`: ISO8601 timestamp. Not unique within a run; use `event_id` for dedup.
+  - `type`: event type string.
+  - `run_id`: the run identifier, required on all events emitted during a run.
+- Each event should additionally contain when applicable:
+  - step or phase identifier
+  - project id
+  - attempt number
+  - decision
+  - error
+  - metadata payload
 - The backend must expose event history through an API.
 - The PWA must load durable event history before or alongside SSE.
 - The PWA must support filtering by event type and step.
 - The PWA must support replay from durable history.
 - Model and advisor usage must be recorded through `usage_recorded` events.
+- SDLC stage changes must be recorded through loop events.
 
 Replay viewer requirements:
 
@@ -324,6 +334,7 @@ Replay viewer requirements:
 - Show artifact diffs if event references artifacts.
 - Show memory state before/after when available.
 - Show cost and token counters as of the selected replay point.
+- Show SDLC loop stage and repair cycles as of the selected replay point.
 - Export replay as a diagnostic bundle.
 
 Future replay requirements:
@@ -340,9 +351,13 @@ Requirements:
 
 - Every LLM, local model, advisor, retry, and escalation call must emit one
   `usage_recorded` event.
-- `usage_recorded` events must include provider kind, provider name, model,
-  call id, role, step, atom id, token usage, runtime, cost, source, confidence,
-  and budget state when known.
+- `usage_recorded` events must include `event_id`, `schema_version`, provider
+  kind, provider name, model, call id, role, step, atom id, attempt, token
+  usage, runtime, cost (including `extraction_path`), source, confidence, and
+  budget state. Budget state must include `remaining_run_budget_usd` and
+  `remaining_phase_budget_usd`. Omitting budget state is only acceptable when
+  no budget is configured for any level; the absence must still be explicit
+  (null fields, not missing fields).
 - Cost source must be explicit: `provider_reported`, `rate_card_estimate`,
   `local_estimate`, or `unknown`.
 - Provider-returned usage and cost metadata must be preserved when available.
@@ -369,9 +384,28 @@ Replay cost snapshots must expose:
 - Unknown-cost count.
 - Cost by provider, model, role, phase, and atom.
 - Token totals by input, output, cache, and reasoning.
-- Budget remaining at the selected replay point.
+- Run budget remaining and phase budget remaining at the selected replay point.
+- Run-halted flag (set when a budget gate was rejected).
+- Current burn rate estimate when enough recent events exist.
 
 The detailed design is governed by `docs/cost-tracking.md`.
+
+### 8.2 SDLC Loop Replay
+
+SDLC loop state is a first-class replay projection over the event ledger.
+
+Requirements:
+
+- Atoms must be able to expose lifecycle stage: discover, plan, build, verify,
+  repair, review, ship, or learn.
+- Loop state must be derived by folding events, not by inspecting mutable UI
+  graphics state.
+- Failed verification must visibly transition into repair.
+- Guru escalation must appear as a repair sub-loop.
+- MemPalace sync must appear as the learn loop.
+- Replay must support filtering by loop stage.
+
+The detailed design is governed by `docs/sdlc-loop-visualization.md`.
 
 ## 9. PWA Requirements
 
@@ -402,9 +436,11 @@ Mission Control must include:
 - Founding team editor.
 - Palace memory panel.
 - Event timeline.
+- SDLC loop timeline.
 - Event detail.
 - Terminal peek.
 - Durable log tabs.
+- Design review status for major changes.
 
 Interaction requirements:
 
@@ -422,12 +458,16 @@ Interaction requirements:
 - Load prior event history.
 - Inspect spend by provider, model, role, phase, and atom.
 - Pause or resume through budget gates.
+- Filter replay by SDLC loop stage.
 
 Game-like UX direction:
 
 - The workflow should eventually render as an interactive map of atoms.
 - Each atom should expose connections to memory, artifacts, gates, and other
   atoms.
+- Each atom should expose its SDLC loop stage as a physical orbit/band, so the
+  operator can see work moving through build, verify, repair, review, ship,
+  and learn.
 - Status should be spatial and animated enough to feel alive, but never at the
   cost of clarity.
 - Replay should feel like scrubbing a tactical timeline.
@@ -466,6 +506,7 @@ The system must support multiple model execution styles.
 Provider classes:
 
 - Local llama server.
+- llama.cpp server and CLI-compatible local profiles.
 - OpenAI-compatible HTTP API.
 - OpenRouter as OpenAI-compatible.
 - CLI advisors.
@@ -485,6 +526,7 @@ Provider config must include:
 - Retry limits.
 - Budget limits.
 - Cost profile or rate-card source.
+- Local telemetry extraction profile.
 
 The context budget must be explicit per phase. The default design target is
 128k tokens or below, with smaller packets preferred.
@@ -507,6 +549,9 @@ Provider configuration must be programmable:
 - Replay can show which provider produced which artifact.
 - The PWA can expose provider health, model, cost/risk hints, and context
   budget per atom.
+- The PWA can expose llama.cpp local telemetry: prompt tokens processed, cache
+  tokens reused, predicted tokens, prompt/generation timing, context usage, and
+  whether `/metrics` or `/slots` are available.
 - Replay can show token and cost totals exactly as they were recorded at the
   selected event index.
 
@@ -529,6 +574,7 @@ Project-local durable files:
 - `.orchestrator/costs/run-summary.json`
 - `.orchestrator/costs/provider-ledger.jsonl`
 - `.orchestrator/costs/rate-cards/*.json`
+- `.orchestrator/loops/*.json`
 - `.orchestrator/memory/wake-up.md`
 - `.orchestrator/memory/status.txt`
 - `.orchestrator/memory/last-search.txt`
@@ -612,6 +658,7 @@ Observability:
 - Event detail pane.
 - Artifact links.
 - Replayable cost snapshots.
+- Replayable SDLC loop snapshots.
 - Replay export bundle.
 
 ### Milestone 4: Provider And Guru Mesh
@@ -619,6 +666,7 @@ Observability:
 - OpenAI-compatible provider abstraction.
 - OpenRouter config UI.
 - Cost adapters for hosted, OpenAI-compatible, CLI, and local providers.
+- llama.cpp usage/timing extraction adapter.
 - Budget gates.
 - Provider health checks.
 - Advisor output contracts.
@@ -631,6 +679,7 @@ Observability:
 - Memory palace browser.
 - Agent council panel.
 - Replay theater.
+- SDLC loop lanes and atom orbit bands.
 - Direct manipulation for inserting and connecting atoms.
 
 ## 15. Acceptance Criteria
@@ -648,6 +697,8 @@ The Council Engine is on target when:
 - A successful run can be replayed from durable events.
 - Replay shows the cost, tokens, source, confidence, and budget state that were
   known at that replay point.
+- Replay shows which SDLC loop stage each atom occupied and how many repair
+  cycles it took.
 - The system can run locally without cloud dependencies, while still allowing
   configured OpenRouter or other OpenAI-compatible advisors.
 
@@ -686,7 +737,9 @@ Not yet implemented:
 - Hook engine and hook permissions.
 - OpenRouter provider UI.
 - Runtime cost event emission.
+- llama.cpp telemetry extraction.
 - Budget gates.
+- SDLC loop event emission.
 - Event-to-artifact cross-links.
 - Agent diary mining.
 - Replay branching.
@@ -702,6 +755,8 @@ The PWA direction is now governed by the following design documents:
 - `docs/threejs-integration-plan.md`
 - `docs/implementation-roadmap.md`
 - `docs/cost-tracking.md`
+- `docs/sdlc-loop-visualization.md`
+- `docs/design-review-protocol.md`
 
 These documents supersede the idea of the Progress view as a conventional
 admin console. The long-term default project run view is a Three.js strategy

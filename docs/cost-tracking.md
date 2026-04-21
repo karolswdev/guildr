@@ -60,8 +60,22 @@ across calls.
 
 Model and advisor calls emit a `usage_recorded` event.
 
+Required top-level fields on every event in the ledger:
+
+- `event_id`: a ULID (26-character Crockford base-32 string) generated at
+  emit time. Globally unique per event. Used for SSE deduplication and audit
+  linkage. Never reuse an event_id, even on retry of the same call.
+- `schema_version`: integer. Currently `1`. Increment when any field is added
+  or its semantics change. Readers must reject events with a version higher
+  than they understand rather than silently misparsing them.
+- `call_id`: a ULID generated per model or advisor invocation. Each retry
+  attempt for the same logical call gets a new call_id. The display prefix
+  `llmcall-` is a human hint only and must not be parsed programmatically.
+
 ```json
 {
+  "event_id": "01HX9RQEM0000000000000001",
+  "schema_version": 1,
   "type": "usage_recorded",
   "ts": "2026-04-21T20:15:11.000Z",
   "project_id": "f7508af9776b",
@@ -69,7 +83,8 @@ Model and advisor calls emit a `usage_recorded` event.
   "step": "architect",
   "atom_id": "architect",
   "role": "architect",
-  "call_id": "llmcall-01HX",
+  "attempt": 1,
+  "call_id": "01HX9RQEM0000000000000002",
   "provider_kind": "openai_compatible",
   "provider_name": "openrouter",
   "model": "qwen/qwen3-coder",
@@ -87,6 +102,7 @@ Model and advisor calls emit a `usage_recorded` event.
     "effective_cost": 0.184,
     "source": "provider_reported",
     "confidence": "high",
+    "extraction_path": "response_usage",
     "rate_card_version": "openrouter-2026-04-21T20:00:00Z"
   },
   "runtime": {
@@ -98,10 +114,19 @@ Model and advisor calls emit a `usage_recorded` event.
   "budget": {
     "run_budget_usd": 10.0,
     "phase_budget_usd": 2.0,
-    "remaining_run_budget_usd": 7.816
+    "remaining_run_budget_usd": 7.816,
+    "remaining_phase_budget_usd": 1.632
   }
 }
 ```
+
+`effective_cost` folding rule: when `effective_cost` is non-null, use it as
+the authoritative spend figure and increment `effectiveUsd`. When
+`effective_cost` is null but `provider_reported_cost` is non-null, treat
+`provider_reported_cost` as the effective cost. When both are null, increment
+`unknownCostCount` only; add nothing to `effectiveUsd` or
+`providerReportedUsd`. This rule must be applied identically in live mode and
+replay mode so totals never diverge across views.
 
 Fields may be `null` when unavailable, but the field family must remain stable
 so replay and exports can read old runs without guessing.
@@ -125,6 +150,73 @@ OpenAI-compatible and OpenRouter-style adapters must preserve any provider
 returned usage or cost metadata. CLI adapters such as `claude` and `codex` must
 capture what the CLI reports and fall back to estimates only when the CLI does
 not expose exact usage.
+
+## llama.cpp Usage Extraction
+
+llama.cpp compatibility is a core local-provider requirement. The adapter must
+support both `llama-server` OpenAI-compatible endpoints and native llama.cpp
+completion endpoints.
+
+Extraction priority:
+
+1. OpenAI-compatible response `usage` fields when present. Map
+   `prompt_tokens` to `input_tokens`, `completion_tokens` to `output_tokens`,
+   and `total_tokens` to validation metadata.
+2. llama.cpp response `timings` object when present. Map:
+   - `prompt_n` to processed prompt tokens.
+   - `cache_n` to cache read tokens.
+   - `predicted_n` to output tokens.
+   - `prompt_ms` and `predicted_ms` to runtime timing detail.
+   - `prompt_per_second` and `predicted_per_second` to throughput detail.
+3. Streaming final usage or final timings payload when available.
+4. Server monitoring endpoints, such as `/metrics` or `/slots`, only as
+   supplemental live telemetry. These endpoints may be disabled and must not be
+   required for correctness.
+5. Log parsing of `llama_print_timings` only as a low-confidence fallback for
+   CLI-style local runs.
+
+llama.cpp extraction paths:
+
+- `llamacpp_openai_usage`
+- `llamacpp_timings`
+- `llamacpp_stream_final`
+- `llamacpp_metrics`
+- `llamacpp_log_parse`
+
+Cost source for llama.cpp calls is normally `local_estimate`. Confidence is:
+
+- `medium` when usage comes from response `usage` or `timings` fields and the
+  local machine cost profile is current.
+- `low` when usage comes from monitoring endpoints or log parsing.
+- `none` when no per-call token usage can be attributed.
+
+The adapter must preserve llama.cpp-specific telemetry in `runtime.llamacpp`:
+
+```json
+{
+  "runtime": {
+    "wall_ms": 138221,
+    "tokens_per_second": 44.4,
+    "gpu_seconds": null,
+    "estimated_energy_wh": null,
+    "llamacpp": {
+      "cache_tokens": 236,
+      "prompt_tokens_processed": 1,
+      "predicted_tokens": 35,
+      "prompt_ms": 30.958,
+      "predicted_ms": 661.064,
+      "prompt_per_second": 32.30,
+      "predicted_per_second": 52.94,
+      "context_tokens": 272,
+      "metrics_enabled": false
+    }
+  }
+}
+```
+
+For llama.cpp, context usage is visualized separately from spend. A long local
+call may be cheap in dollars but expensive in scarce context, cache churn, and
+wall-clock time. The PWA must show both economics and local inference health.
 
 ## Local Model Cost
 
@@ -155,9 +247,16 @@ effective_cost = compute_cost + energy_cost + gpu_cost
 ```
 
 When `estimated_energy_wh` or `gpu_seconds` are null, those terms are zero.
-This formula and the `machine_id` must be recorded in `cost.rate_card_version`
-so replay always uses the formula that was active at run time, not the current
-machine config.
+
+For local calls, `cost.rate_card_version` must use the format
+`"local-<machine_id>-<ISO8601-snapshot-ts>"` (e.g.,
+`"local-mac-studio-2026-04-21T20:00:00Z"`). The snapshot timestamp is the
+moment the local cost profile was last written or confirmed. This is distinct
+from a provider rate card: the file lives at
+`.orchestrator/costs/rate-cards/local-<machine_id>-<ts>.json` and must be
+written with the same write-once immutability rule as provider rate cards.
+Replay resolves local cost profiles using this version string, not the
+current machine config at replay time.
 
 The UI must label this as an estimate, not an invoice.
 
@@ -224,16 +323,26 @@ Field rules:
   budget change.
 - `new_phase_budget_usd`: same semantics for the current phase budget.
 - `budget_at_decision`: the effective budget state immediately after the
-  decision is applied. Replay must update `remainingRunBudgetUsd` from this
-  field when folding a `budget_gate_decided` event. This is the authoritative
+  decision is applied. Replay must update budget remaining from this field
+  when folding a `budget_gate_decided` event. This is the authoritative
   post-gate budget state, not re-derived from prior usage totals.
 
+The `budget_at_decision` object must include:
+- `remaining_run_budget_usd`
+- `remaining_phase_budget_usd` (null if no phase budget is active)
+
 The EventEngine fold rule for `budget_gate_decided`:
-1. If `decision === "rejected"`: mark run as halted. No further usage events
-   should appear, but replay must tolerate them if they do.
-2. If `new_run_budget_usd` is present: update the effective run cap to
+1. If `decision === "rejected"`: set `runHalted = true` on the snapshot.
+   No further usage events should appear, but replay must tolerate them if
+   they do and must continue displaying them without crashing.
+2. If `new_run_budget_usd` is non-null: update the effective run cap to
    `new_run_budget_usd`.
-3. Always update `remainingRunBudgetUsd` from `budget_at_decision.remaining_run_budget_usd`.
+3. If `new_phase_budget_usd` is non-null: update the effective phase cap to
+   `new_phase_budget_usd`.
+4. Always set `remainingRunBudgetUsd` from
+   `budget_at_decision.remaining_run_budget_usd`.
+5. Always set `remainingPhaseBudgetUsd` from
+   `budget_at_decision.remaining_phase_budget_usd` (may be null).
 
 ## Replay Behavior
 
@@ -260,14 +369,20 @@ of now.
 
 ## PWA Requirements
 
-Mission Control needs a compact cost HUD:
+Mission Control needs a compact cost HUD. On iPhone portrait this is a single
+line (44pt bar) with no overflow. The authoritative layout is:
 
-- Current run cost.
-- Budget remaining.
-- Current phase cost.
-- Provider/model currently spending.
-- Warning badge for estimated or unknown usage.
-- Tap target for full economics panel.
+  $0.42  |  $9.58 left  |  phase: $0.11  [!2]  [>]
+
+- Run cost (dollar amount, updates live).
+- Budget remaining (dollar amount; omit when no budget is configured).
+- Current phase cost (dollar amount; omit when phase budget is not configured).
+- Unknown-cost count badge [!N] only when N > 0.
+- Tap target [>] for full economics panel.
+
+Do not show provider/model in the top HUD bar. Provider detail belongs in the
+economics sheet and the atom FocusPanel. Adding it to the top bar turns the HUD
+into a finance ticker and breaks the single-line constraint on small screens.
 
 The Three.js map should represent economics without clutter:
 
