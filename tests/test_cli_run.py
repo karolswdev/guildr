@@ -122,10 +122,9 @@ def test_dry_run_llm_dispatches_by_role() -> None:
     ])
     assert '"specificity"' in judge.content
 
-    coder = fake.chat([
-        {"role": "system", "content": "You are an experienced software engineer."}
-    ])
-    assert '"task_id"' in coder.content
+    # Coder no longer goes through fake_llm — it's driven by a SessionRunner
+    # (see orchestrator/roles/coder_dryrun.py). Only the remaining LLM roles
+    # still ride this dispatch.
 
     tester = fake.chat([{"role": "system", "content": "You are a QA engineer."}])
     assert "VERIFIED" in tester.content

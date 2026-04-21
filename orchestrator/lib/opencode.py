@@ -28,11 +28,25 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
 EventSink = Callable[[dict[str, Any]], None]
+
+
+@runtime_checkable
+class SessionRunner(Protocol):
+    """Minimum surface a role needs to drive one agent session.
+
+    ``OpencodeSession`` is the production implementation; dry-run and
+    unit tests substitute a fake that returns a canned
+    :class:`OpencodeResult`. Kept narrow (one method) so swapping the
+    runtime later — e.g. a library call instead of subprocess — only
+    has to satisfy this Protocol.
+    """
+
+    def run(self, prompt: str) -> "OpencodeResult": ...
 
 
 class OpencodeError(RuntimeError):

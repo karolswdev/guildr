@@ -38,6 +38,7 @@ class Orchestrator:
         events: object | None = None,
         git_ops: object | None = None,
         fake_llm: object | None = None,
+        session_runners: dict[str, Any] | None = None,
     ) -> None:
         # All dependent modules are imported lazily so the engine skeleton
         # can be committed independently of Tasks 2-6.
@@ -49,6 +50,11 @@ class Orchestrator:
         self._events = events
         self._git_ops = git_ops
         self._fake_llm = fake_llm
+        # Roles migrated to the opencode runtime (H6.3a+) resolve their
+        # runner here instead of via self._llm_for(). Dry-run and the
+        # H5.3 integration test inject fakes; production wiring builds
+        # one ``OpencodeSession`` per opencode-driven role.
+        self._session_runners: dict[str, Any] = dict(session_runners or {})
         self.state.events = events
 
     # -- lazy accessors (import on first use) --------------------------------
@@ -82,6 +88,29 @@ class Orchestrator:
             from orchestrator.lib.git import GitOps
             self._git_ops = GitOps(self.config.project_dir)
         return self._git_ops
+
+    def _session_runner_for(self, role: str) -> Any:
+        """Return the opencode-style session runner for an opencode-driven role.
+
+        Resolution order:
+
+        1. Runner explicitly injected via ``session_runners[role]`` — the
+           production path (built from endpoints routing) and the
+           H5-style integration tests that bring their own fake.
+        2. Auto-provided dry-run runner when ``fake_llm`` is set — so
+           existing dry-run tests don't each need to hand-build one.
+           Only applies for the ``coder`` role for now (H6.3a); when
+           tester/reviewer/deployer migrate, add auto-runners for them.
+        3. ``None`` when nothing matches — caller raises ``PhaseFailure``.
+        """
+        if role in self._session_runners:
+            return self._session_runners[role]
+        if self._fake_llm is not None and role == "coder":
+            from orchestrator.roles.coder_dryrun import DryRunCoderRunner
+            runner = DryRunCoderRunner(self.state)
+            self._session_runners[role] = runner
+            return runner
+        return None
 
     def _llm_for(self, role: str) -> Any:
         """Return the LLM-shaped object a role should call.
@@ -450,14 +479,14 @@ class Orchestrator:
         breaker.execute("sprint-plan.md")
 
     def _coder(self, *, phase_logger: logging.Logger | None = None) -> None:
-        """Run the Coder role."""
+        """Run the Coder role via an opencode session runner (H6.3a)."""
         from orchestrator.roles.coder import Coder
 
-        llm = self._llm_for("coder")
-        if llm is None:
+        runner = self._session_runner_for("coder")
+        if runner is None:
             raise PhaseFailure("implementation")
 
-        coder = Coder(llm, self.state, phase_logger=phase_logger)
+        coder = Coder(runner, self.state, phase_logger=phase_logger)
         coder.execute("sprint-plan.md")
 
     def _tester(self, *, phase_logger: logging.Logger | None = None) -> None:

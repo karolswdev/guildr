@@ -27,6 +27,7 @@ from orchestrator.lib.config import Config
 from orchestrator.lib.endpoints import RouteEntry
 from orchestrator.lib.pool import Endpoint, UpstreamPool
 from orchestrator.lib.pool_log import pool_log_path
+from orchestrator.roles.coder_dryrun import DryRunCoderRunner
 
 
 class _EndpointFake:
@@ -90,14 +91,19 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
         architect_max_passes=2,
     )
 
-    Orchestrator(config=cfg, pool=pool).run()
+    # Coder no longer calls the pool (H6.3a — runs via opencode session).
+    # Inject a dry-run SessionRunner so the pipeline can still reach the
+    # tester/reviewer/deployer phases that *do* still ride the pool.
+    from orchestrator.lib.state import State
+    runners = {"coder": DryRunCoderRunner(State(project_dir))}
+    Orchestrator(config=cfg, pool=pool, session_runners=runners).run()
 
     # Pipeline advanced through every phase.
     for required in ("sprint-plan.md", "TEST_REPORT.md", "REVIEW.md", "DEPLOY.md"):
         assert (project_dir / required).exists(), f"{required} missing — pipeline halted"
 
-    # Both endpoints received work (architect + coder → big; judge/tester/
-    # reviewer/deployer → small). Neither was stranded.
+    # Both endpoints received work (architect → big; judge/tester/reviewer/
+    # deployer → small). Coder runs via opencode now, not the pool.
     assert big.call_count >= 1, "big-model endpoint never reached"
     assert small.call_count >= 1, "small-model endpoint never reached"
 
@@ -113,15 +119,20 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
     for d in decisions:
         by_role.setdefault(d["role"], []).append(d)
 
-    # Each role that actually called through the pool landed on its declared endpoint.
+    # Each role that actually called through the pool landed on its declared
+    # endpoint. Coder is absent here on purpose — it runs through an opencode
+    # session now (H6.3a), not the sync pool facade.
     role_to_expected = {
         "architect": "big-model",
         "judge": "small-model",
-        "coder": "big-model",
         "tester": "small-model",
         "reviewer": "small-model",
         "deployer": "small-model",
     }
+    assert "coder" not in by_role, (
+        "coder was expected to bypass the pool (opencode session, H6.3a), "
+        f"but appeared in pool.jsonl"
+    )
     seen_roles = set(by_role) & set(role_to_expected)
     assert seen_roles, f"no known roles landed in pool.jsonl; saw {sorted(by_role)}"
     for role in seen_roles:
@@ -131,13 +142,6 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
                 f"expected {role_to_expected[role]!r}"
             )
             assert d["fell_back"] is False
-
-    # Per-role model override threaded through: coder's chosen_model is the
-    # routing override, not the endpoint default.
-    coder_decisions = by_role.get("coder", [])
-    assert coder_decisions, "coder role never reached the pool"
-    for d in coder_decisions:
-        assert d["chosen_model"] == "qwen3-coder:30b-override"
 
 
 def test_fallback_when_preferred_endpoint_raises(project_dir: Path) -> None:
@@ -178,7 +182,9 @@ def test_fallback_when_preferred_endpoint_raises(project_dir: Path) -> None:
         architect_max_passes=2,
     )
 
-    Orchestrator(config=cfg, pool=pool).run()
+    from orchestrator.lib.state import State
+    runners = {"coder": DryRunCoderRunner(State(project_dir))}
+    Orchestrator(config=cfg, pool=pool, session_runners=runners).run()
 
     decisions = [
         json.loads(line)

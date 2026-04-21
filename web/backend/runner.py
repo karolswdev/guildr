@@ -120,6 +120,20 @@ def _build_pool_from_env() -> object | None:
     return build_pool(cfg)
 
 
+def _build_endpoints_cfg_from_env() -> object | None:
+    """Return the parsed ``EndpointsConfig`` if ``ORCHESTRATOR_CONFIG`` is set.
+
+    The pool and the opencode session runners both derive from the
+    same YAML; returning the parsed config here keeps ``_run_orchestrator``
+    from parsing it twice.
+    """
+    path_str = os.environ.get("ORCHESTRATOR_CONFIG")
+    if not path_str:
+        return None
+    from orchestrator.lib.endpoints import load_endpoints_from_yaml
+    return load_endpoints_from_yaml(Path(path_str))
+
+
 def _resolve_project_dir(project_id: str) -> Path:
     """Where the orchestrator should land its artifacts for this project.
 
@@ -178,15 +192,20 @@ def _run_orchestrator(
             architect_max_passes=5,
             require_human_approval=require_human_approval,
         )
-        pool = None if dry_run else _build_pool_from_env()
+        endpoints_cfg = None if dry_run else _build_endpoints_cfg_from_env()
         gate_registry = get_gate_store().ensure(project_id)
         orch_kwargs: dict[str, Any] = {
             "config": config,
             "events": bridge,
             "gate_registry": gate_registry,
         }
-        if pool is not None:
-            orch_kwargs["pool"] = pool
+        if endpoints_cfg is not None:
+            from orchestrator.cli.run import _build_opencode_session_runners
+            from orchestrator.lib.endpoints import build_pool
+            orch_kwargs["pool"] = build_pool(endpoints_cfg)  # type: ignore[arg-type]
+            orch_kwargs["session_runners"] = _build_opencode_session_runners(
+                endpoints_cfg, project_dir
+            )
         else:
             orch_kwargs["fake_llm"] = _build_llm(dry_run, llama_url)
         orch = Orchestrator(**orch_kwargs)

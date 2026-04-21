@@ -36,7 +36,10 @@ _EXPECTED_GATES = ("approve_sprint_plan", "approve_review")
 # Roles that make at least one LLM call in the dry-run pipeline. The
 # tester phase does not invoke an LLM in dry-run — it shells out to pytest —
 # so its absence from raw-io.jsonl is correct, not a regression.
-_EXPECTED_ROLES = {"architect", "coder", "reviewer", "deployer"}
+# Coder dropped after H6.3a: it runs via opencode and does not emit
+# raw-io.jsonl entries until H6.4 rewires the audit trail to read from
+# opencode session exports. When H6.4 lands, add "coder" back here.
+_EXPECTED_ROLES = {"architect", "reviewer", "deployer"}
 
 
 def _wait_for(predicate, timeout: float = 30.0, interval: float = 0.05) -> bool:

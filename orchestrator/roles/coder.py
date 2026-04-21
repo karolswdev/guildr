@@ -1,52 +1,61 @@
-"""Coder role — implements tasks from sprint-plan.md."""
+"""Coder role — implements tasks from sprint-plan.md via opencode (H6.3a).
+
+Each task is one opencode session: the role sends "here's the
+architecture, here's the task, write the files" and trusts the agent's
+tool calls to land the changes on disk. We don't parse a JSON-of-files
+patch anymore; opencode's ``write``/``edit`` tools handle that layer,
+confined to ``--dir <project>``. The role's job is just to sequence
+tasks in dependency order and surface session failures as
+``CoderError``.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
-from orchestrator.lib.llm import LLMClient
-from orchestrator.lib.sprint_plan import (
-    Task,
-    parse_tasks,
-    slice_task,
-)
+from orchestrator.lib.control import append_operator_context
+from orchestrator.lib.opencode import SessionRunner
+from orchestrator.lib.sprint_plan import Task, parse_tasks, slice_task
 from orchestrator.lib.state import State
-from orchestrator.roles.base import BaseRole
 
 logger = logging.getLogger(__name__)
 
+_PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+
 
 class CoderError(Exception):
-    """Raised when the Coder encounters a fatal error."""
+    """Raised when the Coder cannot complete a task."""
 
 
-class Coder(BaseRole):
-    """Implements tasks from sprint-plan.md sequentially."""
+class Coder:
+    """Implements sprint-plan tasks sequentially via an opencode agent session.
+
+    One :class:`SessionRunner` is reused across tasks — each task calls
+    :meth:`SessionRunner.run` with its own prompt. The runner is
+    expected to spawn a fresh opencode session per call (that is how
+    :class:`orchestrator.lib.opencode.OpencodeSession` behaves).
+    """
 
     _phase: str = "implementation"
     _role: str = "coder"
 
     def __init__(
         self,
-        llm: LLMClient,
+        runner: SessionRunner,
         state: State,
-        max_tokens: int = 16384,
-        phase_logger: Any = None,
+        phase_logger: logging.Logger | None = None,
     ) -> None:
-        super().__init__(llm, state, phase_logger=phase_logger)
-        self.max_tokens = max_tokens
+        self.runner = runner
+        self.state = state
+        self._phase_logger = phase_logger
 
     # -- public API ----------------------------------------------------------
 
     def execute(self, sprint_plan_path: str = "sprint-plan.md") -> str:
-        """Execute all tasks from the sprint plan in dependency order.
-
-        Returns the sprint_plan_path on success.
-        Raises CoderError on fatal failure.
-        """
+        """Execute all tasks from the sprint plan in dependency order."""
         plan_text = self.state.read_file(sprint_plan_path)
         tasks = parse_tasks(plan_text)
 
@@ -55,165 +64,82 @@ class Coder(BaseRole):
             return sprint_plan_path
 
         ordered = self._topological_sort(tasks)
-
         for task in ordered:
             logger.info("Coder: executing task %d: %s", task.id, task.name)
-            plan_text = self._execute_task(plan_text, task, sprint_plan_path)
+            self._execute_task(plan_text, task)
 
         return sprint_plan_path
 
-    # -- task execution ------------------------------------------------------
+    # -- per-task session ----------------------------------------------------
 
-    def _execute_task(
-        self, plan_text: str, task: Task, sprint_plan_path: str
-    ) -> str:
-        """Execute a single task: call LLM, parse patch, apply file writes."""
-        context = self._task_context(plan_text, task.id)
-
-        system_prompt = self._load_prompt("coder", "generate")
-        user_prompt = system_prompt.format(
-            architecture=self._extract_architecture(plan_text),
-            task=context,
-        )
-        user_prompt = self._augment_prompt(user_prompt)
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+    def _execute_task(self, plan_text: str, task: Task) -> None:
+        """Drive one opencode session for one task, raise on session failure."""
+        prompt = self._build_prompt(plan_text, task)
 
         try:
-            response = self._chat(messages, max_tokens=self.max_tokens)
+            result = self.runner.run(prompt)
         except Exception as exc:
-            raise CoderError(f"LLM call failed for task {task.id}: {exc}") from exc
-
-        patch = self._parse_patch(response.content)
-        if patch is None:
             raise CoderError(
-                f"Failed to parse JSON patch for task {task.id}"
+                f"opencode session failed for task {task.id}: {exc}"
+            ) from exc
+
+        if result.exit_code != 0:
+            raise CoderError(
+                f"opencode session for task {task.id} exited with "
+                f"rc={result.exit_code}: {result.assistant_text[:200]!r}"
             )
 
-        if int(patch.get("task_id", -1)) != task.id:
+        # An agent that writes zero files for a coding task is almost
+        # always a prompt regression or a provider short-circuit. Flag
+        # it loudly — the Tester would fail on the same task anyway,
+        # but at the Tester stage the signal is "tests fail" rather
+        # than "nothing was written."
+        wrote_any = any(
+            call.tool in ("write", "edit", "patch")
+            and call.status == "completed"
+            for call in result.tool_calls
+        )
+        if not wrote_any:
             raise CoderError(
-                f"Patch task_id {patch.get('task_id')} does not match task {task.id}"
+                f"opencode session for task {task.id} completed without "
+                "any write/edit tool call"
             )
 
-        self._apply_file_patch(patch)
+    def _build_prompt(self, plan_text: str, task: Task) -> str:
+        template = self._load_prompt("coder", "generate")
+        rendered = template.format(
+            architecture=self._extract_architecture(plan_text),
+            task=self._task_context(task.id, plan_text),
+        )
+        return self._augment_prompt(rendered)
 
-        return plan_text
-
-    def _task_context(self, plan_text: str, task_id: int) -> str:
-        packet_path = self.state.project_dir / "phase-files" / f"task-{task_id:03d}-implement.md"
+    def _task_context(self, task_id: int, plan_text: str) -> str:
+        packet_path = (
+            self.state.project_dir / "phase-files" / f"task-{task_id:03d}-implement.md"
+        )
         if packet_path.exists():
             return packet_path.read_text(encoding="utf-8")
         return slice_task(plan_text, task_id)
 
-    # -- JSON parsing (same robustness as Architect) -------------------------
-
-    def _parse_patch(self, raw: str) -> dict[str, Any] | None:
-        """Parse the JSON patch from LLM output.
-
-        Uses 3-tier robustness: strict -> re-prompt -> regex fallback.
-        """
-        result = self._strict_parse(raw)
-        if result is not None:
-            return result
-
-        messages = [
-            {"role": "system", "content": "You are a code generator."},
-            {"role": "user", "content": raw},
-            {"role": "assistant", "content": raw},
-            {
-                "role": "user",
-                "content": "Your last output was not valid JSON. "
-                "Return only the JSON object, nothing else.",
-            },
-        ]
-        try:
-            response = self._chat(messages, max_tokens=self.max_tokens)
-            result = self._strict_parse(response.content)
-            if result is not None:
-                return result
-        except Exception:
-            pass
-
-        result = self._extract_json_regex(raw)
-        if result is not None:
-            return result
-
-        return None
-
-    @staticmethod
-    def _strict_parse(raw: str) -> dict[str, Any] | None:
-        """Try strict JSON parse. Returns None on failure."""
-        try:
-            data = json.loads(raw)
-            if Coder._is_valid_file_patch(data):
-                return data
-        except (json.JSONDecodeError, ValueError):
-            pass
-        return None
-
-    @staticmethod
-    def _extract_json_regex(raw: str) -> dict[str, Any] | None:
-        """Extract the outermost {...} block from raw text."""
-        match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", raw)
-        if match:
-            try:
-                data = json.loads(match.group())
-                if Coder._is_valid_file_patch(data):
-                    return data
-            except (json.JSONDecodeError, ValueError):
-                pass
-        return None
-
-    @staticmethod
-    def _is_valid_file_patch(data: object) -> bool:
-        """Return True when data follows the Coder file patch schema."""
-        if not isinstance(data, dict):
-            return False
-        if "task_id" not in data or "files" not in data:
-            return False
-        files = data.get("files")
-        if not isinstance(files, list) or not files:
-            return False
-        for entry in files:
-            if not isinstance(entry, dict):
-                return False
-            if not isinstance(entry.get("path"), str):
-                return False
-            if not isinstance(entry.get("content"), str):
-                return False
-        return True
-
-    def _apply_file_patch(self, patch: dict[str, Any]) -> None:
-        """Apply Coder file writes under project_dir."""
-        for entry in patch["files"]:
-            rel = entry["path"]
-            self._validate_project_relative_path(rel)
-            self.state.write_file(rel, entry["content"])
-
-    def _validate_project_relative_path(self, path: str) -> None:
-        """Reject absolute paths, traversal, and orchestrator internals."""
-        from pathlib import Path
-
-        rel = Path(path)
-        if rel.is_absolute():
-            raise CoderError(f"Refusing absolute path: {path}")
-        if any(part in ("", ".", "..") for part in rel.parts):
-            raise CoderError(f"Refusing unsafe path: {path}")
-        if rel.parts[0] in (".git", ".orchestrator"):
-            raise CoderError(f"Refusing internal path: {path}")
-        target = (self.state.project_dir / rel).resolve()
-        try:
-            target.relative_to(self.state.project_dir)
-        except ValueError as exc:
-            raise CoderError(f"Refusing path outside project: {path}") from exc
-
     # -- helpers -------------------------------------------------------------
 
+    @staticmethod
+    def _load_prompt(role: str, name: str) -> str:
+        return (_PROMPT_DIR / role / f"{name}.txt").read_text(encoding="utf-8")
+
+    def _augment_prompt(self, prompt: str) -> str:
+        return append_operator_context(self.state.project_dir, self._phase, prompt)
+
+    @staticmethod
+    def _extract_architecture(plan_text: str) -> str:
+        m = re.search(
+            r"## Architecture Decisions\n(.*?)(?=\n## |\Z)",
+            plan_text,
+            re.DOTALL,
+        )
+        return m.group(1).strip() if m else "No architecture decisions recorded."
+
     def _topological_sort(self, tasks: list[Task]) -> list[Task]:
-        """Sort tasks in dependency order."""
         task_map = {t.id: t for t in tasks}
         visited: set[int] = set()
         result: list[Task] = []
@@ -232,14 +158,4 @@ class Coder(BaseRole):
 
         for task in tasks:
             visit(task)
-
         return result
-
-    def _extract_architecture(self, plan_text: str) -> str:
-        """Extract the Architecture Decisions section from the plan."""
-        m = re.search(
-            r"## Architecture Decisions\n(.*?)(?=\n## |\Z)",
-            plan_text,
-            re.DOTALL,
-        )
-        return m.group(1).strip() if m else "No architecture decisions recorded."

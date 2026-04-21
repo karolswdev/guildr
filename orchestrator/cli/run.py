@@ -135,12 +135,6 @@ _DRY_RUN_JUDGE_JSON = (
     '"risk":{"score":1,"issues":[]}}'
 )
 
-_DRY_RUN_CODER_JSON = (
-    '{"task_id": 1, "files": ['
-    '{"path": "README.md", "content": "# Dry run\\\\n"}'
-    '], "notes": ["created README"]}'
-)
-
 _DRY_RUN_TESTER_REPORT = (
     "### Task 1: bootstrap\n"
     "- Status: VERIFIED\n"
@@ -197,8 +191,6 @@ def _build_dry_run_llm() -> object:
             # Order matters — check most specific markers first.
             if "skeptical senior engineering manager" in sys_lower:
                 return _r(_DRY_RUN_JUDGE_JSON)
-            if "you are an experienced software engineer" in sys_lower:
-                return _r(_DRY_RUN_CODER_JSON)
             if "you are a qa engineer" in sys_lower:
                 return _r(_DRY_RUN_TESTER_REPORT)
             if "you are a senior code reviewer" in sys_lower:
@@ -208,6 +200,41 @@ def _build_dry_run_llm() -> object:
             return _r(_DRY_RUN_SPRINT_PLAN)
 
     return _ContentAwareFake()
+
+
+def _build_opencode_session_runners(
+    endpoints_cfg: object, project_dir: Path
+) -> dict[str, object]:
+    """Wire opencode-driven roles to fresh ``OpencodeSession`` instances.
+
+    Writes the per-project ``opencode.json`` from the declared
+    endpoints config (H6.1), then builds one ``OpencodeSession`` per
+    opencode-driven role (H6.3a — coder only, for now). Each session
+    resolves its provider + model from that role's first routing entry
+    so `--model <provider>/<modelID>` matches what the pool would have
+    chosen.
+    """
+    from orchestrator.lib.opencode import OpencodeSession
+    from orchestrator.lib.opencode_config import write_opencode_config
+
+    config_path = write_opencode_config(endpoints_cfg, project_dir)  # type: ignore[arg-type]
+    endpoints_by_name = {ep.name: ep for ep in endpoints_cfg.endpoints}  # type: ignore[attr-defined]
+
+    runners: dict[str, object] = {}
+    for role in ("coder",):
+        routes = endpoints_cfg.routing.get(role) or []  # type: ignore[attr-defined]
+        if not routes:
+            continue
+        entry = routes[0]
+        ep = endpoints_by_name[entry.endpoint]
+        runners[role] = OpencodeSession(
+            project_dir=project_dir,
+            config_path=config_path,
+            provider=ep.name,
+            model=entry.model or ep.model,
+            agent=role,
+        )
+    return runners
 
 
 def _build_real_llm(cfg: Config) -> object:
@@ -246,6 +273,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     elif endpoints_cfg is not None:
         from orchestrator.lib.endpoints import build_pool
         orch_kwargs["pool"] = build_pool(endpoints_cfg)
+        orch_kwargs["session_runners"] = _build_opencode_session_runners(
+            endpoints_cfg, cfg.project_dir
+        )
         mode = f"live/pool[{','.join(e.name for e in endpoints_cfg.endpoints)}]"
     else:
         orch_kwargs["fake_llm"] = _build_real_llm(cfg)

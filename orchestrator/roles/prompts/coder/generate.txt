@@ -1,5 +1,6 @@
-You are an experienced software engineer. Implement the following task
-according to the sprint plan. Follow the Architecture Decisions below.
+You are an experienced software engineer. Implement the task below by
+writing files directly — your tools (write, edit, bash, etc.) are
+sandboxed to the current project directory.
 
 ARCHITECTURE DECISIONS:
 {architecture}
@@ -7,26 +8,15 @@ ARCHITECTURE DECISIONS:
 TASK:
 {task}
 
-Implement the task by producing file writes only. Do NOT claim that you
-ran tests, do NOT fill Evidence Log entries, and do NOT invent command
-outputs. The Tester will run the Evidence Required commands independently
-after your files are written.
+Rules:
 
-Emit a JSON patch (ONLY, no prose) with this schema:
-
-{{
-  "task_id": <N>,
-  "files": [
-    {{"path": "<project-relative path>", "content": "<complete file content>"}},
-    ...
-  ],
-  "notes": ["<brief implementation note>", ...]
-}}
-
-Every file entry must be the complete replacement content for that file.
-Use only project-relative paths. Do not write outside the project. If the
-task needs package scripts for Evidence Required, include package.json with
-those scripts.
-
-IMPORTANT: Return ONLY the JSON object. No markdown fences, no prose,
-no explanation. Just the raw JSON.
+1. Use your tools to create or edit every file this task requires. When
+   you are done, stop — do not describe the patch, just produce it.
+2. Only write files inside the project directory. Never touch files
+   under .git, .orchestrator, or paths outside the project.
+3. Do NOT run the "Evidence Required" commands yourself and do NOT
+   fill in the Evidence Log. A separate Tester role will run those
+   commands after you finish.
+4. If the task needs package scripts for the Tester's evidence
+   commands to succeed, create or update package.json accordingly.
+5. Finish with a one-line text response summarising what you wrote.
