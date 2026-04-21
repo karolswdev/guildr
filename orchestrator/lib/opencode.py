@@ -114,8 +114,20 @@ class OpencodeMessage:
     model: str | None
     tokens: OpencodeTokens
     cost: float
+    # Millisecond timestamps from opencode's session record (``info.time``).
+    # Both default to 0 when the export omits them (older opencode builds or
+    # synthesised dry-run messages) — consumers should treat 0 as "unknown".
+    created_ms: int = 0
+    completed_ms: int = 0
     text_parts: list[str] = field(default_factory=list)
     tool_calls: list[OpencodeToolCall] = field(default_factory=list)
+
+    @property
+    def latency_ms(self) -> float:
+        """Wall time for this message, or 0.0 when timestamps are missing."""
+        if self.created_ms and self.completed_ms and self.completed_ms >= self.created_ms:
+            return float(self.completed_ms - self.created_ms)
+        return 0.0
 
 
 @dataclass(frozen=True)
@@ -195,12 +207,15 @@ def _parse_message(raw: dict[str, Any]) -> OpencodeMessage:
         # step-start / step-finish parts are bracketing metadata; they
         # already contributed to token totals via info.tokens.
 
+    time_info = info.get("time") or {}
     return OpencodeMessage(
         role=str(info.get("role", "") or ""),
         provider=model.get("providerID"),
         model=model.get("modelID"),
         tokens=OpencodeTokens.from_payload(info.get("tokens")),
         cost=float(info.get("cost", 0) or 0),
+        created_ms=int(time_info.get("created", 0) or 0),
+        completed_ms=int(time_info.get("completed", 0) or 0),
         text_parts=text_parts,
         tool_calls=tool_calls,
     )

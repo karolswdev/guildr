@@ -18,6 +18,7 @@ from typing import Any
 
 from orchestrator.lib.control import append_operator_context
 from orchestrator.lib.opencode import SessionRunner
+from orchestrator.lib.opencode_audit import emit_session_audit
 from orchestrator.lib.sprint_plan import Task, parse_tasks, slice_task
 from orchestrator.lib.state import State
 
@@ -82,6 +83,18 @@ class Coder:
             raise CoderError(
                 f"opencode session failed for task {task.id}: {exc}"
             ) from exc
+
+        # Emit audit entries *before* we raise on non-zero exit so a failed
+        # session still leaves a forensic trail in raw-io.jsonl / usage.jsonl.
+        emit_session_audit(
+            self.state,
+            result,
+            role=self._role,
+            phase=self._phase,
+            step=self._phase,
+            prompt=prompt,
+            atom_id=f"task-{task.id:03d}",
+        )
 
         if result.exit_code != 0:
             raise CoderError(
