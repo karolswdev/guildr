@@ -14,6 +14,7 @@ from orchestrator.lib.artifact_preview import (
     EXCERPT_KIND_TEXT_HEAD,
     EXCERPT_KIND_TEXT_TAIL,
     PHASE_CANONICAL_ARTIFACTS,
+    PHASE_SOURCE_REFS,
     TEXT_HEAD_BYTES,
     emit_artifact_preview,
     emit_phase_artifact_previews,
@@ -164,6 +165,28 @@ def test_emit_phase_artifact_previews_unknown_phase_is_noop(tmp_path: Path) -> N
     bus = EventBus()
     emitted = emit_phase_artifact_previews(bus, tmp_path, "memory_refresh")
     assert emitted == []
+
+
+def test_emit_phase_artifact_previews_threads_source_refs(tmp_path: Path) -> None:
+    bus = EventBus()
+    (tmp_path / "REVIEW.md").write_text("review body\n", encoding="utf-8")
+
+    emitted = emit_phase_artifact_previews(bus, tmp_path, "review")
+
+    assert len(emitted) == 1
+    assert emitted[0]["source_refs"] == ["sprint-plan.md", "TEST_REPORT.md"]
+
+
+def test_phase_source_refs_mapping_covers_expected_roles() -> None:
+    expected = {
+        "architect_plan": ("qwendea.md", "PERSONA_FORUM.md"),
+        "architect_refine": ("qwendea.md", "PERSONA_FORUM.md"),
+        "testing": ("sprint-plan.md",),
+        "review": ("sprint-plan.md", "TEST_REPORT.md"),
+        "deployment": ("REVIEW.md",),
+    }
+    for phase, refs in expected.items():
+        assert PHASE_SOURCE_REFS[phase] == refs
 
 
 def test_phase_artifact_mapping_covers_expected_roles() -> None:

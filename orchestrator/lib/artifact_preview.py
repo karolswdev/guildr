@@ -61,6 +61,22 @@ PHASE_CANONICAL_ARTIFACTS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Canonical upstream files each phase consumes while producing its artifact.
+# Threaded through as ``source_refs`` on the ``artifact_preview_created``
+# event so the PWA can draw lineage edges (sprint-plan → TEST_REPORT →
+# REVIEW → DEPLOY). Keep bare project-relative paths here; the emitter
+# filters out empty strings and does not validate existence — a listed
+# source is a label, not a guarantee the file is on disk this run.
+PHASE_SOURCE_REFS: dict[str, tuple[str, ...]] = {
+    "architect": ("qwendea.md", "PERSONA_FORUM.md"),
+    "architect_plan": ("qwendea.md", "PERSONA_FORUM.md"),
+    "architect_refine": ("qwendea.md", "PERSONA_FORUM.md"),
+    "testing": ("sprint-plan.md",),
+    "review": ("sprint-plan.md", "TEST_REPORT.md"),
+    "deployment": ("REVIEW.md",),
+}
+
+
 class ArtifactPreviewError(ValueError):
     """Raised when a preview cannot be safely produced (e.g. traversal)."""
 
@@ -200,6 +216,7 @@ def emit_phase_artifact_previews(
     Silently skips missing files so engine integration does not need to
     duplicate the role's knowledge of whether it wrote anything.
     """
+    source_refs = PHASE_SOURCE_REFS.get(phase_name, ())
     emitted: list[dict[str, Any]] = []
     for ref in PHASE_CANONICAL_ARTIFACTS.get(phase_name, ()):
         event = emit_artifact_preview(
@@ -209,6 +226,7 @@ def emit_phase_artifact_previews(
             producing_atom_id=phase_name,
             project_id=project_id,
             trigger_event_id=trigger_event_id,
+            source_refs=source_refs,
         )
         if event is not None:
             emitted.append(event)

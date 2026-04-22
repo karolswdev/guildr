@@ -71,6 +71,14 @@ def test_dry_run_pipeline_emits_artifact_preview_events(
         "DEPLOY.md": {"deployment"},
     }
 
+    expected_source_refs_by_phase = {
+        "architect_plan": ["qwendea.md", "PERSONA_FORUM.md"],
+        "architect_refine": ["qwendea.md", "PERSONA_FORUM.md"],
+        "testing": ["sprint-plan.md"],
+        "review": ["sprint-plan.md", "TEST_REPORT.md"],
+        "deployment": ["REVIEW.md"],
+    }
+
     for ref, allowed_phases in expected_phase_by_ref.items():
         assert ref in by_ref, f"no artifact_preview_created for {ref}"
         latest = by_ref[ref][-1]
@@ -85,6 +93,11 @@ def test_dry_run_pipeline_emits_artifact_preview_events(
         )
         assert "wake_up_hash" in latest
         assert "memory_refs" in latest
+        expected_sources = expected_source_refs_by_phase[latest["producing_atom_id"]]
+        assert latest["source_refs"] == expected_sources, (
+            f"{ref} preview source_refs={latest['source_refs']!r} "
+            f"expected {expected_sources!r}"
+        )
 
     narrator_previews = [
         e for e in previews if e.get("producing_atom_id") == "narrator"
