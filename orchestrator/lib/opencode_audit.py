@@ -36,9 +36,11 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.lib.event_schema import new_event_id
+from orchestrator.lib.local_cost import estimate_local_cost, load_local_cost_profile
 from orchestrator.lib.memory_palace import wakeup_hash
 from orchestrator.lib.opencode import OpencodeMessage, OpencodeResult
 from orchestrator.lib.raw_io import write_round_trip
+from orchestrator.lib.usage import _usage_payload
 from orchestrator.lib.usage_writer import write_usage
 
 
@@ -145,65 +147,99 @@ def _emit_usage(
     wake_up_hash: str | None,
 ) -> None:
     """Build + persist one usage row for a single assistant message."""
-    cost_usd = msg.cost if msg.cost > 0 else None
-    source = "provider_reported" if cost_usd is not None else "unknown"
-    confidence = "high" if cost_usd is not None else "none"
-
-    usage = {
-        "input_tokens": msg.tokens.input,
-        "output_tokens": msg.tokens.output,
-        "reasoning_tokens": msg.tokens.reasoning,
-        "total_tokens": msg.tokens.input + msg.tokens.output + msg.tokens.reasoning,
-    }
-    if msg.tokens.cache_read:
-        usage["cache_read_tokens"] = msg.tokens.cache_read
-
+    project_dir = _project_dir_of(state)
+    cost_fields = _opencode_cost_fields(msg, project_dir)
     status = "ok" if session_exit_code == 0 else "error"
 
-    payload: dict[str, Any] = {
-        "call_id": call_id,
-        "provider_kind": "opencode",
-        "provider_name": msg.provider or "opencode",
-        "model": msg.model or "",
-        "role": role,
-        "step": step,
-        "atom_id": atom_id,
-        "attempt": attempt,
-        "usage": usage,
-        "runtime_ms": round(msg.latency_ms, 1),
-        "runtime": {
-            "wall_ms": round(msg.latency_ms, 1),
-            "opencode": {
-                "session_id": session_id,
-                "message_index": message_index,
-            },
-            "memory": {
-                "wake_up_hash": wake_up_hash,
-                "memory_refs": [".orchestrator/memory/wake-up.md"] if wake_up_hash else [],
-            },
+    runtime_extra = {
+        "opencode": {
+            "session_id": session_id,
+            "message_index": message_index,
+            "exit_code": session_exit_code,
         },
-        "cost_usd": cost_usd,
-        "cost": {
-            "currency": "USD",
-            "provider_reported_cost": cost_usd,
-            "estimated_cost": None,
-            "effective_cost": cost_usd,
-            "source": source,
-            "confidence": confidence,
-            "extraction_path": "opencode_message.cost",
-            "rate_card_version": None,
+        "memory": {
+            "wake_up_hash": wake_up_hash,
+            "memory_refs": [".orchestrator/memory/wake-up.md"] if wake_up_hash else [],
         },
-        "source": source,
-        "confidence": confidence,
-        "extraction_path": "opencode_message.cost",
-        "status": status,
     }
+    payload = _usage_payload(
+        provider_kind="opencode",
+        provider_name=msg.provider or "opencode",
+        model=msg.model or "",
+        role=role,
+        step=step,
+        runtime_ms=msg.latency_ms,
+        call_id=call_id,
+        status=status,
+        input_tokens=msg.tokens.input,
+        output_tokens=msg.tokens.output,
+        reasoning_tokens=msg.tokens.reasoning,
+        cache_read_tokens=msg.tokens.cache_read,
+        cost_usd=cost_fields["cost_usd"],
+        source=cost_fields["source"],
+        confidence=cost_fields["confidence"],
+        extraction_path=cost_fields["extraction_path"],
+        provider_reported_cost=cost_fields["provider_reported_cost"],
+        estimated_cost=cost_fields["estimated_cost"],
+        atom_id=atom_id,
+        attempt=attempt,
+        finish_reason="stop" if status == "ok" else "error",
+        error=None if status == "ok" else f"opencode exited with code {session_exit_code}",
+        provider_metadata={"opencode": dict(runtime_extra["opencode"])},
+        runtime_extra=runtime_extra,
+        rate_card_version=cost_fields["rate_card_version"],
+    )
 
     event_bus = getattr(state, "events", None)
     if event_bus is not None:
         event_bus.emit("usage_recorded", **payload)
 
-    write_usage(_project_dir_of(state), payload)
+    write_usage(project_dir, payload)
+
+
+def _opencode_cost_fields(msg: OpencodeMessage, project_dir: Path | None) -> dict[str, Any]:
+    provider_reported_cost = msg.cost if msg.cost > 0 else None
+    if provider_reported_cost is not None:
+        return {
+            "cost_usd": provider_reported_cost,
+            "provider_reported_cost": provider_reported_cost,
+            "estimated_cost": None,
+            "source": "provider_reported",
+            "confidence": "high",
+            "extraction_path": "opencode_message.cost",
+            "rate_card_version": None,
+        }
+
+    if _looks_local_provider(msg.provider):
+        profile, version = load_local_cost_profile(project_dir)
+        estimated_cost = estimate_local_cost(profile, wall_ms=msg.latency_ms)
+        return {
+            "cost_usd": estimated_cost,
+            "provider_reported_cost": None,
+            "estimated_cost": estimated_cost,
+            "source": str(profile.get("default_source") or "local_estimate"),
+            "confidence": "medium",
+            "extraction_path": "opencode_message.local_estimate",
+            "rate_card_version": version,
+        }
+
+    return {
+        "cost_usd": None,
+        "provider_reported_cost": None,
+        "estimated_cost": None,
+        "source": "unknown",
+        "confidence": "none",
+        "extraction_path": "opencode_message.cost",
+        "rate_card_version": None,
+    }
+
+
+def _looks_local_provider(provider: str | None) -> bool:
+    normalized = (provider or "").lower()
+    return any(
+        marker in normalized
+        for marker in ("local", "llama", "ollama", "localhost", "127.0.0.1")
+    )
 
 
 def _project_dir_of(state: Any) -> Path | None:

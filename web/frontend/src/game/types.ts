@@ -1,7 +1,9 @@
+import type { RunEventType } from "./eventTypes.js";
+
 export type RunEvent = Record<string, unknown> & {
   event_id?: string;
   schema_version?: number;
-  type?: string;
+  type?: RunEventType;
   step?: string;
   role?: string;
   model?: string;
@@ -105,6 +107,50 @@ export type OperatorIntentState = {
   lastEvent: RunEvent | null;
 };
 
+export type NarrativeHighlight = {
+  text: string;
+  sourceRefs: string[];
+};
+
+export type NarrativeDigest = {
+  digestId: string;
+  title: string;
+  summary: string;
+  highlights: NarrativeHighlight[];
+  risks: string[];
+  openQuestions: string[];
+  nextStepHint: string | null;
+  sourceEventIds: string[];
+  artifactRefs: string[];
+  window: Record<string, unknown>;
+  lastEvent: RunEvent | null;
+  raw: Record<string, unknown>;
+};
+
+export type DiscussionEntry = {
+  discussionEntryId: string;
+  speaker: string;
+  entryType: string;
+  atomId: string | null;
+  text: string;
+  sourceRefs: string[];
+  artifactRefs: string[];
+  metadata: Record<string, unknown>;
+  lastEvent: RunEvent | null;
+  raw: Record<string, unknown>;
+};
+
+export type DiscussionHighlight = {
+  discussionHighlightId: string;
+  highlightType: string;
+  atomId: string | null;
+  text: string;
+  sourceRefs: string[];
+  artifactRefs: string[];
+  lastEvent: RunEvent | null;
+  raw: Record<string, unknown>;
+};
+
 export type AtomLoopStatus = {
   atomId: string;
   currentStage: LoopStage | null;
@@ -134,6 +180,10 @@ export type EngineSnapshot = {
   isLive: boolean;
   memPalaceStatus: MemPalaceStatus | null;
   nextStepPacket: NextStepPacket | null;
+  digests: NarrativeDigest[];
+  latestDigest: NarrativeDigest | null;
+  discussion: DiscussionEntry[];
+  discussionHighlights: DiscussionHighlight[];
   pendingIntents: Record<string, OperatorIntentState>;
   appliedIntents: Record<string, OperatorIntentState>;
   ignoredIntents: Record<string, OperatorIntentState>;

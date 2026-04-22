@@ -13,8 +13,10 @@ from orchestrator.lib.control import (
     validate_phase,
     write_compact_context,
 )
+from orchestrator.lib.discussion import append_discussion_entry
 from orchestrator.lib.workflow import load_workflow, save_workflow, valid_start_steps
 from web.backend.routes.projects import get_store
+from web.backend.routes.stream import get_event_store
 
 router = APIRouter()
 
@@ -53,7 +55,19 @@ async def inject_instruction(project_id: str, body: InjectInstructionRequest) ->
         entry = append_instruction(project.project_dir, body.instruction, phase=body.phase)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"project_id": project_id, "entry": entry}
+    discussion = append_discussion_entry(
+        project.project_dir,
+        speaker="operator",
+        entry_type="operator_instruction",
+        atom_id=body.phase,
+        text=entry["instruction"],
+        source_refs=["artifact:.orchestrator/control/instructions.jsonl"],
+        artifact_refs=[".orchestrator/control/instructions.jsonl"],
+        metadata={"phase": entry.get("phase")},
+        event_bus=get_event_store().get_or_create(project_id),
+        project_id=project_id,
+    )
+    return {"project_id": project_id, "entry": entry, "discussion_entry": discussion}
 
 
 @router.post("/{project_id}/control/compact")
@@ -129,11 +143,13 @@ async def synthesize_personas(project_id: str) -> dict[str, Any]:
         state=State(project.project_dir),
         step_config=persona_step.get("config", {}),
     )
-    brief = (project.project_dir / "qwendea.md").read_text(encoding="utf-8")
-    personas = forum._personas(brief)
-    forum._persist_personas(personas)
+    result = forum.synthesize_without_compaction(
+        event_bus=get_event_store().get_or_create(project_id),
+        project_id=project_id,
+    )
     return {
         "project_id": project_id,
-        "personas": personas,
+        "personas": result["personas"],
+        "discussion_entries": result["discussion_entries"],
         "steps": load_workflow(project.project_dir),
     }

@@ -113,7 +113,7 @@ def _build_opencode_session_runners(
     endpoints_by_name = {ep.name: ep for ep in endpoints_cfg.endpoints}  # type: ignore[attr-defined]
 
     runners: dict[str, object] = {}
-    for role in ("architect", "judge", "coder", "tester", "reviewer", "deployer"):
+    for role in ("architect", "judge", "coder", "tester", "reviewer", "narrator", "deployer"):
         routes = endpoints_cfg.routing.get(role) or []  # type: ignore[attr-defined]
         # Judge re-uses architect's routing by default — operators rarely
         # declare a separate line for it and the rubric doubles as a

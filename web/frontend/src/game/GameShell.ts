@@ -2,17 +2,43 @@ import * as THREE from "three";
 import { AssetManager } from "./assets/AssetManager.js";
 import { EventEngine } from "./EventEngine.js";
 import { SceneManager, type SpatialViewLevel } from "./SceneManager.js";
-import type { EngineSnapshot, WorkflowStep } from "./types.js";
+import type { EngineSnapshot, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
 
 type GameShellOptions = {
   projectId: string;
   workflow: WorkflowStep[];
+  projectBrief: ProjectBrief | null;
   engine: EventEngine;
   assetManager: AssetManager;
   navigate: (route: string) => void;
 };
 
+export type ProjectBrief = {
+  id: string;
+  name: string;
+  title: string;
+  summary: string;
+  founding_team: Array<{
+    name: string;
+    archetype: string | null;
+    mandate: string | null;
+    stance: string | null;
+    veto_scope: string | null;
+  }>;
+  forum_excerpt: string | null;
+  source_refs: string[];
+};
+
 type ComposeAction = "shape" | "interject" | "intercept";
+
+type NarrationCue = {
+  key: string;
+  speaker: string;
+  title: string;
+  text: string;
+  sourceLabel: string;
+  mode: string;
+};
 
 export class GameShell {
   private readonly root = document.createElement("section");
@@ -21,6 +47,11 @@ export class GameShell {
   private readonly bottomHud = document.createElement("div");
   private readonly actionRing = document.createElement("div");
   private readonly composeDock = document.createElement("div");
+  private readonly nextStepSheet = document.createElement("div");
+  private readonly goalCoreSheet = document.createElement("div");
+  private readonly objectLensSheet = document.createElement("div");
+  private readonly storyLensSheet = document.createElement("div");
+  private readonly narratorBox = document.createElement("div");
   private readonly timelineRibbon = document.createElement("div");
   private renderer: THREE.WebGLRenderer | null = null;
   private sceneManager: SceneManager | null = null;
@@ -34,6 +65,10 @@ export class GameShell {
   private selectedScope = "";
   private composeAction: ComposeAction = "interject";
   private timelineHideTimer = 0;
+  private narratorTimer = 0;
+  private narratorKey = "";
+  private narratorFullText = "";
+  private narratorVisibleText = "";
   private viewLevel: SpatialViewLevel = "global";
 
   constructor(private readonly container: Element, private readonly options: GameShellOptions) {
@@ -54,6 +89,9 @@ export class GameShell {
     }
     if (this.timelineHideTimer) {
       window.clearTimeout(this.timelineHideTimer);
+    }
+    if (this.narratorTimer) {
+      window.clearTimeout(this.narratorTimer);
     }
     this.resizeObserver?.disconnect();
     this.sceneManager?.dispose();
@@ -152,6 +190,106 @@ export class GameShell {
       "pointer-events: auto",
     ].join("; ");
 
+    this.nextStepSheet.dataset.role = "next-step-sheet";
+    this.nextStepSheet.style.cssText = [
+      "position: absolute",
+      "left: 50%",
+      "bottom: calc(max(78px, env(safe-area-inset-bottom) + 78px))",
+      "z-index: 5",
+      "display: none",
+      "width: min(720px, calc(100vw - 24px))",
+      "max-height: min(58vh, calc(100vh - 146px))",
+      "overflow: auto",
+      "transform: translateX(-50%)",
+      "padding: 12px",
+      "border: 1px solid var(--line)",
+      "border-radius: 8px",
+      "background: linear-gradient(180deg, rgba(21,26,40,0.95), rgba(12,15,24,0.97))",
+      "box-shadow: 0 -20px 46px rgba(0,0,0,0.48), inset 0 1px 0 rgba(255,255,255,0.06)",
+      "backdrop-filter: blur(16px)",
+      "pointer-events: auto",
+    ].join("; ");
+
+    this.goalCoreSheet.dataset.role = "goal-core-sheet";
+    this.goalCoreSheet.style.cssText = [
+      "position: absolute",
+      "left: 50%",
+      "bottom: calc(max(78px, env(safe-area-inset-bottom) + 78px))",
+      "z-index: 4",
+      "display: none",
+      "width: min(720px, calc(100vw - 24px))",
+      "max-height: min(52vh, calc(100vh - 148px))",
+      "overflow: auto",
+      "transform: translateX(-50%)",
+      "padding: 11px",
+      "border: 1px solid rgba(217,184,77,0.30)",
+      "border-radius: 8px",
+      "background: linear-gradient(180deg, rgba(18,19,28,0.92), rgba(8,10,16,0.96))",
+      "box-shadow: 0 -18px 42px rgba(0,0,0,0.44), inset 0 1px 0 rgba(255,255,255,0.06)",
+      "backdrop-filter: blur(16px)",
+      "pointer-events: auto",
+    ].join("; ");
+
+    this.objectLensSheet.dataset.role = "object-lens-sheet";
+    this.objectLensSheet.style.cssText = [
+      "position: absolute",
+      "left: 50%",
+      "bottom: calc(max(78px, env(safe-area-inset-bottom) + 78px))",
+      "z-index: 4",
+      "display: none",
+      "width: min(680px, calc(100vw - 24px))",
+      "max-height: min(44vh, calc(100vh - 148px))",
+      "overflow: auto",
+      "transform: translateX(-50%)",
+      "padding: 11px",
+      "border: 1px solid rgba(65,199,199,0.26)",
+      "border-radius: 8px",
+      "background: linear-gradient(180deg, rgba(16,22,33,0.90), rgba(8,11,18,0.94))",
+      "box-shadow: 0 -18px 42px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.06)",
+      "backdrop-filter: blur(16px)",
+      "pointer-events: auto",
+    ].join("; ");
+
+    this.storyLensSheet.dataset.role = "story-lens-sheet";
+    this.storyLensSheet.style.cssText = [
+      "position: absolute",
+      "left: 50%",
+      "bottom: calc(max(78px, env(safe-area-inset-bottom) + 78px))",
+      "z-index: 4",
+      "display: none",
+      "width: min(760px, calc(100vw - 24px))",
+      "max-height: min(52vh, calc(100vh - 148px))",
+      "overflow: auto",
+      "transform: translateX(-50%)",
+      "padding: 11px",
+      "border: 1px solid rgba(217,184,77,0.30)",
+      "border-radius: 8px",
+      "background: linear-gradient(180deg, rgba(17,18,28,0.91), rgba(8,9,15,0.95))",
+      "box-shadow: 0 -18px 42px rgba(0,0,0,0.44), inset 0 1px 0 rgba(255,255,255,0.06)",
+      "backdrop-filter: blur(16px)",
+      "pointer-events: auto",
+    ].join("; ");
+
+    this.narratorBox.dataset.role = "narrator-dialogue";
+    this.narratorBox.style.cssText = [
+      "position: absolute",
+      "left: 50%",
+      "bottom: calc(max(82px, env(safe-area-inset-bottom) + 82px))",
+      "z-index: 4",
+      "display: none",
+      "width: min(780px, calc(100vw - 24px))",
+      "min-height: 104px",
+      "box-sizing: border-box",
+      "transform: translateX(-50%)",
+      "padding: 12px 13px 13px",
+      "border: 1px solid rgba(217,184,77,0.68)",
+      "border-radius: 8px",
+      "background: linear-gradient(180deg, rgba(11,14,24,0.94), rgba(5,7,13,0.96))",
+      "box-shadow: 0 -18px 44px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.12)",
+      "backdrop-filter: blur(14px)",
+      "pointer-events: auto",
+    ].join("; ");
+
     this.timelineRibbon.dataset.role = "timeline-ribbon";
     this.timelineRibbon.style.cssText = [
       "position: absolute",
@@ -172,6 +310,11 @@ export class GameShell {
     this.root.appendChild(this.canvas);
     this.root.appendChild(this.topbar);
     this.root.appendChild(this.actionRing);
+    this.root.appendChild(this.nextStepSheet);
+    this.root.appendChild(this.goalCoreSheet);
+    this.root.appendChild(this.objectLensSheet);
+    this.root.appendChild(this.storyLensSheet);
+    this.root.appendChild(this.narratorBox);
     this.root.appendChild(this.bottomHud);
     this.root.appendChild(this.composeDock);
     this.root.appendChild(this.timelineRibbon);
@@ -220,6 +363,7 @@ export class GameShell {
         renderer: this.renderer,
         workflow: this.options.workflow,
         assets: this.options.assetManager,
+        onSelectGoalCore: () => this.openGoalCoreSheet(),
         onSelectAtom: (atomId) => this.openActionRing(atomId),
       });
       this.unsubscribeEvent = this.options.engine.onEvent((event, snapshot) => {
@@ -261,11 +405,24 @@ export class GameShell {
     this.renderTopbar(snapshot);
     this.renderBottomHud(snapshot);
     this.renderTimeline(snapshot);
+    this.renderNarrator(snapshot);
     if (this.actionRing.style.display !== "none") {
       this.renderActionRing();
     }
     if (this.composeDock.style.display !== "none") {
       this.renderComposeDock();
+    }
+    if (this.nextStepSheet.style.display !== "none") {
+      this.renderNextStepSheet(snapshot);
+    }
+    if (this.goalCoreSheet.style.display !== "none") {
+      this.renderGoalCoreSheet(snapshot);
+    }
+    if (this.objectLensSheet.style.display !== "none") {
+      this.renderObjectLens(snapshot);
+    }
+    if (this.storyLensSheet.style.display !== "none") {
+      this.renderStoryLens(snapshot);
     }
   }
 
@@ -280,16 +437,23 @@ export class GameShell {
     const done = Object.values(snapshot.atoms).filter((atom) => atom.state === "done").length;
     const remaining = snapshot.cost.remainingRunBudgetUsd !== null ? ` · ${formatUsd(snapshot.cost.remainingRunBudgetUsd)} left` : "";
     const unknown = snapshot.cost.unknownCostCount > 0 ? `<span title="Unknown costs" style="width: 8px; height: 8px; border-radius: 999px; background: #CC3333;"></span>` : "";
+    const nextLabel = snapshot.nextStepPacket?.title || snapshot.nextStepPacket?.step || "No packet";
+    const storyCount = snapshot.digests.length + snapshot.discussionHighlights.length;
     this.bottomHud.innerHTML = `
       <button data-action="focus-active" style="${hudChipStyle("#E8EAF0")}"><span style="color: #41C7C7;">●</span>${escapeHtml(active?.id || "overview")}</button>
+      <button data-action="open-goal-core" data-role="goal-core-control" style="${hudChipStyle("#D9B84D")}">Goal</button>
+      <button data-action="open-next-step" data-role="next-step-control" style="${hudChipStyle("#41C7C7")}">Next: ${escapeHtml(nextLabel)}</button>
       <button data-view-level="global" aria-label="Global view" style="${viewChipStyle(this.viewLevel === "global")}">Run</button>
       <button data-view-level="cluster" aria-label="Loop cluster view" style="${viewChipStyle(this.viewLevel === "cluster")}">Loop</button>
       <button data-view-level="surface" aria-label="Object surface view" style="${viewChipStyle(this.viewLevel === "surface")}">Object</button>
+      <button data-view-level="story" data-role="story-lens-control" aria-label="Story view" style="${viewChipStyle(this.viewLevel === "story")}">Story: ${storyCount}</button>
       <button data-action="open-timeline" style="${hudChipStyle("#D9B84D")}">${done}/${total}</button>
       <button data-action="cost" style="${hudChipStyle("#D9B84D")}">${formatUsd(snapshot.cost.effectiveUsd)}${escapeHtml(remaining)}${unknown}</button>
       <div data-role="loop-dots" style="display: flex; gap: 4px; align-items: center; padding: 0 6px;">${loopDots(snapshot)}</div>
     `;
     (this.bottomHud.querySelector('[data-action="focus-active"]') as HTMLButtonElement).addEventListener("click", () => this.focusActiveAtom());
+    (this.bottomHud.querySelector('[data-action="open-goal-core"]') as HTMLButtonElement).addEventListener("click", () => this.openGoalCoreSheet());
+    (this.bottomHud.querySelector('[data-action="open-next-step"]') as HTMLButtonElement).addEventListener("click", () => this.openNextStepSheet());
     (this.bottomHud.querySelector('[data-action="open-timeline"]') as HTMLButtonElement).addEventListener("click", () => this.showTimeline(3000));
     this.bottomHud.querySelectorAll<HTMLButtonElement>("[data-view-level]").forEach((button) => {
       button.addEventListener("click", () => this.setViewLevel(button.dataset.viewLevel as SpatialViewLevel));
@@ -310,15 +474,107 @@ export class GameShell {
     });
   }
 
+  private renderNarrator(snapshot: EngineSnapshot): void {
+    const narration = narrationForSnapshot(snapshot);
+    const overlayOpen = (
+      this.nextStepSheet.style.display !== "none" ||
+      this.goalCoreSheet.style.display !== "none" ||
+      this.objectLensSheet.style.display !== "none" ||
+      this.storyLensSheet.style.display !== "none" ||
+      this.composeDock.style.display !== "none" ||
+      this.actionRing.style.display !== "none"
+    );
+    if (!narration || overlayOpen) {
+      this.narratorBox.style.display = "none";
+      return;
+    }
+
+    this.narratorBox.style.display = "block";
+    if (narration.key !== this.narratorKey) {
+      this.narratorKey = narration.key;
+      this.narratorFullText = narration.text;
+      this.narratorVisibleText = prefersReducedMotion() ? narration.text : "";
+      this.renderNarratorFrame(narration);
+      if (!prefersReducedMotion()) {
+        this.advanceNarratorText(narration);
+      }
+      return;
+    }
+    this.renderNarratorFrame(narration);
+  }
+
+  private renderNarratorFrame(narration: NarrationCue): void {
+    const text = this.narratorVisibleText || (prefersReducedMotion() ? narration.text : "");
+    const complete = text.length >= narration.text.length;
+    this.narratorBox.innerHTML = `
+      <div style="display: grid; gap: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <div style="display: inline-flex; align-items: center; gap: 8px; min-width: 0;">
+            <span style="width: 10px; height: 10px; border-radius: 999px; background: #D9B84D; box-shadow: 0 0 16px rgba(217,184,77,0.78);"></span>
+            <span style="font: 900 11px JetBrains Mono, ui-monospace, monospace; color: #D9B84D; text-transform: uppercase; letter-spacing: 0;">${escapeHtml(narration.speaker)}</span>
+            <span style="color: #5E6578; font-size: 11px;">/</span>
+            <span style="min-width: 0; color: #C7CAD6; font-size: 12px; font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(narration.title)}</span>
+          </div>
+          <div style="display: inline-flex; gap: 6px; flex: 0 0 auto;">
+            <button data-action="narrator-replay" style="${tinyNarratorButtonStyle()}">Replay</button>
+            <button data-action="narrator-skip" style="${tinyNarratorButtonStyle()}">${complete ? "Done" : "Skip"}</button>
+          </div>
+        </div>
+        <div data-role="narrator-text" style="min-height: 44px; color: #F4F0DD; font-family: Georgia, 'Times New Roman', serif; font-size: 17px; line-height: 1.42; overflow-wrap: anywhere; text-shadow: 0 1px 0 rgba(0,0,0,0.54);">${escapeHtml(text)}${complete ? "" : `<span style="color: #D9B84D;">▌</span>`}</div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <div style="min-width: 0; color: #8C92A8; font: 800 10px JetBrains Mono, ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(narration.sourceLabel)}</div>
+          <div style="color: #7A7E92; font-size: 10px; font-weight: 850; text-transform: uppercase;">${escapeHtml(narration.mode)}</div>
+        </div>
+      </div>
+    `;
+    (this.narratorBox.querySelector('[data-action="narrator-skip"]') as HTMLButtonElement | null)?.addEventListener("click", () => {
+      if (this.narratorTimer) {
+        window.clearTimeout(this.narratorTimer);
+        this.narratorTimer = 0;
+      }
+      this.narratorVisibleText = narration.text;
+      this.renderNarratorFrame(narration);
+    });
+    (this.narratorBox.querySelector('[data-action="narrator-replay"]') as HTMLButtonElement | null)?.addEventListener("click", () => {
+      if (this.narratorTimer) {
+        window.clearTimeout(this.narratorTimer);
+      }
+      this.narratorVisibleText = prefersReducedMotion() ? narration.text : "";
+      this.renderNarratorFrame(narration);
+      if (!prefersReducedMotion()) {
+        this.advanceNarratorText(narration);
+      }
+    });
+  }
+
+  private advanceNarratorText(narration: NarrationCue): void {
+    if (this.narratorVisibleText.length >= narration.text.length) {
+      this.narratorTimer = 0;
+      this.renderNarratorFrame(narration);
+      return;
+    }
+    const step = narration.text.charAt(this.narratorVisibleText.length) === " " ? 2 : 1;
+    this.narratorVisibleText = narration.text.slice(0, Math.min(narration.text.length, this.narratorVisibleText.length + step));
+    this.renderNarratorFrame(narration);
+    this.narratorTimer = window.setTimeout(() => this.advanceNarratorText(narration), 18);
+  }
+
   private openActionRing(atomId: string): void {
     this.selectedAtomId = atomId;
     this.selectedScope = this.selectedScope || atomId;
     this.viewLevel = "surface";
+    this.nextStepSheet.style.display = "none";
+    this.goalCoreSheet.style.display = "none";
+    this.storyLensSheet.style.display = "none";
     this.composeDock.style.display = "none";
-    this.bottomHud.style.display = "none";
-    this.actionRing.style.display = "block";
+    this.actionRing.style.display = "none";
+    this.bottomHud.style.display = "flex";
+    this.objectLensSheet.style.display = "block";
+    this.sceneManager?.setViewLevel("surface", atomId);
     this.sceneManager?.focusAtomInView(atomId, 0.36);
-    this.renderActionRing();
+    if (this.lastSnapshot) {
+      this.renderObjectLens(this.lastSnapshot);
+    }
   }
 
   private renderActionRing(): void {
@@ -341,11 +597,289 @@ export class GameShell {
     this.selectedAtomId = atomId;
     this.selectedScope = this.selectedScope || atomId;
     this.composeAction = action;
+    this.nextStepSheet.style.display = "none";
+    this.goalCoreSheet.style.display = "none";
     this.actionRing.style.display = "none";
+    this.objectLensSheet.style.display = "none";
+    this.storyLensSheet.style.display = "none";
     this.bottomHud.style.display = "none";
     this.composeDock.style.display = "grid";
+    this.sceneManager?.setViewLevel("surface", atomId);
     this.sceneManager?.focusAtomInView(atomId, 0.4);
     this.renderComposeDock();
+  }
+
+  private openNextStepSheet(): void {
+    const packet = this.lastSnapshot?.nextStepPacket ?? null;
+    this.actionRing.style.display = "none";
+    this.composeDock.style.display = "none";
+    this.goalCoreSheet.style.display = "none";
+    this.objectLensSheet.style.display = "none";
+    this.storyLensSheet.style.display = "none";
+    this.bottomHud.style.display = "flex";
+    this.nextStepSheet.style.display = "block";
+    if (packet?.step) {
+      this.selectedAtomId = packet.step;
+      this.selectedScope = packet.step;
+      this.viewLevel = "surface";
+      this.sceneManager?.setViewLevel("surface", packet.step);
+      this.sceneManager?.focusAtomInView(packet.step, 0.42);
+    }
+    if (this.lastSnapshot) {
+      this.renderNextStepSheet(this.lastSnapshot);
+    }
+  }
+
+  private openGoalCoreSheet(): void {
+    this.actionRing.style.display = "none";
+    this.composeDock.style.display = "none";
+    this.nextStepSheet.style.display = "none";
+    this.objectLensSheet.style.display = "none";
+    this.storyLensSheet.style.display = "none";
+    this.bottomHud.style.display = "flex";
+    this.goalCoreSheet.style.display = "block";
+    this.viewLevel = "global";
+    this.sceneManager?.focusGoalCore();
+    if (this.lastSnapshot) {
+      this.renderGoalCoreSheet(this.lastSnapshot);
+    }
+  }
+
+  private renderGoalCoreSheet(snapshot: EngineSnapshot): void {
+    const brief = this.options.projectBrief;
+    const next = snapshot.nextStepPacket;
+    const latest = snapshot.latestDigest;
+    const title = brief?.title || brief?.name || "Project goal";
+    const summary = brief?.summary || "No synthesized project brief is available yet.";
+    const founders = brief?.founding_team ?? [];
+    this.goalCoreSheet.innerHTML = `
+      <div style="display: grid; gap: 11px;">
+        <div style="display: flex; align-items: start; justify-content: space-between; gap: 10px;">
+          <div style="min-width: 0;">
+            <div style="font-size: 10px; color: #D9B84D; text-transform: uppercase; font-weight: 900;">Goal Core · ${escapeHtml(snapshot.live ? "Live" : "Replay")}</div>
+            <div style="font-size: 17px; font-weight: 900; line-height: 1.2; margin-top: 3px; overflow-wrap: anywhere;">${escapeHtml(title)}</div>
+            <div style="font-size: 11px; color: #8C92A8; margin-top: 4px;">${founders.length} founders · ${Object.values(snapshot.atoms).filter((atom) => atom.state === "done").length}/${Object.keys(snapshot.atoms).length} objects done</div>
+          </div>
+          <button data-action="goal-core-close" style="${ghostButtonStyle()}">Close</button>
+        </div>
+        <div style="${sheetPanelStyle()}">
+          <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 4px;">Project brief</div>
+          <div style="font-size: 13px; color: #E8EAF0; line-height: 1.38; overflow-wrap: anywhere;">${escapeHtml(summary)}</div>
+        </div>
+        ${founders.length > 0 ? `
+          <div data-role="founding-team-brief" style="display: grid; gap: 7px;">
+            <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Founding team</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 7px;">
+              ${founders.map((persona) => founderCard(persona)).join("")}
+            </div>
+          </div>
+        ` : `<div style="${sheetEmptyStyle()}">No founding-team artifact has been synthesized yet.</div>`}
+        ${brief?.forum_excerpt ? sheetSection("Forum pulse", [brief.forum_excerpt], "No forum excerpt yet.") : ""}
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 7px;">
+          ${sheetField("Next", next ? `${next.title || next.step}: ${next.objective || next.whyNow || next.role}` : "No next-step packet is available yet.")}
+          ${sheetField("Latest story", latest ? `${latest.title}: ${latest.summary}` : "No narrative digest has landed yet.")}
+        </div>
+        ${sheetRefs("Sources", brief?.source_refs ?? [])}
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) ${next?.step ? "118px" : "0"}; gap: 8px; align-items: center;">
+          <div style="min-width: 0; color: #AEB4C6; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(next?.step || "Waiting for the first actionable step.")}</div>
+          ${next?.step ? `<button data-action="goal-nudge-next" style="${primaryButtonStyle()}">Nudge</button>` : ""}
+        </div>
+      </div>
+    `;
+    (this.goalCoreSheet.querySelector('[data-action="goal-core-close"]') as HTMLButtonElement | null)?.addEventListener("click", () => {
+      this.goalCoreSheet.style.display = "none";
+    });
+    (this.goalCoreSheet.querySelector('[data-action="goal-nudge-next"]') as HTMLButtonElement | null)?.addEventListener("click", () => {
+      if (next?.step) {
+        this.openComposeDock(next.step, "interject");
+      }
+    });
+  }
+
+  private renderNextStepSheet(snapshot: EngineSnapshot): void {
+    const packet = snapshot.nextStepPacket;
+    if (!packet) {
+      this.nextStepSheet.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <div style="font-size: 13px; font-weight: 850;">Next step</div>
+          <button data-action="next-sheet-close" style="${ghostButtonStyle()}">Close</button>
+        </div>
+        <div style="${sheetEmptyStyle()}">Waiting for the run ledger to emit the next step packet.</div>
+      `;
+      this.bindNextStepSheetActions(null);
+      return;
+    }
+
+    const intents = intentsForStep(snapshot, packet.step);
+    this.nextStepSheet.innerHTML = `
+      <div style="display: grid; gap: 12px;">
+        <div style="display: flex; align-items: start; justify-content: space-between; gap: 10px;">
+          <div style="min-width: 0;">
+            <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Next · ${escapeHtml(packet.role)}</div>
+            <div style="font-size: 17px; font-weight: 900; line-height: 1.2; margin-top: 3px; overflow-wrap: anywhere;">${escapeHtml(packet.title || packet.step)}</div>
+          </div>
+          <button data-action="next-sheet-close" style="${ghostButtonStyle()}">Close</button>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px;">
+          ${sheetField("Objective", packet.objective || "No objective in packet.")}
+          ${sheetField("Why now", packet.whyNow || "No timing reason in packet.")}
+        </div>
+        ${latestDigestPanel(snapshot)}
+        ${discussionPanel(snapshot, packet.step)}
+        ${sheetSection("Context", packet.contextPreview, "No context preview yet.")}
+        ${sheetRefs("Inputs", packet.inputs.map(packetInputLabel))}
+        ${sheetRefs("Memory", packet.memoryRefs)}
+        ${sheetRefs("Sources", packet.sourceRefs)}
+        <div style="display: grid; gap: 8px;">
+          <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Intents</div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); gap: 7px;">
+            ${intentColumn("Queued", intents.queued.map(queuedIntentLabel))}
+            ${intentColumn("Applied", intents.applied.map(intentStateLabel))}
+            ${intentColumn("Ignored", intents.ignored.map(intentStateLabel))}
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) 118px; gap: 8px; align-items: center;">
+          <div style="min-width: 0; color: #AEB4C6; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(packet.step)}</div>
+          <button data-action="next-interject" style="${primaryButtonStyle()}">Nudge</button>
+        </div>
+      </div>
+    `;
+    this.bindNextStepSheetActions(packet);
+  }
+
+  private renderObjectLens(snapshot: EngineSnapshot): void {
+    const atomId = this.selectedAtomId || snapshot.nextStepPacket?.step || activeAtom(snapshot)?.id || "";
+    const step = this.options.workflow.find((item) => item.id === atomId);
+    if (!atomId || !step) {
+      this.objectLensSheet.style.display = "none";
+      return;
+    }
+    const atom = snapshot.atoms[atomId];
+    const packet = snapshot.nextStepPacket?.step === atomId ? snapshot.nextStepPacket : null;
+    const intents = intentsForStep(snapshot, atomId);
+    const digestRows = snapshot.digests
+      .filter((digest) => digest.sourceEventIds.some((eventId) => sourceEventTouchesAtom(snapshot, eventId, atomId)))
+      .slice(-2)
+      .map((digest) => digest.summary);
+    const discussionRows = snapshot.discussion
+      .filter((entry) => entry.atomId === atomId || entry.atomId === null)
+      .slice(-2)
+      .map((entry) => `${entry.speaker}: ${entry.text}`);
+    const produced = producedRefsForAtom(snapshot, atomId);
+    const consumed = packet ? [
+      ...packet.inputs.map(packetInputLabel),
+      ...packet.memoryRefs.map((ref) => `memory: ${ref}`),
+    ] : [];
+    const nextRelation = snapshot.nextStepPacket?.step === atomId
+      ? `This object is slated next as ${snapshot.nextStepPacket.role}.`
+      : snapshot.nextStepPacket
+        ? `Next slated object: ${snapshot.nextStepPacket.title || snapshot.nextStepPacket.step}.`
+        : "No next-step packet is currently available.";
+
+    this.objectLensSheet.innerHTML = `
+      <div style="display: grid; gap: 10px;">
+        <div style="display: flex; align-items: start; justify-content: space-between; gap: 10px;">
+          <div style="min-width: 0;">
+            <div style="font-size: 10px; color: #41C7C7; text-transform: uppercase; font-weight: 900;">Object · ${escapeHtml(step.handler)}</div>
+            <div style="font-size: 16px; font-weight: 900; line-height: 1.2; margin-top: 3px; overflow-wrap: anywhere;">${escapeHtml(step.title || step.id)}</div>
+            <div style="font-size: 11px; color: #8C92A8; margin-top: 4px;">${escapeHtml(atom?.state || (step.enabled ? "idle" : "skipped"))} · ${escapeHtml(atomId)}</div>
+          </div>
+          <button data-action="object-lens-close" style="${ghostButtonStyle()}">Close</button>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 7px;">
+          ${sheetField("What", objectWhat(step, atom?.state || "idle"))}
+          ${sheetField("Next", nextRelation)}
+        </div>
+        ${sheetSection("Consumed", consumed, "No consumed inputs are attached to this object yet.")}
+        ${sheetSection("Produced", produced, "No produced artifacts are known for this object yet.")}
+        ${sheetSection("Story", [...digestRows, ...discussionRows], "No story or discussion rows are attached yet.")}
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px;">
+          <button data-action-command="shape" style="${objectCommandStyle("#41C7C7")}">Shape</button>
+          <button data-action-command="interject" style="${objectCommandStyle("#E8EAF0")}">Nudge</button>
+          <button data-action-command="intercept" style="${objectCommandStyle("#E09B2A")}">Intercept</button>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 7px;">
+          ${intentColumn("Queued", intents.queued.map(queuedIntentLabel))}
+          ${intentColumn("Applied", intents.applied.map(intentStateLabel))}
+          ${intentColumn("Ignored", intents.ignored.map(intentStateLabel))}
+        </div>
+      </div>
+    `;
+    (this.objectLensSheet.querySelector('[data-action="object-lens-close"]') as HTMLButtonElement | null)?.addEventListener("click", () => {
+      this.objectLensSheet.style.display = "none";
+    });
+    this.objectLensSheet.querySelectorAll<HTMLButtonElement>("[data-action-command]").forEach((button) => {
+      button.addEventListener("click", () => this.openComposeDock(atomId, button.dataset.actionCommand as ComposeAction));
+    });
+  }
+
+  private renderStoryLens(snapshot: EngineSnapshot): void {
+    const storyAtoms = storyAtomIdsForSnapshot(snapshot).filter((atomId) => this.options.workflow.some((step) => step.id === atomId));
+    this.sceneManager?.setStoryFocus(storyAtoms);
+    const digests = snapshot.digests.slice(-5).reverse();
+    const discussionRows = snapshot.discussion.slice(-5).reverse();
+    const highlights = snapshot.discussionHighlights.slice(-4).reverse();
+    const next = snapshot.nextStepPacket;
+    const mode = snapshot.live ? "Live" : `Replay ${snapshot.replayIndex + 1}/${snapshot.historyLength}`;
+
+    this.storyLensSheet.innerHTML = `
+      <div style="display: grid; gap: 11px;">
+        <div style="display: flex; align-items: start; justify-content: space-between; gap: 10px;">
+          <div style="min-width: 0;">
+            <div style="font-size: 10px; color: #D9B84D; text-transform: uppercase; font-weight: 900;">Story Lens · ${escapeHtml(mode)}</div>
+            <div style="font-size: 16px; font-weight: 900; line-height: 1.2; margin-top: 3px; overflow-wrap: anywhere;">Recent run path</div>
+            <div style="font-size: 11px; color: #8C92A8; margin-top: 4px;">${digests.length} digests · ${discussionRows.length} discussion rows · ${highlights.length} highlights</div>
+          </div>
+          <div style="display: inline-flex; gap: 6px; flex: 0 0 auto;">
+            <button data-action="story-open-timeline" style="${ghostButtonStyle()}">Timeline</button>
+            <button data-action="story-lens-close" style="${ghostButtonStyle()}">Close</button>
+          </div>
+        </div>
+        ${storyAtoms.length > 0 ? sheetRefs("Touched objects", storyAtoms.map((atomId) => storyStepTitle(this.options.workflow, atomId))) : ""}
+        ${digests.length > 0 ? `
+          <div data-role="story-card-rail" style="display: grid; gap: 8px;">
+            <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">DWA Story Satellites</div>
+            ${digests.map((digest) => storyDigestCard(digest)).join("")}
+          </div>
+        ` : `<div style="${sheetEmptyStyle()}">No narrative digests have been emitted into the event ledger yet.</div>`}
+        ${highlights.length > 0 ? sheetSection("Discussion highlights", highlights.map((highlight) => highlight.text), "No highlights yet.") : ""}
+        ${discussionRows.length > 0 ? `
+          <div data-role="story-discussion-rail" style="display: grid; gap: 6px;">
+            <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Recent discussion</div>
+            ${discussionRows.map((entry) => `<div style="${sheetLineStyle()}"><strong style="color: #E8EAF0;">${escapeHtml(entry.speaker)} · ${escapeHtml(entry.entryType.replace(/_/g, " "))}</strong><br>${escapeHtml(entry.text)}</div>`).join("")}
+          </div>
+        ` : ""}
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) ${next?.step ? "118px" : "0"}; gap: 8px; align-items: center;">
+          <div style="${sheetPanelStyle()}">
+            <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 4px;">Next slated step</div>
+            <div style="font-size: 12px; color: #E8EAF0; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(next ? `${next.title || next.step} · ${next.objective || next.whyNow || next.role}` : "No next-step packet is currently available.")}</div>
+          </div>
+          ${next?.step ? `<button data-action="story-nudge-next" style="${primaryButtonStyle()}">Nudge</button>` : ""}
+        </div>
+      </div>
+    `;
+    (this.storyLensSheet.querySelector('[data-action="story-lens-close"]') as HTMLButtonElement | null)?.addEventListener("click", () => {
+      this.storyLensSheet.style.display = "none";
+    });
+    (this.storyLensSheet.querySelector('[data-action="story-open-timeline"]') as HTMLButtonElement | null)?.addEventListener("click", () => this.showTimeline(5000));
+    (this.storyLensSheet.querySelector('[data-action="story-nudge-next"]') as HTMLButtonElement | null)?.addEventListener("click", () => {
+      if (next?.step) {
+        this.openComposeDock(next.step, "interject");
+      }
+    });
+  }
+
+  private bindNextStepSheetActions(packet: NextStepPacket | null): void {
+    const close = this.nextStepSheet.querySelector('[data-action="next-sheet-close"]') as HTMLButtonElement | null;
+    close?.addEventListener("click", () => {
+      this.nextStepSheet.style.display = "none";
+    });
+    const interject = this.nextStepSheet.querySelector('[data-action="next-interject"]') as HTMLButtonElement | null;
+    interject?.addEventListener("click", () => {
+      if (packet?.step) {
+        this.openComposeDock(packet.step, "interject");
+      }
+    });
   }
 
   private renderComposeDock(): void {
@@ -391,6 +925,13 @@ export class GameShell {
     this.composeDock.style.display = "none";
     this.bottomHud.style.display = "flex";
     this.sceneManager?.setViewLevel(this.viewLevel, this.selectedAtomId);
+    if (this.viewLevel === "surface" && this.selectedAtomId && this.lastSnapshot) {
+      this.objectLensSheet.style.display = "block";
+      this.renderObjectLens(this.lastSnapshot);
+    } else if (this.viewLevel === "story" && this.lastSnapshot) {
+      this.storyLensSheet.style.display = "block";
+      this.renderStoryLens(this.lastSnapshot);
+    }
   }
 
   private closeActionRing(): void {
@@ -406,16 +947,24 @@ export class GameShell {
       return;
     }
     const atomId = this.selectedAtomId || this.selectedScope || null;
+    const clientIntentId = newClientIntentId();
+    const kind = this.composeAction === "shape"
+      ? "reroute"
+      : this.composeAction === "intercept"
+        ? "intercept"
+        : "interject";
     if (this.composeAction === "intercept" || this.composeAction === "shape") {
       await apiPost(`/api/projects/${this.options.projectId}/intents`, {
-        kind: this.composeAction === "shape" ? "reroute" : "intercept",
+        kind,
         atom_id: atomId,
+        client_intent_id: clientIntentId,
         payload: { instruction, scope: this.selectedScope || null, source: "map" },
       });
     } else {
       await apiPost(`/api/projects/${this.options.projectId}/intents`, {
-        kind: "interject",
+        kind,
         atom_id: atomId,
+        client_intent_id: clientIntentId,
         payload: { instruction, scope: this.selectedScope || null, source: "map" },
       });
     }
@@ -428,6 +977,10 @@ export class GameShell {
     if (target) {
       this.selectedAtomId = target;
       this.setViewLevel("surface");
+      if (this.lastSnapshot) {
+        this.objectLensSheet.style.display = "block";
+        this.renderObjectLens(this.lastSnapshot);
+      }
     }
   }
 
@@ -435,7 +988,31 @@ export class GameShell {
     this.viewLevel = level;
     const active = this.lastSnapshot ? activeAtom(this.lastSnapshot) : null;
     const target = this.selectedAtomId || active?.id || this.options.workflow.find((step) => step.enabled)?.id || this.options.workflow[0]?.id || "";
+    this.selectedAtomId = target;
+    if (level === "story" && this.lastSnapshot) {
+      const storyAtoms = storyAtomIdsForSnapshot(this.lastSnapshot).filter((atomId) => this.options.workflow.some((step) => step.id === atomId));
+      this.sceneManager?.setStoryFocus(storyAtoms);
+    }
     this.sceneManager?.setViewLevel(level, target);
+    if (level === "surface" && target && this.lastSnapshot) {
+      this.nextStepSheet.style.display = "none";
+      this.goalCoreSheet.style.display = "none";
+      this.actionRing.style.display = "none";
+      this.storyLensSheet.style.display = "none";
+      this.objectLensSheet.style.display = "block";
+      this.renderObjectLens(this.lastSnapshot);
+    } else if (level === "story" && this.lastSnapshot) {
+      this.nextStepSheet.style.display = "none";
+      this.goalCoreSheet.style.display = "none";
+      this.actionRing.style.display = "none";
+      this.objectLensSheet.style.display = "none";
+      this.storyLensSheet.style.display = "block";
+      this.renderStoryLens(this.lastSnapshot);
+    } else {
+      this.goalCoreSheet.style.display = "none";
+      this.objectLensSheet.style.display = "none";
+      this.storyLensSheet.style.display = "none";
+    }
     if (this.lastSnapshot && this.bottomHud.style.display !== "none") {
       this.renderBottomHud(this.lastSnapshot);
     }
@@ -464,15 +1041,19 @@ export class GameShell {
     this.canvas.remove();
     this.actionRing.style.display = "none";
     this.composeDock.style.display = "none";
+    this.nextStepSheet.style.display = "none";
+    this.goalCoreSheet.style.display = "none";
+    this.objectLensSheet.style.display = "none";
+    this.storyLensSheet.style.display = "none";
     this.bottomHud.style.display = "none";
     const fallback = document.createElement("div");
     fallback.dataset.role = "map-fallback";
     fallback.style.cssText = "position: absolute; inset: 56px 0 0 0; overflow: auto; padding: 16px; background: #0D0F14;";
     this.root.appendChild(fallback);
     this.options.engine.onSnapshot((snapshot) => {
-      fallback.innerHTML = fallbackHtml(this.options.workflow, snapshot);
+      fallback.innerHTML = fallbackHtml(this.options.workflow, snapshot, this.options.projectBrief);
     });
-    fallback.innerHTML = fallbackHtml(this.options.workflow, this.options.engine.snapshot());
+    fallback.innerHTML = fallbackHtml(this.options.workflow, this.options.engine.snapshot(), this.options.projectBrief);
   }
 }
 
@@ -492,10 +1073,47 @@ function shouldPreserveDrawingBuffer(): boolean {
   return typeof window !== "undefined" && new URLSearchParams(window.location.search).get("capture") === "1";
 }
 
-function fallbackHtml(workflow: WorkflowStep[], snapshot: EngineSnapshot): string {
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+}
+
+function fallbackHtml(workflow: WorkflowStep[], snapshot: EngineSnapshot, projectBrief: ProjectBrief | null): string {
   return `
     <div style="display: grid; gap: 10px;">
       <div style="font-size: 13px; color: #7A7E92;">WebGL unavailable. The same event replay state is shown as an accessible list.</div>
+      ${projectBrief ? `
+        <div data-role="goal-core-sheet" style="padding: 12px; border: 1px solid #7A5C23; border-radius: 8px; background: #141822;">
+          <div style="font-size: 11px; color: #D9B84D; text-transform: uppercase; font-weight: 850;">Goal Core</div>
+          <div style="font-size: 15px; font-weight: 850; margin-top: 4px;">${escapeHtml(projectBrief.title || projectBrief.name)}</div>
+          <div style="font-size: 12px; color: #C7CAD6; margin-top: 6px;">${escapeHtml(projectBrief.summary || "")}</div>
+        </div>
+      ` : ""}
+      ${snapshot.nextStepPacket ? `
+        <div data-role="next-step-sheet" style="padding: 12px; border: 1px solid #2A3042; border-radius: 8px; background: #141822;">
+          <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Next</div>
+          <div style="font-size: 15px; font-weight: 850; margin-top: 4px;">${escapeHtml(snapshot.nextStepPacket.title || snapshot.nextStepPacket.step)}</div>
+          <div style="font-size: 12px; color: #C7CAD6; margin-top: 6px;">${escapeHtml(snapshot.nextStepPacket.objective || snapshot.nextStepPacket.whyNow || "")}</div>
+        </div>
+      ` : ""}
+      ${snapshot.latestDigest ? `
+        <div data-role="narrative-digest" style="padding: 12px; border: 1px solid #2A3042; border-radius: 8px; background: #141822;">
+          <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Recent story</div>
+          <div style="font-size: 14px; font-weight: 850; margin-top: 4px;">${escapeHtml(snapshot.latestDigest.title)}</div>
+          <div style="font-size: 12px; color: #C7CAD6; margin-top: 6px;">${escapeHtml(snapshot.latestDigest.summary)}</div>
+        </div>
+      ` : ""}
+      ${narrationForSnapshot(snapshot) ? `
+        <div data-role="narrator-dialogue" style="padding: 12px; border: 1px solid #7A5C23; border-radius: 8px; background: #11131D;">
+          <div style="font-size: 11px; color: #D9B84D; text-transform: uppercase; font-weight: 900;">${escapeHtml(narrationForSnapshot(snapshot)?.speaker || "Narrator")}</div>
+          <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 15px; line-height: 1.38; color: #F4F0DD; margin-top: 6px;">${escapeHtml(narrationForSnapshot(snapshot)?.text || "")}</div>
+        </div>
+      ` : ""}
+      ${snapshot.discussion.length > 0 ? `
+        <div data-role="discussion-log" style="padding: 12px; border: 1px solid #2A3042; border-radius: 8px; background: #141822;">
+          <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Discussion</div>
+          <div style="font-size: 12px; color: #C7CAD6; margin-top: 6px;">${escapeHtml(snapshot.discussion[snapshot.discussion.length - 1].speaker)} · ${escapeHtml(snapshot.discussion[snapshot.discussion.length - 1].text)}</div>
+        </div>
+      ` : ""}
       ${workflow.map((step) => {
         const atom = snapshot.atoms[step.id];
         return `
@@ -507,6 +1125,368 @@ function fallbackHtml(workflow: WorkflowStep[], snapshot: EngineSnapshot): strin
       }).join("")}
     </div>
   `;
+}
+
+function narrationForSnapshot(snapshot: EngineSnapshot): NarrationCue | null {
+  const digest = snapshot.latestDigest;
+  if (digest) {
+    const highlight = digest.highlights[0]?.text || "";
+    const text = [digest.summary, highlight].filter(Boolean).join(" ");
+    return {
+      key: `digest:${digest.digestId}`,
+      speaker: "Run Narrator",
+      title: digest.title || "Recent story",
+      text: text || "The latest run window has been recorded.",
+      sourceLabel: digest.sourceEventIds.length > 0
+        ? `Sources ${digest.sourceEventIds.slice(0, 3).map((id) => `event:${id}`).join(" ")}`
+        : "Sources pending",
+      mode: snapshot.live ? "live narration" : "replay narration",
+    };
+  }
+  const entry = snapshot.discussion[snapshot.discussion.length - 1];
+  if (entry) {
+    return {
+      key: `discussion:${entry.discussionEntryId}`,
+      speaker: entry.speaker || "Council",
+      title: entry.entryType.replace(/_/g, " "),
+      text: entry.text,
+      sourceLabel: entry.sourceRefs.slice(0, 3).join(" ") || "Sources pending",
+      mode: snapshot.live ? "live discussion" : "replay discussion",
+    };
+  }
+  return null;
+}
+
+function intentsForStep(snapshot: EngineSnapshot, step: string): {
+  queued: Record<string, unknown>[];
+  applied: OperatorIntentState[];
+  ignored: OperatorIntentState[];
+} {
+  const queued = [...(snapshot.nextStepPacket?.step === step ? snapshot.nextStepPacket.queuedIntents : [])];
+  const seenQueued = new Set(queued.map((intent) => stringValue(intent.client_intent_id, "")).filter(Boolean));
+  for (const intent of Object.values(snapshot.pendingIntents)) {
+    if (intent.atomId !== null && intent.atomId !== step) {
+      continue;
+    }
+    if (seenQueued.has(intent.clientIntentId)) {
+      continue;
+    }
+    queued.push({
+      client_intent_id: intent.clientIntentId,
+      kind: intent.kind,
+      atom_id: intent.atomId,
+      status: intent.status,
+    });
+    seenQueued.add(intent.clientIntentId);
+  }
+  const appliesToStep = (intent: OperatorIntentState): boolean => {
+    return intent.atomId === step || intent.step === step || intent.atomId === null;
+  };
+  return {
+    queued,
+    applied: Object.values(snapshot.appliedIntents).filter(appliesToStep),
+    ignored: Object.values(snapshot.ignoredIntents).filter(appliesToStep),
+  };
+}
+
+function sheetField(label: string, value: string): string {
+  return `
+    <div style="${sheetPanelStyle()}">
+      <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 4px;">${escapeHtml(label)}</div>
+      <div style="font-size: 12px; color: #E8EAF0; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(value)}</div>
+    </div>
+  `;
+}
+
+function sheetSection(label: string, rows: string[], empty: string): string {
+  const body = rows.length > 0
+    ? rows.slice(0, 4).map((row) => `<div style="${sheetLineStyle()}">${escapeHtml(row)}</div>`).join("")
+    : `<div style="${sheetEmptyStyle()}">${escapeHtml(empty)}</div>`;
+  return `
+    <div style="display: grid; gap: 6px;">
+      <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">${escapeHtml(label)}</div>
+      <div style="display: grid; gap: 5px;">${body}</div>
+    </div>
+  `;
+}
+
+function sheetRefs(label: string, refs: string[]): string {
+  const chips = refs.length > 0
+    ? refs.slice(0, 8).map((ref) => `<span style="${refChipStyle()}">${escapeHtml(ref)}</span>`).join("")
+    : `<span style="${emptyChipStyle()}">None</span>`;
+  return `
+    <div style="display: grid; gap: 6px;">
+      <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">${escapeHtml(label)}</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">${chips}</div>
+    </div>
+  `;
+}
+
+function latestDigestPanel(snapshot: EngineSnapshot): string {
+  const digest = snapshot.latestDigest;
+  if (!digest) {
+    return "";
+  }
+  const highlightRows = digest.highlights.slice(0, 3).map((highlight) => highlight.text);
+  return `
+    <div data-role="narrative-digest" style="display: grid; gap: 7px; padding: 10px; border: 1px solid rgba(65,199,199,0.22); border-radius: 8px; background: rgba(65,199,199,0.07);">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <div style="min-width: 0;">
+          <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Recent story</div>
+          <div style="font-size: 13px; color: #E8EAF0; font-weight: 850; margin-top: 3px; overflow-wrap: anywhere;">${escapeHtml(digest.title)}</div>
+        </div>
+        <div style="color: #41C7C7; font-size: 11px; font-weight: 850; white-space: nowrap;">${escapeHtml(String(digest.window.event_count ?? digest.sourceEventIds.length))} events</div>
+      </div>
+      <div style="font-size: 12px; color: #C7CAD6; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(digest.summary)}</div>
+      ${sheetSection("Highlights", highlightRows, "No sourced highlights yet.")}
+      ${digest.risks.length > 0 ? sheetSection("Risks", digest.risks, "No risks.") : ""}
+    </div>
+  `;
+}
+
+function discussionPanel(snapshot: EngineSnapshot, step: string): string {
+  const rows = snapshot.discussion
+    .filter((entry) => entry.atomId === step || entry.atomId === null || entry.atomId === "persona_forum")
+    .slice(-4)
+    .reverse();
+  const highlights = snapshot.discussionHighlights
+    .filter((highlight) => highlight.atomId === step || highlight.atomId === null || highlight.atomId === "persona_forum")
+    .slice(-2)
+    .map((highlight) => highlight.text);
+  if (rows.length === 0 && highlights.length === 0) {
+    return "";
+  }
+  const body = rows.map((entry) => {
+    const label = `${entry.speaker} · ${entry.entryType.replace(/_/g, " ")}`;
+    return `<div style="${sheetLineStyle()}"><strong style="color: #E8EAF0;">${escapeHtml(label)}</strong><br>${escapeHtml(entry.text)}</div>`;
+  });
+  return `
+    <div data-role="discussion-log" style="display: grid; gap: 7px;">
+      <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Discussion</div>
+      <div style="display: grid; gap: 5px;">
+        ${body.join("")}
+        ${highlights.map((text) => `<div style="${sheetLineStyle()}"><strong style="color: #41C7C7;">Highlight</strong><br>${escapeHtml(text)}</div>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function founderCard(persona: ProjectBrief["founding_team"][number]): string {
+  const title = [persona.name, persona.archetype].filter(Boolean).join(" · ");
+  const body = persona.stance || persona.mandate || "No stance recorded yet.";
+  const veto = persona.veto_scope ? `<div style="margin-top: 5px; color: #E09B2A; font-size: 11px; font-weight: 850;">${escapeHtml(persona.veto_scope)}</div>` : "";
+  return `
+    <div style="${sheetPanelStyle()}">
+      <div style="font-size: 12px; color: #E8EAF0; font-weight: 900; overflow-wrap: anywhere;">${escapeHtml(title)}</div>
+      <div style="font-size: 12px; color: #C7CAD6; line-height: 1.35; margin-top: 5px; overflow-wrap: anywhere;">${escapeHtml(body)}</div>
+      ${veto}
+    </div>
+  `;
+}
+
+function storyDigestCard(digest: NarrativeDigest): string {
+  const highlights = digest.highlights.slice(0, 3).map((highlight) => highlight.text);
+  const refs = [
+    ...digest.sourceEventIds.slice(0, 5).map((eventId) => `event:${eventId}`),
+    ...digest.artifactRefs.slice(0, 4),
+  ];
+  return `
+    <div data-role="story-card" style="display: grid; gap: 7px; padding: 10px; border: 1px solid rgba(217,184,77,0.24); border-radius: 8px; background: rgba(217,184,77,0.07);">
+      <div style="display: flex; align-items: start; justify-content: space-between; gap: 8px;">
+        <div style="min-width: 0;">
+          <div style="font-size: 13px; color: #E8EAF0; font-weight: 900; line-height: 1.2; overflow-wrap: anywhere;">${escapeHtml(digest.title || "Story digest")}</div>
+          <div style="font-size: 10px; color: #8C92A8; margin-top: 3px; text-transform: uppercase; font-weight: 850;">${escapeHtml(String(digest.window.event_count ?? digest.sourceEventIds.length))} events</div>
+        </div>
+        ${digest.nextStepHint ? `<span style="${refChipStyle()}">${escapeHtml(digest.nextStepHint)}</span>` : ""}
+      </div>
+      <div style="font-size: 12px; color: #D9D2B2; line-height: 1.36; overflow-wrap: anywhere;">${escapeHtml(digest.summary || "No summary recorded.")}</div>
+      ${sheetSection("Highlights", highlights, "No sourced highlights yet.")}
+      ${digest.risks.length > 0 ? sheetSection("Risks", digest.risks.slice(0, 2), "No risks.") : ""}
+      ${sheetRefs("Sources", refs)}
+    </div>
+  `;
+}
+
+function storyAtomIdsForSnapshot(snapshot: EngineSnapshot): string[] {
+  const ids: string[] = [];
+  const recentDigests = snapshot.digests.slice(-5);
+  for (const digest of recentDigests) {
+    for (const eventId of digest.sourceEventIds) {
+      const event = snapshot.events.find((item) => item.event_id === eventId);
+      if (event) {
+        ids.push(eventAtomId(event));
+      }
+    }
+  }
+  for (const entry of snapshot.discussion.slice(-5)) {
+    ids.push(entry.atomId || "");
+  }
+  for (const highlight of snapshot.discussionHighlights.slice(-4)) {
+    ids.push(highlight.atomId || "");
+  }
+  ids.push(snapshot.nextStepPacket?.step || "");
+  ids.push(activeAtom(snapshot)?.id || "");
+  return dedupeStrings(ids.filter(Boolean)).slice(-8);
+}
+
+function eventAtomId(event: Record<string, unknown>): string {
+  return stringValue(event.atom_id ?? event.step ?? event.name ?? event.gate, "");
+}
+
+function storyStepTitle(workflow: WorkflowStep[], atomId: string): string {
+  const step = workflow.find((item) => item.id === atomId);
+  return step?.title ? `${step.title} · ${atomId}` : atomId;
+}
+
+function intentColumn(label: string, rows: string[]): string {
+  return `
+    <div style="${sheetPanelStyle()}">
+      <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 6px;">${escapeHtml(label)}</div>
+      <div style="display: grid; gap: 5px;">
+        ${rows.length > 0 ? rows.slice(0, 4).join("") : `<span style="${emptyChipStyle()}">None</span>`}
+      </div>
+    </div>
+  `;
+}
+
+function queuedIntentLabel(intent: Record<string, unknown>): string {
+  const id = stringValue(intent.client_intent_id, "queued");
+  const kind = stringValue(intent.kind, "intent");
+  return `<span style="${intentChipStyle("#D9B84D")}">${escapeHtml(kind)} · ${escapeHtml(id)}</span>`;
+}
+
+function intentStateLabel(intent: OperatorIntentState): string {
+  const detail = intent.status === "applied"
+    ? intent.appliedTo || "applied"
+    : intent.reason || "ignored";
+  const color = intent.status === "applied" ? "#41C7C7" : "#E09B2A";
+  return `<span style="${intentChipStyle(color)}">${escapeHtml(intent.kind)} · ${escapeHtml(detail)}</span>`;
+}
+
+function packetInputLabel(input: Record<string, unknown>): string {
+  const kind = stringValue(input.kind, "input");
+  const ref = stringValue(input.ref ?? input.path ?? input.source, "");
+  return ref ? `${kind}: ${ref}` : kind;
+}
+
+function objectWhat(step: WorkflowStep, state: string): string {
+  if (step.type === "gate") {
+    return `Decision point currently ${state}.`;
+  }
+  if (step.handler === "memory_refresh") {
+    return `Memory context object currently ${state}.`;
+  }
+  if (step.handler === "persona_forum") {
+    return `Founding-team context object currently ${state}.`;
+  }
+  return `Workflow ${step.type} handled by ${step.handler}; current state is ${state}.`;
+}
+
+function producedRefsForAtom(snapshot: EngineSnapshot, atomId: string): string[] {
+  const refs: string[] = [];
+  for (const event of snapshot.events) {
+    if (!eventTouchesAtom(event, atomId)) {
+      continue;
+    }
+    refs.push(...arrayOfStrings(event.artifact_refs));
+    refs.push(...arrayOfStrings(event.source_refs).filter((ref) => ref.startsWith("artifact:")));
+  }
+  return dedupeStrings(refs).slice(-8);
+}
+
+function sourceEventTouchesAtom(snapshot: EngineSnapshot, eventId: string, atomId: string): boolean {
+  const event = snapshot.events.find((item) => item.event_id === eventId);
+  return event ? eventTouchesAtom(event, atomId) : false;
+}
+
+function eventTouchesAtom(event: Record<string, unknown>, atomId: string): boolean {
+  return (
+    event.atom_id === atomId ||
+    event.step === atomId ||
+    event.name === atomId ||
+    event.gate === atomId
+  );
+}
+
+function arrayOfStrings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function dedupeStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function newClientIntentId(): string {
+  const cryptoApi = typeof crypto !== "undefined" ? crypto : null;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+    return `intent_${cryptoApi.randomUUID()}`;
+  }
+  const random = Math.random().toString(36).slice(2, 10);
+  return `intent_${Date.now().toString(36)}_${random}`;
+}
+
+function sheetPanelStyle(): string {
+  return "min-width: 0; padding: 9px; border: 1px solid rgba(232,234,240,0.12); border-radius: 8px; background: rgba(16,20,30,0.72);";
+}
+
+function sheetLineStyle(): string {
+  return "padding: 8px 9px; border: 1px solid rgba(232,234,240,0.10); border-radius: 8px; background: rgba(13,15,20,0.52); color: #C7CAD6; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere;";
+}
+
+function refChipStyle(): string {
+  return "max-width: 100%; padding: 6px 8px; border: 1px solid rgba(65,199,199,0.26); border-radius: 999px; background: rgba(65,199,199,0.10); color: #C7CAD6; font-size: 11px; font-weight: 750; overflow-wrap: anywhere;";
+}
+
+function emptyChipStyle(): string {
+  return "display: inline-flex; width: fit-content; padding: 6px 8px; border: 1px solid rgba(232,234,240,0.10); border-radius: 999px; background: rgba(13,15,20,0.42); color: #7A7E92; font-size: 11px; font-weight: 750;";
+}
+
+function intentChipStyle(color: string): string {
+  return `display: inline-flex; width: fit-content; max-width: 100%; padding: 6px 8px; border: 1px solid ${color}; border-radius: 999px; background: rgba(13,15,20,0.48); color: #E8EAF0; font-size: 11px; font-weight: 800; overflow-wrap: anywhere;`;
+}
+
+function tinyNarratorButtonStyle(): string {
+  return [
+    "height: 26px",
+    "border: 1px solid rgba(217,184,77,0.42)",
+    "border-radius: 999px",
+    "background: rgba(217,184,77,0.08)",
+    "color: #D9B84D",
+    "font: 900 10px JetBrains Mono, ui-monospace, monospace",
+    "letter-spacing: 0",
+    "text-transform: uppercase",
+    "padding: 0 9px",
+  ].join("; ");
+}
+
+function objectCommandStyle(color: string): string {
+  return [
+    "height: 38px",
+    "border: 1px solid rgba(232,234,240,0.14)",
+    "border-radius: 999px",
+    "background: rgba(13,15,20,0.58)",
+    `color: ${color}`,
+    "font: 900 11px Inter, system-ui, sans-serif",
+    "padding: 0 9px",
+    "white-space: nowrap",
+  ].join("; ");
+}
+
+function sheetEmptyStyle(): string {
+  return "padding: 9px; border: 1px solid rgba(232,234,240,0.10); border-radius: 8px; background: rgba(13,15,20,0.42); color: #7A7E92; font-size: 12px; line-height: 1.35;";
 }
 
 function activeAtom(snapshot: EngineSnapshot) {

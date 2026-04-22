@@ -56,6 +56,22 @@ def test_atom_replay_scrub(tmp_path: Path) -> None:
     )
 
 
+def test_unknown_event_type_is_ignored_by_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1', [{ id: 'implementation', type: 'phase', handler: 'implementation', enabled: true }]);
+        engine.loadHistory([
+          { event_id: '1', type: 'typo_event', name: 'implementation', ts: '2026-04-21T00:00:00Z' },
+        ]);
+        assert.equal(engine.snapshot().atoms.implementation.state, 'idle');
+        assert.equal(engine.snapshot().historyLength, 1);
+        """,
+    )
+
+
 def test_cost_replay_and_budget_gate(tmp_path: Path) -> None:
     run_engine_script(
         tmp_path,
@@ -338,5 +354,108 @@ def test_pending_intent_attaches_to_current_next_step_packet(tmp_path: Path) -> 
           engine.snapshot().nextStepPacket.queuedIntents.map((intent) => intent.client_intent_id),
           ['intent-existing'],
         );
+        """,
+    )
+
+
+def test_narrative_digest_replay_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: 'evt-digest-1',
+            type: 'narrative_digest_created',
+            digest_id: 'dwa_1',
+            title: 'Memory completed',
+            summary: 'Recent ledger window: 1 phase_done. Next: Team.',
+            highlights: [{ text: 'Completed memory_refresh.', source_refs: ['event:evt-phase-1'] }],
+            risks: [],
+            open_questions: [],
+            next_step_hint: 'Team',
+            source_event_ids: ['evt-phase-1'],
+            artifact_refs: ['.orchestrator/narrative/digests/dwa_1.json'],
+            window: { from_event_id: 'evt-phase-1', to_event_id: 'evt-phase-1', event_count: 1 },
+          },
+          {
+            event_id: 'evt-digest-2',
+            type: 'narrative_digest_created',
+            digest: {
+              digest_id: 'dwa_2',
+              title: 'Team completed',
+              summary: 'Recent ledger window: 1 phase_done. Next: Architect.',
+              highlights: [{ text: 'Completed persona_forum.', source_refs: ['event:evt-phase-2'] }],
+              risks: ['Intent ignored: unsupported_kind.'],
+              open_questions: ['Does the queued operator intent need a terminal applied or ignored outcome?'],
+              next_step_hint: 'Architect',
+              source_event_ids: ['evt-phase-2'],
+              artifact_refs: ['.orchestrator/narrative/digests/dwa_2.json'],
+              window: { from_event_id: 'evt-phase-2', to_event_id: 'evt-phase-2', event_count: 1 },
+            },
+          },
+        ]);
+        let snapshot = engine.snapshot();
+        assert.equal(snapshot.digests.length, 2);
+        assert.equal(snapshot.latestDigest.digestId, 'dwa_2');
+        assert.equal(snapshot.latestDigest.highlights[0].sourceRefs[0], 'event:evt-phase-2');
+        assert.equal(snapshot.latestDigest.risks[0], 'Intent ignored: unsupported_kind.');
+
+        engine.scrubTo(0);
+        snapshot = engine.snapshot();
+        assert.equal(snapshot.digests.length, 1);
+        assert.equal(snapshot.latestDigest.digestId, 'dwa_1');
+        assert.equal(snapshot.latestDigest.nextStepHint, 'Team');
+        """,
+    )
+
+
+def test_discussion_replay_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: 'evt-disc-1',
+            type: 'discussion_entry_created',
+            entry: {
+              discussion_entry_id: 'disc_1',
+              speaker: 'operator',
+              entry_type: 'operator_note',
+              atom_id: 'testing',
+              text: 'Keep evidence visible.',
+              source_refs: ['event:evt-intent-1'],
+              artifact_refs: ['.orchestrator/control/intents.jsonl'],
+              metadata: { client_intent_id: 'intent-1' },
+            },
+          },
+          {
+            event_id: 'evt-high-1',
+            type: 'discussion_highlight_created',
+            highlight: {
+              discussion_highlight_id: 'high_1',
+              highlight_type: 'persona_forum',
+              atom_id: 'persona_forum',
+              text: 'Founding team discussion captured 4 persona statements.',
+              source_refs: ['entry:disc_1'],
+              artifact_refs: ['PERSONA_FORUM.md'],
+            },
+          },
+        ]);
+        let snapshot = engine.snapshot();
+        assert.equal(snapshot.discussion.length, 1);
+        assert.equal(snapshot.discussion[0].speaker, 'operator');
+        assert.equal(snapshot.discussion[0].metadata.client_intent_id, 'intent-1');
+        assert.equal(snapshot.discussionHighlights[0].sourceRefs[0], 'entry:disc_1');
+
+        engine.scrubTo(0);
+        snapshot = engine.snapshot();
+        assert.equal(snapshot.discussion.length, 1);
+        assert.equal(snapshot.discussionHighlights.length, 0);
         """,
     )

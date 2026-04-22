@@ -54,6 +54,15 @@ def _emit_memory_event(project_id: str, event_type: str, result: dict[str, Any],
     )
 
 
+def _emit_memory_error(project_id: str, error: str) -> None:
+    _emit_memory_event(
+        project_id,
+        "memory_error",
+        {"project_id": project_id, "available": False},
+        error=error,
+    )
+
+
 @router.get("/{project_id}/memory/status")
 async def get_memory_status(project_id: str) -> dict[str, Any]:
     project = _project(project_id)
@@ -76,7 +85,7 @@ async def sync_memory(project_id: str) -> dict[str, Any]:
         )
         return result
     except RuntimeError as exc:
-        get_event_store().get_or_create(project_id).emit("memory_error", project_id=project_id, error=str(exc))
+        _emit_memory_error(project_id, str(exc))
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -94,7 +103,7 @@ async def wake_up_memory(project_id: str) -> dict[str, Any]:
         )
         return result
     except RuntimeError as exc:
-        get_event_store().get_or_create(project_id).emit("memory_error", project_id=project_id, error=str(exc))
+        _emit_memory_error(project_id, str(exc))
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -119,5 +128,5 @@ async def search_project_memory(project_id: str, body: MemorySearchRequest) -> d
         )
         return result
     except RuntimeError as exc:
-        get_event_store().get_or_create(project_id).emit("memory_error", project_id=project_id, error=str(exc))
+        _emit_memory_error(project_id, str(exc))
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -7,6 +7,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from orchestrator.lib.event_types import EVENT_TYPES
+
 
 CURRENT_SCHEMA_VERSION = 1
 
@@ -84,6 +86,8 @@ def validate_event(event: dict[str, Any], *, require_run_id: bool = True) -> dic
     event_type = event.get("type")
     if not isinstance(event_type, str) or not event_type.strip():
         raise EventValidationError("type is required")
+    if event_type not in EVENT_TYPES:
+        raise EventValidationError(f"unknown event type: {event_type}")
 
     timestamp = event.get("ts")
     if not isinstance(timestamp, str) or not timestamp.strip():

@@ -7,17 +7,18 @@ import type { AssetManager } from "./assets/AssetManager.js";
 import { commandsForRunEvent } from "./flows/FlowDirector.js";
 import type { FlowCommand } from "./flows/FlowTypes.js";
 import { layoutWorkflowAtoms, type AtomLayout, type EdgeKind, type LoopGroupLayout } from "./layout.js";
-import type { EngineSnapshot, RunEvent, WorkflowStep } from "./types.js";
+import type { EngineSnapshot, OperatorIntentState, RunEvent, WorkflowStep } from "./types.js";
 
 type SceneManagerOptions = {
   canvas: HTMLCanvasElement;
   renderer: THREE.WebGLRenderer;
   workflow: WorkflowStep[];
   assets: AssetManager;
+  onSelectGoalCore: () => void;
   onSelectAtom: (atomId: string) => void;
 };
 
-export type SpatialViewLevel = "global" | "cluster" | "surface";
+export type SpatialViewLevel = "global" | "cluster" | "surface" | "story";
 
 export class SceneManager {
   readonly scene = new THREE.Scene();
@@ -33,14 +34,19 @@ export class SceneManager {
   private readonly gltfLoader = new GLTFLoader();
   private readonly layout: AtomLayout;
   private readonly pulseSprites: Array<{ sprite: THREE.Sprite; edge: EdgeMesh; offset: number; kind: EdgeKind }> = [];
+  private readonly intentPacketSprites = new Map<string, THREE.Sprite>();
   private readonly glowSprites: THREE.Sprite[] = [];
   private readonly spaceProps: Array<{ object: THREE.Object3D; base: THREE.Vector3; spin: THREE.Vector3; bobPhase: number }> = [];
   private readonly loadedTextures: THREE.Texture[] = [];
   private readonly canvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
+  private readonly goalCore = new THREE.Group();
+  private readonly goalCoreMesh: THREE.Mesh;
+  private readonly onSelectGoalCore: () => void;
   private readonly onSelectAtom: (atomId: string) => void;
   private viewportAspect = 1;
   private selectedAtomId = "";
+  private storyFocusAtomIds = new Set<string>();
   private orbitStart: { x: number; y: number; theta: number; phi: number } | null = null;
   private targetPanStart: { x: number; y: number; targetX: number; targetY: number; targetZ: number } | null = null;
   private tapStart: { x: number; y: number; time: number } | null = null;
@@ -57,6 +63,7 @@ export class SceneManager {
   constructor(options: SceneManagerOptions) {
     this.canvas = options.canvas;
     this.renderer = options.renderer;
+    this.onSelectGoalCore = options.onSelectGoalCore;
     this.onSelectAtom = options.onSelectAtom;
     this.layout = layoutWorkflowAtoms(options.workflow);
     this.scene.background = new THREE.Color(0x0d0f14);
@@ -71,6 +78,7 @@ export class SceneManager {
 
     this.buildEnvironment(options.assets);
     this.buildLoopObjects(options.assets);
+    this.goalCoreMesh = this.buildGoalCore();
     this.buildWorkflow(options.workflow, options.assets);
     this.bindInput();
     this.fitAll();
@@ -92,6 +100,8 @@ export class SceneManager {
       }
       atom.setTelemetry(snapshot.cost.byAtom[id] ?? null, snapshot.loops.byAtom[id] ?? null);
     }
+    this.syncStoryFocus();
+    this.syncIntentPacketSprites(snapshot);
   }
 
   applyRunEvent(event: RunEvent, snapshot: EngineSnapshot): void {
@@ -164,12 +174,26 @@ export class SceneManager {
     this.updateCameraFromOrbit();
   }
 
+  focusGoalCore(): void {
+    this.storyFocusAtomIds.clear();
+    this.syncStoryFocus();
+    this.orbitTarget.copy(this.goalCore.position);
+    this.orbitRadius = Math.max(5.2, this.layout.bounds.radius * 1.15);
+    this.orbitTheta = -0.58;
+    this.orbitPhi = 0.86;
+    this.updateCameraFromOrbit();
+  }
+
   restoreView(): void {
     this.setViewLevel(this.viewLevel, this.selectedAtomId);
   }
 
   setViewLevel(level: SpatialViewLevel, targetAtomId = ""): void {
     this.viewLevel = level;
+    if (level !== "story") {
+      this.storyFocusAtomIds.clear();
+      this.syncStoryFocus();
+    }
     if (level === "global") {
       this.fitAll();
       return;
@@ -178,7 +202,19 @@ export class SceneManager {
       this.focusAtomInView(targetAtomId || this.selectedAtomId || this.layout.nodes[0]?.id || "", 0.42);
       return;
     }
+    if (level === "story") {
+      this.focusStoryPath();
+      return;
+    }
     this.focusLoopForAtom(targetAtomId || this.selectedAtomId || this.layout.nodes[0]?.id || "");
+  }
+
+  setStoryFocus(atomIds: string[]): void {
+    this.storyFocusAtomIds = new Set(atomIds.filter((atomId) => this.atomNodes.has(atomId)));
+    this.syncStoryFocus();
+    if (this.viewLevel === "story") {
+      this.focusStoryPath();
+    }
   }
 
   dispose(): void {
@@ -196,9 +232,14 @@ export class SceneManager {
     for (const mesh of this.loopMeshes) {
       disposeObject(mesh);
     }
+    disposeObject(this.goalCore);
     for (const pulse of this.pulseSprites) {
       pulse.sprite.material.dispose();
     }
+    for (const sprite of this.intentPacketSprites.values()) {
+      disposeObject(sprite);
+    }
+    this.intentPacketSprites.clear();
     for (const glow of this.glowSprites) {
       glow.material.dispose();
     }
@@ -251,6 +292,39 @@ export class SceneManager {
       this.loopMeshes.push(label);
       this.scene.add(label);
     }
+  }
+
+  private buildGoalCore(): THREE.Mesh {
+    const center = this.layout.bounds.center;
+    this.goalCore.name = "goal-core";
+    this.goalCore.position.set(center.x, 0.58, center.z);
+
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xd9b84d,
+      emissive: 0x5a3f12,
+      emissiveIntensity: 0.42,
+      roughness: 0.36,
+      metalness: 0.34,
+      transparent: true,
+      opacity: 0.88,
+    });
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.34, 24, 16), material);
+    mesh.name = "goal-core:body";
+    mesh.userData.goalCore = true;
+    this.goalCore.add(mesh);
+
+    const ringMaterial = new THREE.MeshBasicMaterial({
+      color: 0xd9b84d,
+      transparent: true,
+      opacity: 0.44,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.018, 8, 72), ringMaterial);
+    ring.rotation.x = Math.PI / 2;
+    this.goalCore.add(ring);
+    this.scene.add(this.goalCore);
+    return mesh;
   }
 
   private buildWorkflow(workflow: WorkflowStep[], assets: AssetManager): void {
@@ -324,6 +398,49 @@ export class SceneManager {
         for (const edge of this.edgeMeshes) {
           edge.setMode(command.mode === "resume" ? "queued" : "reversing", "replay");
         }
+      }
+    }
+  }
+
+  private syncIntentPacketSprites(snapshot: EngineSnapshot): void {
+    const intents = [
+      ...Object.values(snapshot.pendingIntents),
+      ...Object.values(snapshot.appliedIntents),
+      ...Object.values(snapshot.ignoredIntents),
+    ];
+    const seen = new Set<string>();
+    for (const intent of intents) {
+      const atomId = intentTargetAtom(intent, snapshot);
+      if (!atomId) {
+        continue;
+      }
+      const atom = this.atomNodes.get(atomId);
+      if (!atom) {
+        continue;
+      }
+      seen.add(intent.clientIntentId);
+      let sprite = this.intentPacketSprites.get(intent.clientIntentId);
+      if (!sprite) {
+        sprite = makeIntentPacketSprite(intent);
+        this.intentPacketSprites.set(intent.clientIntentId, sprite);
+        this.scene.add(sprite);
+      } else {
+        updateIntentPacketSprite(sprite, intent);
+      }
+      const index = [...seen].length - 1;
+      const ringOffset = intentMarkerOffset(index);
+      sprite.position.copy(atom.group.position);
+      sprite.position.x += ringOffset.x;
+      sprite.position.y += 0.88 + ringOffset.y;
+      sprite.position.z += ringOffset.z;
+      const pulse = intent.status === "queued" ? 1.05 : intent.status === "applied" ? 0.95 : 0.88;
+      sprite.scale.setScalar(pulse);
+    }
+    for (const [clientIntentId, sprite] of this.intentPacketSprites.entries()) {
+      if (!seen.has(clientIntentId)) {
+        this.scene.remove(sprite);
+        disposeObject(sprite);
+        this.intentPacketSprites.delete(clientIntentId);
       }
     }
   }
@@ -424,6 +541,9 @@ export class SceneManager {
       prop.object.rotation.y += prop.spin.y * 16;
       prop.object.rotation.z += prop.spin.z * 16;
     }
+    const pulse = 1 + Math.sin(timeMs * 0.0011) * 0.035;
+    this.goalCore.scale.setScalar(pulse);
+    this.goalCore.rotation.y += 0.002;
   }
 
   private animateGlows(timeMs: number): void {
@@ -497,6 +617,10 @@ export class SceneManager {
   private handleTap(event: PointerEvent): void {
     const hit = this.pickAtom(event.clientX, event.clientY);
     if (hit) {
+      if (hit === "__goal_core__") {
+        this.onSelectGoalCore();
+        return;
+      }
       this.selectAtom(hit);
       this.onSelectAtom(hit);
       return;
@@ -532,12 +656,41 @@ export class SceneManager {
     this.updateCameraFromOrbit();
   }
 
+  private focusStoryPath(): void {
+    const nodes = this.layout.nodes.filter((node) => this.storyFocusAtomIds.has(node.id));
+    if (nodes.length === 0) {
+      this.fitAll();
+      return;
+    }
+    const center = nodes.reduce(
+      (acc, node) => acc.add(new THREE.Vector3(node.x, node.y, node.z)),
+      new THREE.Vector3(),
+    ).multiplyScalar(1 / nodes.length);
+    const radius = nodes.reduce((max, node) => {
+      return Math.max(max, center.distanceTo(new THREE.Vector3(node.x, node.y, node.z)));
+    }, 2.2);
+    this.orbitTarget.copy(center);
+    this.orbitRadius = clamp(Math.max(5.6, radius * 2.8), 5.6, 16);
+    this.orbitTheta = -0.52;
+    this.orbitPhi = 0.84;
+    this.updateCameraFromOrbit();
+  }
+
+  private syncStoryFocus(): void {
+    for (const [atomId, atom] of this.atomNodes.entries()) {
+      atom.setLensDimmed(this.storyFocusAtomIds.size > 0 && !this.storyFocusAtomIds.has(atomId));
+    }
+  }
+
   private pickAtom(clientX: number, clientY: number): string {
     const rect = this.canvas.getBoundingClientRect();
     this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObjects([...this.atomNodes.values()].map((atom) => atom.mesh), false);
+    const hits = this.raycaster.intersectObjects([this.goalCoreMesh, ...[...this.atomNodes.values()].map((atom) => atom.mesh)], false);
+    if (hits[0]?.object.userData.goalCore === true) {
+      return "__goal_core__";
+    }
     return typeof hits[0]?.object.userData.atomId === "string" ? hits[0].object.userData.atomId : "";
   }
 
@@ -586,6 +739,113 @@ function makePulseSprite(texture: THREE.Texture, color: number): THREE.Sprite {
   const sprite = new THREE.Sprite(material);
   sprite.scale.set(0.16, 0.16, 0.16);
   return sprite;
+}
+
+function makeIntentPacketSprite(intent: OperatorIntentState): THREE.Sprite {
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: makeIntentPacketTexture(intent),
+    transparent: true,
+    opacity: 0.94,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  }));
+  sprite.name = `intent-packet:${intent.clientIntentId}`;
+  sprite.userData.intentPacket = true;
+  sprite.userData.clientIntentId = intent.clientIntentId;
+  sprite.userData.intentStatus = intent.status;
+  sprite.userData.intentKind = intent.kind;
+  sprite.scale.setScalar(1);
+  return sprite;
+}
+
+function updateIntentPacketSprite(sprite: THREE.Sprite, intent: OperatorIntentState): void {
+  if (sprite.userData.intentStatus === intent.status && sprite.userData.intentKind === intent.kind) {
+    return;
+  }
+  const material = sprite.material as THREE.SpriteMaterial;
+  const previous = material.map;
+  material.map = makeIntentPacketTexture(intent);
+  material.needsUpdate = true;
+  previous?.dispose();
+  sprite.userData.intentStatus = intent.status;
+  sprite.userData.intentKind = intent.kind;
+}
+
+function makeIntentPacketTexture(intent: OperatorIntentState): THREE.Texture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 96;
+  canvas.height = 96;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const color = intentStatusCssColor(intent.status);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = "rgba(13,15,20,0.92)";
+    roundedRect(ctx, 18, 18, 60, 60, 14);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = color;
+    roundedRect(ctx, 18, 18, 60, 60, 14);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(68, 28, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#E8EAF0";
+    ctx.font = "900 28px Inter, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(intentStatusGlyph(intent.status), 48, 51);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
+function intentStatusCssColor(status: OperatorIntentState["status"]): string {
+  if (status === "applied") {
+    return "#41C7C7";
+  }
+  if (status === "ignored") {
+    return "#E09B2A";
+  }
+  return "#FFD166";
+}
+
+function intentStatusGlyph(status: OperatorIntentState["status"]): string {
+  if (status === "applied") {
+    return "A";
+  }
+  if (status === "ignored") {
+    return "I";
+  }
+  return "Q";
+}
+
+function intentTargetAtom(intent: OperatorIntentState, snapshot: EngineSnapshot): string {
+  return intent.atomId || intent.step || snapshot.nextStepPacket?.step || Object.keys(snapshot.atoms)[0] || "";
+}
+
+function intentMarkerOffset(index: number): THREE.Vector3 {
+  const angle = index * 2.399963229728653;
+  const radius = Math.min(0.46, 0.18 + index * 0.035);
+  return new THREE.Vector3(Math.cos(angle) * radius, (index % 3) * 0.08, Math.sin(angle) * radius);
 }
 
 function makeGlowSprite(texture: THREE.Texture, color: number, opacity: number, scale: number): THREE.Sprite {

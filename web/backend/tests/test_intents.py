@@ -77,3 +77,97 @@ async def test_operator_intent_route_persists_scrubbed_event(app: FastAPI, fresh
     assert rows[0]["client_intent_id"] == payload["client_intent_id"]
     assert rows[0]["intent_event_id"] in event_text
     assert rows[0]["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_operator_intent_route_refreshes_authoritative_next_step_packet(
+    app: FastAPI,
+    fresh_store: ProjectStore,
+) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        create_resp = await client.post("/api/projects", json={"name": "Packet Refresh"})
+        project_id = create_resp.json()["id"]
+
+        response = await client.post(
+            f"/api/projects/{project_id}/intents",
+            json={
+                "kind": "interject",
+                "atom_id": "memory_refresh",
+                "payload": {"instruction": "Show this on the next packet."},
+                "client_intent_id": "client-refresh",
+            },
+        )
+
+    assert response.status_code == 200
+    events = [
+        json.loads(line)
+        for line in event_log_path(project_id).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [event["type"] for event in events] == [
+        "operator_intent",
+        "next_step_packet_created",
+        "narrator_sidecar_requested",
+    ]
+    assert events[0]["client_intent_id"] == "client-refresh"
+    assert events[1]["schema_version"] == 1
+    assert events[1]["run_id"] == project_id
+    assert events[1]["packet"]["step"] == "memory_refresh"
+    assert events[1]["packet"]["queued_intents"] == [
+        {
+            "client_intent_id": "client-refresh",
+            "intent_event_id": events[0]["event_id"],
+            "kind": "interject",
+            "atom_id": "memory_refresh",
+            "payload": {"instruction": "Show this on the next packet."},
+            "status": "queued",
+        }
+    ]
+    assert events[2]["trigger_event_id"] == events[0]["event_id"]
+    assert events[2]["packet_id"] == events[1]["packet_id"]
+    assert events[2]["reason"] == "operator_intent"
+
+
+@pytest.mark.asyncio
+async def test_note_intent_creates_discussion_entry(app: FastAPI, fresh_store: ProjectStore) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        create_resp = await client.post("/api/projects", json={"name": "Note Intent"})
+        project_id = create_resp.json()["id"]
+
+        response = await client.post(
+            f"/api/projects/{project_id}/intents",
+            json={
+                "kind": "note",
+                "atom_id": "testing",
+                "payload": {"note": "Remember token=sk-live-secret-value must stay hidden."},
+                "client_intent_id": "client-note",
+            },
+        )
+
+    assert response.status_code == 200
+    project = fresh_store.get(project_id)
+    assert project is not None
+    discussion_text = (project.project_dir / ".orchestrator" / "discussion" / "log.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert "sk-live-secret-value" not in discussion_text
+    row = json.loads(discussion_text)
+    assert row["entry_type"] == "operator_note"
+    assert row["speaker"] == "operator"
+    assert row["atom_id"] == "testing"
+
+    events = [
+        json.loads(line)
+        for line in event_log_path(project_id).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [event["type"] for event in events] == [
+        "operator_intent",
+        "discussion_entry_created",
+        "next_step_packet_created",
+        "narrator_sidecar_requested",
+    ]
+    assert events[1]["entry"]["source_refs"] == [f"event:{events[0]['event_id']}"]
+    assert events[3]["trigger_event_id"] == events[0]["event_id"]

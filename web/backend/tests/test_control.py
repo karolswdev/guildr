@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -11,6 +13,7 @@ from httpx import ASGITransport, AsyncClient
 
 from web.backend.app import create_app
 from web.backend.routes.projects import ProjectStore
+from web.backend.routes.stream import event_log_path
 
 
 @pytest.fixture
@@ -25,6 +28,7 @@ def app(fresh_store: ProjectStore) -> FastAPI:
         patch("web.backend.routes.projects.get_store", return_value=fresh_store),
         patch("web.backend.routes.control.get_store", return_value=fresh_store),
         patch("web.backend.routes.logs.get_store", return_value=fresh_store),
+        patch("web.backend.routes.stream._projects_base", return_value=fresh_store._base),
     ):
         yield create_app()
 
@@ -43,6 +47,16 @@ async def test_control_instruction_route_persists_operator_note(app: FastAPI) ->
 
     assert response.status_code == 200
     assert response.json()["entry"]["instruction"] == "Keep context lean and preserve the PRD."
+    discussion = response.json()["discussion_entry"]
+    assert discussion["speaker"] == "operator"
+    assert discussion["entry_type"] == "operator_instruction"
+    events = [
+        json.loads(line)
+        for line in event_log_path(project_id).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert events[-1]["type"] == "discussion_entry_created"
+    assert events[-1]["entry"]["text"] == "Keep context lean and preserve the PRD."
 
 
 @pytest.mark.asyncio
@@ -150,7 +164,21 @@ async def test_workflow_route_can_enable_guru_escalation(app: FastAPI) -> None:
 
 
 @pytest.mark.asyncio
-async def test_persona_synthesis_route_updates_workflow(app: FastAPI, fresh_store: ProjectStore) -> None:
+async def test_persona_synthesis_route_updates_workflow(
+    app: FastAPI,
+    fresh_store: ProjectStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_write_text = Path.write_text
+    artifact_writes: list[str] = []
+
+    def counting_write_text(path: Path, *args, **kwargs):
+        if path.name in {"FOUNDING_TEAM.json", "PERSONA_FORUM.md"}:
+            artifact_writes.append(path.name)
+        return original_write_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", counting_write_text)
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         create_resp = await client.post(
@@ -170,6 +198,18 @@ async def test_persona_synthesis_route_updates_workflow(app: FastAPI, fresh_stor
     assert response.status_code == 200
     payload = response.json()
     assert len(payload["personas"]) >= 4
+    assert len(payload["discussion_entries"]) == len(payload["personas"])
     persona_step = next(step for step in payload["steps"] if step["id"] == "persona_forum")
     assert len(persona_step["config"]["personas"]) >= 4
     assert persona_step["config"]["personas"][0]["turn_order"] == 1
+    assert (project.project_dir / "FOUNDING_TEAM.json").exists()
+    assert (project.project_dir / "PERSONA_FORUM.md").exists()
+    assert artifact_writes.count("FOUNDING_TEAM.json") == 1
+    assert artifact_writes.count("PERSONA_FORUM.md") == 1
+    events = [
+        json.loads(line)
+        for line in event_log_path(project_id).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert sum(event["type"] == "discussion_entry_created" for event in events) == len(payload["personas"])
+    assert any(event["type"] == "discussion_highlight_created" for event in events)

@@ -86,6 +86,26 @@ async def test_event_route_deduplicates_by_event_id(app: FastAPI, fresh_store: P
     assert payload["events"][0]["event_id"] == "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 
 
+def test_simple_event_bus_duplicate_emit_returns_existing_event() -> None:
+    bus = SimpleEventBus(project_id="project-1")
+
+    first = bus.emit(
+        "phase_start",
+        event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        name="architect",
+    )
+    duplicate = bus.emit(
+        "phase_start",
+        event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        name="architect",
+    )
+
+    assert duplicate is first
+    assert duplicate["type"] == "phase_start"
+    assert duplicate["event_id"] == "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+    assert len(bus.subscribe()) == 1
+
+
 @pytest.mark.asyncio
 async def test_event_route_rejects_invalid_ledger_event(app: FastAPI, fresh_store: ProjectStore) -> None:
     transport = ASGITransport(app=app)

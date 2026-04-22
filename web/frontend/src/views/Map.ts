@@ -1,6 +1,6 @@
 import { AssetManager } from "../game/assets/AssetManager.js";
 import { EventEngine } from "../game/EventEngine.js";
-import { GameShell } from "../game/GameShell.js";
+import { GameShell, type ProjectBrief } from "../game/GameShell.js";
 import type { WorkflowStep } from "../game/types.js";
 
 type WorkflowResponse = {
@@ -25,12 +25,13 @@ export function renderMap(
   const status = container.querySelector("#map-load-status") as HTMLDivElement;
   let shell: GameShell | null = null;
 
-  void loadWorkflow(projectId)
-    .then((workflow) => {
+  void Promise.all([loadWorkflow(projectId), loadProjectBrief(projectId)])
+    .then(([workflow, projectBrief]) => {
       const engine = new EventEngine(projectId, workflow);
       shell = new GameShell(container, {
         projectId,
         workflow,
+        projectBrief,
         engine,
         assetManager,
         navigate,
@@ -53,4 +54,12 @@ async function loadWorkflow(projectId: string): Promise<WorkflowStep[]> {
   }
   const payload = await response.json() as WorkflowResponse;
   return payload.steps;
+}
+
+async function loadProjectBrief(projectId: string): Promise<ProjectBrief | null> {
+  const response = await fetch(`/api/projects/${projectId}/brief`);
+  if (!response.ok) {
+    return null;
+  }
+  return response.json() as Promise<ProjectBrief>;
 }

@@ -49,12 +49,12 @@ async def test_multiple_subscribers_receive_events(fresh_store: EventStore) -> N
     sub1 = bus.subscribe()
     sub2 = bus.subscribe()
 
-    bus.emit("test_event", data="hello")
+    bus.emit("phase_start", name="architect")
 
     assert len(sub1) >= 1
     assert len(sub2) >= 1
-    assert "test_event" in sub1[0]
-    assert "test_event" in sub2[0]
+    assert "phase_start" in sub1[0]
+    assert "phase_start" in sub2[0]
 
 
 @pytest.mark.asyncio
@@ -78,12 +78,12 @@ async def test_unsubscribe_removes_subscriber(fresh_store: EventStore) -> None:
     bus = fresh_store.get_or_create("unsub-proj")
     sub = bus.subscribe()
 
-    bus.emit("event1")
+    bus.emit("phase_start", name="architect")
     assert len(sub) >= 1
 
     bus.unsubscribe(sub)
 
-    bus.emit("event2")
+    bus.emit("phase_done", name="architect")
     # After unsubscribe, the event should not be in the (now removed) subscriber
     # Since the subscriber was removed from _subscribers, it won't receive new events
 
@@ -94,15 +94,15 @@ class TestSimpleEventBus:
     def test_emit_to_single_subscriber(self) -> None:
         bus = SimpleEventBus()
         sub = bus.subscribe()
-        bus.emit("test", key="value")
+        bus.emit("phase_start", name="architect")
         assert len(sub) >= 1
-        assert "test" in sub[0]
+        assert "phase_start" in sub[0]
 
     def test_emit_to_multiple_subscribers(self) -> None:
         bus = SimpleEventBus()
         sub1 = bus.subscribe()
         sub2 = bus.subscribe()
-        bus.emit("broadcast")
+        bus.emit("phase_start", name="architect")
         assert len(sub1) >= 1
         assert len(sub2) >= 1
 
@@ -117,4 +117,21 @@ class TestSimpleEventBus:
         sub = bus.subscribe()
         bus.unsubscribe(sub)
         # Should not raise
-        bus.emit("after_unsub")
+        bus.emit("phase_start", name="architect")
+
+    def test_emit_prunes_failed_subscribers(self, caplog: pytest.LogCaptureFixture) -> None:
+        class BrokenSubscriber:
+            def append(self, _: str) -> None:
+                raise RuntimeError("client disconnected")
+
+        bus = SimpleEventBus(project_id="project-1")
+        broken = BrokenSubscriber()
+        healthy = bus.subscribe()
+        bus._subscribers.append(broken)
+
+        bus.emit("phase_start", name="architect")
+
+        assert broken not in bus._subscribers
+        assert healthy in bus._subscribers
+        assert len(healthy) == 1
+        assert "Dropping failed SSE subscriber" in caplog.text

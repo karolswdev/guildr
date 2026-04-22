@@ -6,7 +6,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from orchestrator.lib.intents import create_queued_intent
-from orchestrator.lib.next_step import build_next_step_packet, select_next_step
+from orchestrator.lib.next_step import (
+    build_next_step_packet,
+    emit_next_step_packet_event,
+    select_next_step,
+)
 from orchestrator.lib.state import State
 from orchestrator.lib.workflow import default_workflow, save_workflow
 
@@ -18,6 +22,16 @@ def _state_with_workflow(tmp_path: Path) -> State:
     memory_dir.mkdir(parents=True)
     (memory_dir / "wake-up.md").write_text("wake", encoding="utf-8")
     return state
+
+
+class _Events:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def emit(self, event_type: str, **fields):
+        event = {"type": event_type, **fields}
+        self.events.append(event)
+        return event
 
 
 def test_select_next_step_defaults_to_first_enabled_incomplete(tmp_path: Path) -> None:
@@ -92,3 +106,29 @@ def test_packet_includes_queued_intents_for_step(tmp_path: Path) -> None:
             "status": "queued",
         }
     ]
+
+
+def test_emit_next_step_packet_event_uses_canonical_shape(tmp_path: Path) -> None:
+    state = _state_with_workflow(tmp_path)
+    with patch("orchestrator.lib.memory_palace.resolve_command", return_value=["mempalace"]):
+        packet = build_next_step_packet(state, current_step="memory_refresh")
+    assert packet is not None
+
+    packet["source_refs"].append("artifact:README.md")
+    packet["refined_by"] = "narrator"
+    packet["base_packet_id"] = "next_base"
+    packet["narrative_digest_id"] = "digest_1"
+    events = _Events()
+
+    emitted = emit_next_step_packet_event(events, "project-1", packet)
+
+    assert emitted is events.events[0]
+    assert emitted["type"] == "next_step_packet_created"
+    assert emitted["project_id"] == "project-1"
+    assert emitted["packet_id"] == packet["packet_id"]
+    assert emitted["packet"] is packet
+    assert emitted["memory_refs"] == [".orchestrator/memory/wake-up.md"]
+    assert emitted["artifact_refs"] == ["README.md"]
+    assert emitted["refined_by"] == "narrator"
+    assert emitted["base_packet_id"] == "next_base"
+    assert emitted["narrative_digest_id"] == "digest_1"

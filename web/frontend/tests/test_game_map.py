@@ -229,6 +229,49 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     text = bundle.read_text()
     assert "byAtom" in text
     assert "bottom-chip-cluster" in text
+    assert "next-step-sheet" in text
+    assert "next-step-control" in text
+    assert "openNextStepSheet" in text
+    assert "goal-core-sheet" in text
+    assert "goal-core-control" in text
+    assert "openGoalCoreSheet" in text
+    assert "renderGoalCoreSheet" in text
+    assert "founding-team-brief" in text
+    assert "founderCard" in text
+    assert "object-lens-sheet" in text
+    assert "renderObjectLens" in text
+    assert "objectCommandStyle" in text
+    assert "Produced" in text
+    assert "Consumed" in text
+    assert "story-lens-sheet" in text
+    assert "story-lens-control" in text
+    assert "renderStoryLens" in text
+    assert "story-card" in text
+    assert "storyDigestCard" in text
+    assert "storyAtomIdsForSnapshot" in text
+    assert "setStoryFocus" in text
+    assert "setLensDimmed" in text
+    assert "focusGoalCore" in text
+    assert "goal-core:body" in text
+    assert "narrative-digest" in text
+    assert "latestDigestPanel" in text
+    assert "Recent story" in text
+    assert "narrator-dialogue" in text
+    assert "Run Narrator" in text
+    assert "narrator-replay" in text
+    assert "narrator-skip" in text
+    assert "prefersReducedMotion" in text
+    assert "discussion-log" in text
+    assert "discussionPanel" in text
+    assert "snapshot.nextStepPacket" in text
+    assert "queuedIntents" in text
+    assert "pendingIntents" in text
+    assert "appliedIntents" in text
+    assert "ignoredIntents" in text
+    assert "intent-packet:" in text
+    assert "syncIntentPacketSprites" in text
+    assert "makeIntentPacketSprite" in text
+    assert "intentStatusGlyph" in text
     assert "radial-action-ring" in text
     assert "compose-dock" in text
     assert "timeline-ribbon" in text
@@ -236,3 +279,5 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "setViewLevel" in text
     assert "<select" not in text
     assert "/intents" in text
+    assert "client_intent_id" in text
+    assert "newClientIntentId" in text

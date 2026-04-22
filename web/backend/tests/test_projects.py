@@ -103,6 +103,47 @@ async def test_get_project_not_found(app: FastAPI) -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_project_brief_synthesizes_goal_and_founders(app: FastAPI, fresh_store: ProjectStore) -> None:
+    """GET /api/projects/{id}/brief returns a safe map-ready project brief."""
+    project = fresh_store.create("Brief Project", "Build a launch tracker")
+    project.project_dir.joinpath("qwendea.md").write_text(
+        "# Launch Tracker\n\nBuild a calm launch tracker.\n\nKeep api_key=sk-live-secret-value private.\n",
+        encoding="utf-8",
+    )
+    project.project_dir.joinpath("FOUNDING_TEAM.json").write_text(
+        json.dumps({
+            "personas": [
+                {
+                    "name": "Scope Steward",
+                    "archetype": "Product",
+                    "mandate": "Keep scope crisp.",
+                    "stance": "Protect the first user journey.",
+                    "veto_scope": "Scope creep",
+                }
+            ]
+        }),
+        encoding="utf-8",
+    )
+    project.project_dir.joinpath("PERSONA_FORUM.md").write_text(
+        "# Forum\n\nScope Steward: ship the smallest coherent loop.\n",
+        encoding="utf-8",
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get(f"/api/projects/{project.id}/brief")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Launch Tracker"
+    assert "Build a calm launch tracker" in data["summary"]
+    assert "sk-live" not in data["summary"]
+    assert data["founding_team"][0]["name"] == "Scope Steward"
+    assert "artifact:FOUNDING_TEAM.json" in data["source_refs"]
+    assert "Scope Steward" in data["forum_excerpt"]
+
+
+@pytest.mark.asyncio
 async def test_start_project(app: FastAPI) -> None:
     """POST /api/projects/{id}/start enqueues the run and updates phase."""
     transport = ASGITransport(app=app)

@@ -5,15 +5,20 @@ import type {
   CostBucket,
   CostSnapshot,
   CostSource,
+  DiscussionEntry,
+  DiscussionHighlight,
   EngineSnapshot,
   LoopSnapshot,
   LoopStage,
   MemPalaceStatus,
+  NarrativeDigest,
+  NarrativeHighlight,
   NextStepPacket,
   OperatorIntentState,
   RunEvent,
   WorkflowStep,
 } from "./types.js";
+import { isRunEventType } from "./eventTypes.js";
 
 type SnapshotListener = (snapshot: EngineSnapshot) => void;
 type EventListener = (event: RunEvent, snapshot: EngineSnapshot) => void;
@@ -30,6 +35,9 @@ export class EventEngine {
   private loops: LoopSnapshot = emptyLoopSnapshot();
   private memPalaceStatus: MemPalaceStatus | null = null;
   private nextStepPacket: NextStepPacket | null = null;
+  private digests: NarrativeDigest[] = [];
+  private discussion: DiscussionEntry[] = [];
+  private discussionHighlights: DiscussionHighlight[] = [];
   private pendingIntents: Record<string, OperatorIntentState> = {};
   private appliedIntents: Record<string, OperatorIntentState> = {};
   private ignoredIntents: Record<string, OperatorIntentState> = {};
@@ -116,6 +124,9 @@ export class EventEngine {
     this.loops = emptyLoopSnapshot();
     this.memPalaceStatus = null;
     this.nextStepPacket = null;
+    this.digests = [];
+    this.discussion = [];
+    this.discussionHighlights = [];
     this.pendingIntents = {};
     this.appliedIntents = {};
     this.ignoredIntents = {};
@@ -146,6 +157,9 @@ export class EventEngine {
     this.loops = emptyLoopSnapshot();
     this.memPalaceStatus = null;
     this.nextStepPacket = null;
+    this.digests = [];
+    this.discussion = [];
+    this.discussionHighlights = [];
     this.pendingIntents = {};
     this.appliedIntents = {};
     this.ignoredIntents = {};
@@ -174,6 +188,10 @@ export class EventEngine {
       nextStepPacket: this.nextStepPacket
         ? attachPendingIntents(cloneNextStepPacket(this.nextStepPacket), this.pendingIntents)
         : null,
+      digests: this.digests.map(cloneNarrativeDigest),
+      latestDigest: this.digests.length > 0 ? cloneNarrativeDigest(this.digests[this.digests.length - 1]) : null,
+      discussion: this.discussion.map(cloneDiscussionEntry),
+      discussionHighlights: this.discussionHighlights.map(cloneDiscussionHighlight),
       pendingIntents: cloneIntentMap(this.pendingIntents),
       appliedIntents: cloneIntentMap(this.appliedIntents),
       ignoredIntents: cloneIntentMap(this.ignoredIntents),
@@ -206,6 +224,9 @@ export class EventEngine {
     this.loops = emptyLoopSnapshot();
     this.memPalaceStatus = null;
     this.nextStepPacket = null;
+    this.digests = [];
+    this.discussion = [];
+    this.discussionHighlights = [];
     this.pendingIntents = {};
     this.appliedIntents = {};
     this.ignoredIntents = {};
@@ -238,13 +259,19 @@ export class EventEngine {
     if (!event) {
       return;
     }
-    const type = String(event.type ?? "");
+    if (!isRunEventType(event.type)) {
+      return;
+    }
+    const type = event.type;
     if (type === "run_started") {
       this.atoms = this.buildIdleAtoms();
       this.cost = emptyCostSnapshot();
       this.loops = emptyLoopSnapshot();
       this.memPalaceStatus = null;
       this.nextStepPacket = null;
+      this.digests = [];
+      this.discussion = [];
+      this.discussionHighlights = [];
       this.pendingIntents = {};
       this.appliedIntents = {};
       this.ignoredIntents = {};
@@ -311,6 +338,15 @@ export class EventEngine {
     }
     if (type === "next_step_packet_created") {
       this.applyNextStepPacket(event);
+    }
+    if (type === "narrative_digest_created") {
+      this.applyNarrativeDigest(event);
+    }
+    if (type === "discussion_entry_created") {
+      this.applyDiscussionEntry(event);
+    }
+    if (type === "discussion_highlight_created") {
+      this.applyDiscussionHighlight(event);
     }
     if (type === "operator_intent") {
       this.applyOperatorIntent(event);
@@ -503,6 +539,84 @@ export class EventEngine {
       memoryRefs: arrayOfStrings(event.memory_refs),
       raw: { ...packet },
     };
+  }
+
+  private applyNarrativeDigest(event: RunEvent): void {
+    const digest = objectValue(event.digest);
+    const digestId = key(digest.digest_id ?? event.digest_id, "");
+    if (!digestId) {
+      return;
+    }
+    const next: NarrativeDigest = {
+      digestId,
+      title: key(digest.title ?? event.title, "Narrative digest"),
+      summary: key(digest.summary ?? event.summary, ""),
+      highlights: narrativeHighlights(digest.highlights ?? event.highlights),
+      risks: arrayOfStrings(digest.risks ?? event.risks),
+      openQuestions: arrayOfStrings(digest.open_questions ?? event.open_questions),
+      nextStepHint: stringOrNull(digest.next_step_hint ?? event.next_step_hint),
+      sourceEventIds: arrayOfStrings(digest.source_event_ids ?? event.source_event_ids),
+      artifactRefs: arrayOfStrings(digest.artifact_refs ?? event.artifact_refs),
+      window: objectValue(digest.window ?? event.window),
+      lastEvent: event,
+      raw: { ...digest },
+    };
+    const index = this.digests.findIndex((item) => item.digestId === digestId);
+    if (index >= 0) {
+      this.digests[index] = next;
+    } else {
+      this.digests.push(next);
+    }
+  }
+
+  private applyDiscussionEntry(event: RunEvent): void {
+    const entry = objectValue(event.entry);
+    const discussionEntryId = key(entry.discussion_entry_id ?? event.discussion_entry_id, "");
+    if (!discussionEntryId) {
+      return;
+    }
+    const next: DiscussionEntry = {
+      discussionEntryId,
+      speaker: key(entry.speaker ?? event.speaker, "unknown"),
+      entryType: key(entry.entry_type ?? event.entry_type, "note"),
+      atomId: stringOrNull(entry.atom_id ?? event.atom_id),
+      text: key(entry.text ?? event.text, ""),
+      sourceRefs: arrayOfStrings(entry.source_refs ?? event.source_refs),
+      artifactRefs: arrayOfStrings(entry.artifact_refs ?? event.artifact_refs),
+      metadata: objectValue(entry.metadata),
+      lastEvent: event,
+      raw: { ...entry },
+    };
+    const index = this.discussion.findIndex((item) => item.discussionEntryId === discussionEntryId);
+    if (index >= 0) {
+      this.discussion[index] = next;
+    } else {
+      this.discussion.push(next);
+    }
+  }
+
+  private applyDiscussionHighlight(event: RunEvent): void {
+    const highlight = objectValue(event.highlight);
+    const discussionHighlightId = key(highlight.discussion_highlight_id ?? event.discussion_highlight_id, "");
+    if (!discussionHighlightId) {
+      return;
+    }
+    const next: DiscussionHighlight = {
+      discussionHighlightId,
+      highlightType: key(highlight.highlight_type ?? event.highlight_type, "notable"),
+      atomId: stringOrNull(highlight.atom_id ?? event.atom_id),
+      text: key(highlight.text ?? event.text, ""),
+      sourceRefs: arrayOfStrings(highlight.source_refs ?? event.source_refs),
+      artifactRefs: arrayOfStrings(highlight.artifact_refs ?? event.artifact_refs),
+      lastEvent: event,
+      raw: { ...highlight },
+    };
+    const index = this.discussionHighlights.findIndex((item) => item.discussionHighlightId === discussionHighlightId);
+    if (index >= 0) {
+      this.discussionHighlights[index] = next;
+    } else {
+      this.discussionHighlights.push(next);
+    }
   }
 
   private applyOperatorIntent(event: RunEvent): void {
@@ -740,6 +854,44 @@ function cloneNextStepPacket(packet: NextStepPacket): NextStepPacket {
   };
 }
 
+function cloneNarrativeDigest(digest: NarrativeDigest): NarrativeDigest {
+  return {
+    ...digest,
+    highlights: digest.highlights.map((highlight) => ({
+      text: highlight.text,
+      sourceRefs: [...highlight.sourceRefs],
+    })),
+    risks: [...digest.risks],
+    openQuestions: [...digest.openQuestions],
+    sourceEventIds: [...digest.sourceEventIds],
+    artifactRefs: [...digest.artifactRefs],
+    window: { ...digest.window },
+    lastEvent: digest.lastEvent ? { ...digest.lastEvent } : null,
+    raw: { ...digest.raw },
+  };
+}
+
+function cloneDiscussionEntry(entry: DiscussionEntry): DiscussionEntry {
+  return {
+    ...entry,
+    sourceRefs: [...entry.sourceRefs],
+    artifactRefs: [...entry.artifactRefs],
+    metadata: { ...entry.metadata },
+    lastEvent: entry.lastEvent ? { ...entry.lastEvent } : null,
+    raw: { ...entry.raw },
+  };
+}
+
+function cloneDiscussionHighlight(highlight: DiscussionHighlight): DiscussionHighlight {
+  return {
+    ...highlight,
+    sourceRefs: [...highlight.sourceRefs],
+    artifactRefs: [...highlight.artifactRefs],
+    lastEvent: highlight.lastEvent ? { ...highlight.lastEvent } : null,
+    raw: { ...highlight.raw },
+  };
+}
+
 function cloneIntentMap(source: Record<string, OperatorIntentState>): Record<string, OperatorIntentState> {
   return Object.fromEntries(Object.entries(source).map(([id, intent]) => [id, cloneIntent(intent)]));
 }
@@ -896,6 +1048,23 @@ function nextLoopStage(stage: LoopStage): LoopStage | null {
 
 function arrayOfStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function narrativeHighlights(value: unknown): NarrativeHighlight[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const highlight = objectValue(item);
+    const text = key(highlight.text, "");
+    if (!text) {
+      return [];
+    }
+    return [{
+      text,
+      sourceRefs: arrayOfStrings(highlight.source_refs ?? highlight.sourceRefs),
+    }];
+  });
 }
 
 function mergeRefs(current: string[], next: string[]): string[] {

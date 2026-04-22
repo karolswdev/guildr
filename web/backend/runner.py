@@ -21,6 +21,7 @@ runs on top of each other.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import logging
 import os
 import threading
@@ -34,6 +35,19 @@ from web.backend.routes.gates import get_gate_store
 from web.backend.routes.stream import EventStore, SimpleEventBus, get_event_store
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RunSlot:
+    """Reserved run slot for one project.
+
+    ``thread`` is None while ``start_run`` is still preparing project files.
+    That reservation still counts as active, which closes the active-check /
+    register race for concurrent start requests.
+    """
+
+    project_id: str
+    thread: threading.Thread | None = None
 
 
 class BridgingEventBus(EventBus):
@@ -66,21 +80,45 @@ class RunRegistry:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._threads: dict[str, threading.Thread] = {}
+        self._slots: dict[str, RunSlot] = {}
 
     def is_active(self, project_id: str) -> bool:
         with self._lock:
-            t = self._threads.get(project_id)
-            if t is None:
+            slot = self._slots.get(project_id)
+            if slot is None:
                 return False
-            if not t.is_alive():
-                del self._threads[project_id]
+            if slot.thread is None:
+                return True
+            if not slot.thread.is_alive():
+                del self._slots[project_id]
                 return False
             return True
 
-    def register(self, project_id: str, thread: threading.Thread) -> None:
+    def try_register(self, project_id: str) -> RunSlot | None:
+        """Atomically reserve a run slot if the project is not active."""
         with self._lock:
-            self._threads[project_id] = thread
+            slot = self._slots.get(project_id)
+            if slot is not None:
+                if slot.thread is None or slot.thread.is_alive():
+                    return None
+                del self._slots[project_id]
+            slot = RunSlot(project_id=project_id)
+            self._slots[project_id] = slot
+            return slot
+
+    def attach_thread(self, slot: RunSlot, thread: threading.Thread) -> None:
+        """Attach the prepared worker thread to a previously reserved slot."""
+        with self._lock:
+            current = self._slots.get(slot.project_id)
+            if current is not slot:
+                raise RuntimeError(f"Run slot for {slot.project_id!r} is no longer registered")
+            slot.thread = thread
+
+    def unregister(self, slot: RunSlot) -> None:
+        """Drop a reserved slot when setup fails before the thread starts."""
+        with self._lock:
+            if self._slots.get(slot.project_id) is slot:
+                del self._slots[slot.project_id]
 
 
 _registry = RunRegistry()
@@ -177,15 +215,15 @@ def _run_orchestrator(
         else:
             orch_kwargs["dry_run"] = True
         orch = Orchestrator(**orch_kwargs)
-        bus.emit("run_started", project_id=project_id, dry_run=dry_run, start_at=start_at)
+        bridge.emit("run_started", project_id=project_id, dry_run=dry_run, start_at=start_at)
         orch.run(start_at=start_at)
-        bus.emit("run_complete", project_id=project_id)
+        bridge.emit("run_complete", project_id=project_id)
     except PhaseFailure as e:
         logger.warning("Run failed for %s: %s", project_id, e)
-        bus.emit("run_error", project_id=project_id, error=str(e), kind="phase_failure")
+        bridge.emit("run_error", project_id=project_id, error=str(e), kind="phase_failure")
     except Exception as e:
         logger.exception("Unexpected error during run for %s", project_id)
-        bus.emit("run_error", project_id=project_id, error=str(e), kind="exception")
+        bridge.emit("run_error", project_id=project_id, error=str(e), kind="exception")
 
 
 def start_run(
@@ -211,28 +249,33 @@ def start_run(
     if event_store is None:
         event_store = get_event_store()
 
-    if _registry.is_active(project_id):
+    slot = _registry.try_register(project_id)
+    if slot is None:
         return False
 
-    project_dir = _resolve_project_dir(project_id)
-    _ensure_qwendea(project_dir, initial_idea)
+    try:
+        project_dir = _resolve_project_dir(project_id)
+        _ensure_qwendea(project_dir, initial_idea)
 
-    if dry_run is None:
-        dry_run = "LLAMA_SERVER_URL" not in os.environ
-    if llama_url is None:
-        llama_url = os.environ.get("LLAMA_SERVER_URL", "http://127.0.0.1:8080")
+        if dry_run is None:
+            dry_run = "LLAMA_SERVER_URL" not in os.environ
+        if llama_url is None:
+            llama_url = os.environ.get("LLAMA_SERVER_URL", "http://127.0.0.1:8080")
 
-    bus = event_store.get_or_create(project_id)
+        bus = event_store.get_or_create(project_id)
 
-    thread = threading.Thread(
-        target=_run_orchestrator,
-        args=(project_id, project_dir, bus, dry_run, llama_url),
-        kwargs={"start_at": start_at, "require_human_approval": require_human_approval},
-        name=f"guildr-run-{project_id[:8]}",
-        daemon=True,
-    )
-    _registry.register(project_id, thread)
-    thread.start()
+        thread = threading.Thread(
+            target=_run_orchestrator,
+            args=(project_id, project_dir, bus, dry_run, llama_url),
+            kwargs={"start_at": start_at, "require_human_approval": require_human_approval},
+            name=f"guildr-run-{project_id[:8]}",
+            daemon=True,
+        )
+        _registry.attach_thread(slot, thread)
+        thread.start()
+    except Exception:
+        _registry.unregister(slot)
+        raise
     return True
 
 

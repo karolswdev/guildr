@@ -283,6 +283,8 @@ Files:
 - possibly `web/frontend/src/game/SceneManager.ts`
 - `web/frontend/tests/test_game_map.py`
 
+Status: Done 2026-04-22.
+
 Implementation:
 
 - Bottom HUD uses `snapshot.nextStepPacket.title`, not local guessed workflow order.
@@ -309,12 +311,28 @@ uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_eve
 git diff --check
 ```
 
+Evidence 2026-04-22:
+
+```bash
+uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py
+# 14 passed
+./web/frontend/build.sh
+# passed, dist/app.js 1,256,262 bytes
+node --input-type=module <playwright visual harness>
+# desktop: no sheet/HUD overlap, sheet within viewport, canvasSignal 100312
+# mobile 393x852: no sheet/HUD overlap, sheet within viewport, canvasSignal 96573
+git diff --check
+# clean
+```
+
 ### Step 7 — End-To-End Rehearsal
 
 Files:
 
 - integration tests as needed
 - `project-management/STATUS.md`
+
+Status: Done 2026-04-22.
 
 Implementation:
 
@@ -337,6 +355,17 @@ Quality gate after Step 7:
 uv run pytest -q tests/test_next_step.py tests/test_intents.py web/backend/tests/test_intents.py web/frontend/tests/test_event_engine.py
 ./web/frontend/build.sh
 git diff --check
+```
+
+Evidence 2026-04-22:
+
+```bash
+uv run pytest -q tests/test_next_step.py tests/test_intents.py web/backend/tests/test_intents.py web/frontend/tests/test_event_engine.py tests/test_integration_m02b_intent_lifecycle_rehearsal.py
+# 21 passed
+./web/frontend/build.sh
+# passed, dist/app.js 1,256,262 bytes
+git diff --check
+# clean
 ```
 
 ## Stop Conditions

@@ -15,6 +15,7 @@ PHASE_HANDLERS = (
     "architect_plan",
     "architect_refine",
     "micro_task_breakdown",
+    "narrator",
     "implementation",
     "testing",
     "guru_escalation",

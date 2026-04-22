@@ -80,6 +80,19 @@ class CaptureEvents:
         self.events.append({"type": event_type, **fields})
 
 
+class ReturningCaptureEvents(CaptureEvents):
+    def emit(self, event_type: str, **fields) -> dict:
+        event = {
+            "type": event_type,
+            "event_id": f"evt-{len(self.events) + 1}",
+            "schema_version": 1,
+            "ts": "2026-04-22T00:00:00Z",
+            **fields,
+        }
+        self.events.append(event)
+        return event
+
+
 # ---------------------------------------------------------------------------
 # Tests: run() calls phases in correct order
 # ---------------------------------------------------------------------------
@@ -316,6 +329,87 @@ class TestLoopEvents:
         assert packet_events[0]["packet_id"].startswith("next_")
         assert packet_events[0]["source_refs"]
 
+    def test_phase_completion_emits_narrative_digest(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = ReturningCaptureEvents()
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events)
+        orchestrator._validate = MagicMock(return_value=True)
+
+        orchestrator._run_phase("memory_refresh", lambda: None)
+
+        digest_events = [event for event in events.events if event["type"] == "narrative_digest_created"]
+        assert len(digest_events) == 1
+        digest = digest_events[0]["digest"]
+        assert digest["title"] == "memory_refresh completed"
+        assert digest["source_event_ids"] == [
+            event["event_id"] for event in events.events if event["type"] == "phase_done"
+        ]
+        assert digest["next_step_hint"] == "Founding Team Forum (persona_forum)"
+        assert digest_events[0]["artifact_refs"][0].startswith(".orchestrator/narrative/digests/")
+
+    def test_phase_completion_with_narrator_runner_emits_refined_packet(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = ReturningCaptureEvents()
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events, dry_run=True)
+        orchestrator._validate = MagicMock(return_value=True)
+
+        orchestrator._run_phase("memory_refresh", lambda: None)
+
+        digest_events = [event for event in events.events if event["type"] == "narrative_digest_created"]
+        assert digest_events[-1]["generated_by"] == "narrator"
+        refined_packets = [
+            event for event in events.events
+            if event["type"] == "next_step_packet_created"
+            and event["packet"].get("refined_by") == "narrator"
+        ]
+        assert len(refined_packets) == 1
+        assert refined_packets[0]["packet"]["base_packet_id"].startswith("next_")
+        assert refined_packets[0]["packet"]["narrative_digest_id"] == digest_events[-1]["digest_id"]
+        assert "narrator_sidecar_completed" in [event["type"] for event in events.events]
+
+    def test_optional_narrator_phase_runs_sidecar_without_duplicate_completion_sidecar(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = ReturningCaptureEvents()
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events, dry_run=True)
+        orchestrator._validate = MagicMock(return_value=True)
+
+        orchestrator._run_phase("narrator", orchestrator._resolve_phase_handler("narrator"))
+
+        event_types = [event["type"] for event in events.events]
+        assert "narrator_phase_requested" in event_types
+        assert event_types.count("narrator_sidecar_completed") == 1
+        refined_packets = [
+            event for event in events.events
+            if event["type"] == "next_step_packet_created"
+            and event["packet"].get("refined_by") == "narrator"
+        ]
+        assert len(refined_packets) == 1
+
+    def test_missing_pre_step_packet_triggers_narrator_sidecar(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = ReturningCaptureEvents()
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events, dry_run=True)
+        orchestrator._validate = MagicMock(return_value=True)
+        orchestrator._emit_next_step_packet = MagicMock(return_value=None)
+
+        orchestrator._run_phase("memory_refresh", lambda: None)
+
+        event_types = [event["type"] for event in events.events]
+        assert "narrator_pre_step" in event_types
+        assert "narrator_sidecar_completed" in event_types
+
     def test_phase_completion_ignores_stale_targeted_intent(
         self,
         config: Config,
@@ -415,6 +509,31 @@ class TestRunPhaseRetries:
 
         with pytest.raises(PhaseFailure, match="architect"):
             orchestrator._run_phase("architect", always_fail)
+
+    def test_missing_pre_step_packet_emits_once_across_retries(self, config, qwendea, mock_git_ops):
+        """Pre-step narrator trigger is tied to the logical step, not each retry."""
+        events = ReturningCaptureEvents()
+        orchestrator = Orchestrator(
+            config=config,
+            git_ops=mock_git_ops,
+            events=events,
+            dry_run=True,
+        )
+        orchestrator._emit_next_step_packet = MagicMock(return_value=None)
+        orchestrator._validate = MagicMock(return_value=False)
+
+        with pytest.raises(PhaseFailure, match="architect"):
+            orchestrator._run_phase("architect", lambda: None)
+
+        pre_step_events = [
+            event for event in events.events
+            if event["type"] == "narrator_pre_step"
+        ]
+        assert len(pre_step_events) == 1
+        assert [
+            event["attempt"] for event in events.events
+            if event["type"] == "phase_start"
+        ] == [0, 1, 2]
 
 
 # ---------------------------------------------------------------------------

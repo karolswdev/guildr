@@ -57,6 +57,33 @@ def build_next_step_packet(
     }
 
 
+def emit_next_step_packet_event(
+    event_bus: Any,
+    project_id: str,
+    packet: dict[str, Any],
+) -> dict[str, Any]:
+    """Emit the canonical next-step packet event shape."""
+    return event_bus.emit(
+        "next_step_packet_created",
+        project_id=project_id,
+        packet_id=packet["packet_id"],
+        step=packet["step"],
+        title=packet["title"],
+        role=packet["role"],
+        packet=packet,
+        source_refs=packet["source_refs"],
+        memory_refs=packet["memory_provenance"]["memory_refs"],
+        artifact_refs=[
+            source.removeprefix("artifact:")
+            for source in packet["source_refs"]
+            if isinstance(source, str) and source.startswith("artifact:")
+        ],
+        refined_by=packet.get("refined_by"),
+        base_packet_id=packet.get("base_packet_id"),
+        narrative_digest_id=packet.get("narrative_digest_id"),
+    )
+
+
 def select_next_step(
     state: State,
     *,

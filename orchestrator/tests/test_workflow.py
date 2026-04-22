@@ -33,6 +33,26 @@ def test_default_workflow_contains_persona_microtask_and_guru_steps(tmp_path: Pa
     assert "memory_refresh" in valid_start_steps(tmp_path)
 
 
+def test_workflow_accepts_optional_narrator_phase(tmp_path: Path) -> None:
+    workflow = load_workflow(tmp_path)
+    workflow.insert(
+        2,
+        {
+            "id": "narrator_after_forum",
+            "title": "Narrator After Forum",
+            "type": "phase",
+            "handler": "narrator",
+            "enabled": True,
+        },
+    )
+
+    saved = save_workflow(tmp_path, workflow)
+
+    narrator = next(step for step in saved if step["id"] == "narrator_after_forum")
+    assert narrator["handler"] == "narrator"
+    assert "narrator_after_forum" in valid_start_steps(tmp_path)
+
+
 def test_memory_refresh_returns_wakeup_artifact(tmp_path: Path) -> None:
     state = State(tmp_path)
     memory_dir = tmp_path / ".orchestrator" / "memory"

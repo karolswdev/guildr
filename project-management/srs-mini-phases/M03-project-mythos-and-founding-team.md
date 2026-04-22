@@ -11,6 +11,7 @@ Design thesis: every project needs Project Mythos, Recent Story, and Next Move C
 ## Required context files
 
 - `docs/pwa-narrative-replay-and-intervention-design.md` §Project Mythos Layer, §Persona Mind Editing slice
+- `docs/founding-team-consultation-design.md` (bounded recurring consultation contract for A-8)
 - `orchestrator/roles/persona_forum.*` and its artifacts (`FOUNDING_TEAM.json`, `PERSONA_FORUM.md`)
 - `orchestrator/roles/architect.py` (consumes stance via prompt)
 - `M01-event-ledger-foundation.md` (done)
@@ -37,6 +38,17 @@ Design thesis: every project needs Project Mythos, Recent Story, and Next Move C
 - [ ] Persona bodies near discover/plan cluster (M06 will orbit them semantically).
 - [ ] Persona Mind Sheet: identity / stance / concerns / last statements / decisions influenced / stance composer.
 - [ ] Speech tails from personas to the decisions/atoms they influenced.
+- [ ] Add bounded `PersonaForum.consult(...)` for recurring founding-team pulses.
+- [ ] Build a `FoundingTeamConsultation` packet with identity, project memory,
+  persona memory, prior decisions, trigger evidence, and queued Hero intents.
+- [ ] Emit one sourced `discussion_entry_created` per persona for wired consultation triggers.
+- [ ] Emit one sourced convergence `discussion_highlight_created` per consultation.
+- [ ] Enforce scope guardrails: consultation can clarify/narrow/defer/add evidence, but any expansion is `operator_decision_required`.
+- [ ] Make consultation idempotent per trigger event id.
+- [ ] Support bounded Hero invitations through operator intent metadata:
+  mission, watch-for list, model/provider, originating intent id, and term.
+- [ ] Render Hero contributions as temporary council input, not permanent
+  founding-team stance, unless explicitly promoted later.
 
 ## Quality gates
 
@@ -45,6 +57,12 @@ Design thesis: every project needs Project Mythos, Recent Story, and Next Move C
 - [ ] G3 Mobile — mythos header fits iPhone portrait, does not occlude map interaction, skeleton state when mythos missing.
 - [ ] G4 No-dashboard — mythos appears as map-integrated bodies, not a side panel tab.
 - [ ] G8 Security — persona text scrubbed before emission.
+- [ ] Consultation boundedness — one trigger creates at most one persona row per current persona plus one convergence highlight.
+- [ ] Context boundedness — consultation prompts include wake-up hash/refs and
+  short excerpts, never full raw logs or unbounded discussion history.
+- [ ] Scope safety — no consultation directly edits workflow, task scope, or artifacts.
+- [ ] Hero containment — invited Heroes have source intent, term limit, and
+  telemetry; they cannot override convergence or silently expand scope.
 
 ## Evidence commands / checks
 
@@ -59,12 +77,18 @@ uv run pytest -q web/frontend/tests/test_mythos_header.py web/frontend/tests/tes
 - [ ] Editing a persona stance from the PWA persists and appears in discussion history.
 - [ ] Replay to a past event index shows the mythos as it was at that point.
 - [ ] Persona bodies are selectable on the map and orbit the discovery cluster.
+- [ ] Load-bearing trigger events create bounded founding-team discussion rows visible in replay.
 
 ## Known traps
 
 - Do not read `qwendea.md` from the frontend. Backend synthesizes mythos into events.
 - A persona stance edit must not silently also edit workflow config — emit a dedicated event; a later consumer applies it.
 - Avoid re-emitting `project_mythos_updated` for no-op diffs; folders should not see phantom updates in replay.
+- Do not implement recurring consultation as an unbounded multi-agent debate.
+  The first version should be deterministic or one structured model call, with
+  prior accepted decisions treated as binding context.
+- Do not let personas silently ask for the moon after previously accepting
+  scope. Scope expansion requires an explicit operator decision.
 
 ## Handoff notes
 

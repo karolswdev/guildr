@@ -75,6 +75,18 @@ export class AtomNode {
     this.syncSelectionRing();
   }
 
+  setLensDimmed(dimmed: boolean): void {
+    this.material.transparent = dimmed;
+    this.material.opacity = dimmed ? 0.34 : 1;
+    this.material.emissiveIntensity = dimmed ? 0.03 : (STATE_COLORS[this.state] ?? STATE_COLORS.idle).emissiveIntensity;
+    this.material.needsUpdate = true;
+    for (const child of this.group.children) {
+      if (child instanceof THREE.Sprite) {
+        child.material.opacity = dimmed ? 0.28 : 1;
+      }
+    }
+  }
+
   animate(timeMs: number): void {
     if (this.state === "active" || this.state === "waiting") {
       const amount = this.state === "waiting" ? 0.04 : 0.025;

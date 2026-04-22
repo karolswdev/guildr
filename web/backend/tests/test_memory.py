@@ -135,3 +135,36 @@ async def test_memory_search_route_scrubs_query_event(app: FastAPI) -> None:
     event_text = event_log_path(project_id).read_text(encoding="utf-8")
     assert "sk-live-secret-value" not in event_text
     assert "[redacted]" in event_text
+
+
+@pytest.mark.asyncio
+async def test_memory_error_route_uses_memory_event_shape(app: FastAPI) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        create_resp = await client.post(
+            "/api/projects",
+            json={"name": "Memory Error Project", "initial_idea": "Build it"},
+        )
+        project_id = create_resp.json()["id"]
+
+        with patch(
+            "web.backend.routes.memory.search_memory",
+            side_effect=RuntimeError("palace unavailable"),
+        ):
+            response = await client.post(
+                f"/api/projects/{project_id}/memory/search",
+                json={"query": "GraphQL", "results": 3},
+            )
+
+    assert response.status_code == 400
+    events = [
+        json.loads(line)
+        for line in event_log_path(project_id).read_text(encoding="utf-8").splitlines()
+    ]
+    event = events[-1]
+    assert event["type"] == "memory_error"
+    assert event["run_id"] == project_id
+    assert event["available"] is False
+    assert event["artifact_refs"] == []
+    assert event["memory_refs"] == []
+    assert event["provenance"]["memory_refs"] == []

@@ -12,7 +12,9 @@ from orchestrator.lib.logger import setup_phase_logger
 from orchestrator.lib.loop_refs import refs_for_phase
 from orchestrator.lib.loops import emit_loop_event, loop_stage_for_step
 from orchestrator.lib.intents import ignore_queued_intents_for_passed_step
-from orchestrator.lib.next_step import build_next_step_packet
+from orchestrator.lib.narrator_sidecar import run_narrator_sidecar
+from orchestrator.lib.next_step import build_next_step_packet, emit_next_step_packet_event
+from orchestrator.lib.session_runners import resolve_session_runner
 from orchestrator.lib.state import State
 from orchestrator.lib.workflow import enabled_steps
 
@@ -102,32 +104,12 @@ class Orchestrator:
            existing dry-run tests don't each need to hand-build one.
         3. ``None`` when nothing matches — caller raises ``PhaseFailure``.
         """
-        if role in self._session_runners:
-            return self._session_runners[role]
-        if not self._dry_run:
-            return None
-        if role == "coder":
-            from orchestrator.roles.coder_dryrun import DryRunCoderRunner
-            runner: Any = DryRunCoderRunner(self.state)
-        elif role == "reviewer":
-            from orchestrator.roles.reviewer_dryrun import DryRunReviewerRunner
-            runner = DryRunReviewerRunner(self.state)
-        elif role == "deployer":
-            from orchestrator.roles.deployer_dryrun import DryRunDeployerRunner
-            runner = DryRunDeployerRunner(self.state)
-        elif role == "tester":
-            from orchestrator.roles.tester_dryrun import DryRunTesterRunner
-            runner = DryRunTesterRunner(self.state)
-        elif role == "architect":
-            from orchestrator.roles.architect_dryrun import DryRunArchitectRunner
-            runner = DryRunArchitectRunner(self.state)
-        elif role == "judge":
-            from orchestrator.roles.architect_dryrun import DryRunJudgeRunner
-            runner = DryRunJudgeRunner(self.state)
-        else:
-            return None
-        self._session_runners[role] = runner
-        return runner
+        return resolve_session_runner(
+            role,
+            state=self.state,
+            dry_run=self._dry_run,
+            session_runners=self._session_runners,
+        )
 
     # -- public API ----------------------------------------------------------
 
@@ -162,7 +144,17 @@ class Orchestrator:
         for attempt in range(self.config.max_retries):
             self.state.current_phase = name
             self.state.save()
-            self._emit_next_step_packet(current_step=name)
+            current_packet = self._emit_next_step_packet(current_step=name)
+            if current_packet is None and attempt == 0:
+                pre_step_event = self._events_obj.emit(
+                    "narrator_pre_step",
+                    name=name,
+                    reason="missing_next_step_packet",
+                )
+                self._run_narrator_sidecar(
+                    [pre_step_event],
+                    next_step_packet=None,
+                )
             self._events_obj.emit("phase_start", name=name, attempt=attempt)
             emit_loop_event(
                 self._events_obj,
@@ -182,7 +174,11 @@ class Orchestrator:
             try:
                 self._invoke_handler(fn, phase_logger=phase_logger, step=step)
             except Exception as e:
-                self._events_obj.emit("phase_error", name=name, error=str(e))
+                phase_error_event = self._events_obj.emit("phase_error", name=name, error=str(e))
+                self._run_narrator_sidecar(
+                    [phase_error_event],
+                    next_step_packet=None,
+                )
                 emit_loop_event(
                     self._events_obj,
                     "loop_blocked",
@@ -203,7 +199,7 @@ class Orchestrator:
                 continue
 
             if self._validate(name):
-                self._events_obj.emit("phase_done", name=name)
+                phase_done_event = self._events_obj.emit("phase_done", name=name)
                 emit_loop_event(
                     self._events_obj,
                     "loop_completed",
@@ -220,7 +216,12 @@ class Orchestrator:
                 self.state.retries[name] = attempt + 1
                 self.state.save()
                 self._emit_ignored_intents_for_passed_step(name)
-                self._emit_next_step_packet(completed_step=name)
+                packet = self._emit_next_step_packet(completed_step=name)
+                if name != "narrator":
+                    self._run_narrator_sidecar(
+                        [phase_done_event],
+                        next_step_packet=packet,
+                    )
                 return
 
             # Validator failed — retry with failure context
@@ -267,6 +268,7 @@ class Orchestrator:
             "architect_plan": self._architect_plan,
             "architect_refine": self._architect_refine,
             "micro_task_breakdown": self._micro_task_breakdown,
+            "narrator": self._narrator,
             "implementation": self._coder,
             "testing": self._tester,
             "guru_escalation": self._guru_escalation,
@@ -288,9 +290,13 @@ class Orchestrator:
                 self._gate_registry_obj.decide(handler, "approved")
                 self.state.gates_approved[handler] = True
                 self.state.save()
-                self._events_obj.emit("gate_decided", gate=handler, decision="approved")
+                gate_event = self._events_obj.emit("gate_decided", gate=handler, decision="approved")
                 self._emit_ignored_intents_for_passed_step(handler)
-                self._emit_next_step_packet(completed_step=handler)
+                packet = self._emit_next_step_packet(completed_step=handler)
+                self._run_narrator_sidecar(
+                    [gate_event],
+                    next_step_packet=packet,
+                )
                 return
             self._gate(handler)
             return
@@ -362,7 +368,7 @@ class Orchestrator:
 
         self.state.gates_approved[name] = decision == "approved"
         self.state.save()
-        self._events_obj.emit("gate_decided", gate=name, decision=decision)
+        gate_event = self._events_obj.emit("gate_decided", gate=name, decision=decision)
         emit_loop_event(
             self._events_obj,
             "loop_completed" if decision == "approved" else "loop_blocked",
@@ -374,12 +380,20 @@ class Orchestrator:
         )
 
         if decision == "rejected":
+            self._run_narrator_sidecar(
+                [gate_event],
+                next_step_packet=None,
+            )
             reason = self._gate_registry_obj.get_rejection_reason(name)
             raise PhaseFailure(
                 f"Gate '{name}' rejected: {reason}"
             )
         self._emit_ignored_intents_for_passed_step(name)
-        self._emit_next_step_packet(completed_step=name)
+        packet = self._emit_next_step_packet(completed_step=name)
+        self._run_narrator_sidecar(
+            [gate_event],
+            next_step_packet=packet,
+        )
 
     # -- setup helpers -------------------------------------------------------
 
@@ -430,28 +444,52 @@ class Orchestrator:
         *,
         completed_step: str | None = None,
         current_step: str | None = None,
-    ) -> None:
+    ) -> dict[str, Any] | None:
         packet = build_next_step_packet(
             self.state,
             completed_step=completed_step,
             current_step=current_step,
         )
         if packet is None:
+            return None
+        emit_next_step_packet_event(
+            self._events_obj,
+            self.config.project_dir.name,
+            packet,
+        )
+        return packet
+
+    def _run_narrator_sidecar(
+        self,
+        source_events: list[Any],
+        *,
+        next_step_packet: dict[str, Any] | None = None,
+    ) -> None:
+        events = [event for event in source_events if isinstance(event, dict)]
+        if not events:
             return
-        self._events_obj.emit(
-            "next_step_packet_created",
-            packet_id=packet["packet_id"],
-            step=packet["step"],
-            title=packet["title"],
-            role=packet["role"],
-            packet=packet,
-            source_refs=packet["source_refs"],
-            memory_refs=packet["memory_provenance"]["memory_refs"],
-            artifact_refs=[
-                source.removeprefix("artifact:")
-                for source in packet["source_refs"]
-                if source.startswith("artifact:")
-            ],
+        run_narrator_sidecar(
+            self.state,
+            self._events_obj,
+            events,
+            next_step_packet=next_step_packet,
+            runner=self._session_runner_for("narrator"),
+            project_id=self.config.project_dir.name,
+        )
+
+    def _run_narrator_workflow_phase(self) -> None:
+        packet = build_next_step_packet(
+            self.state,
+            current_step=self.state.current_phase,
+        )
+        trigger = self._events_obj.emit(
+            "narrator_phase_requested",
+            name=self.state.current_phase,
+            reason="workflow_phase",
+        )
+        self._run_narrator_sidecar(
+            [trigger],
+            next_step_packet=packet,
         )
 
     def _emit_ignored_intents_for_passed_step(self, step: str) -> None:
@@ -572,6 +610,10 @@ class Orchestrator:
 
         breaker = MicroTaskBreaker(self.state, _phase_logger=phase_logger)
         breaker.execute("sprint-plan.md")
+
+    def _narrator(self, *, phase_logger: logging.Logger | None = None) -> None:
+        """Run narrator as an optional workflow-configured phase."""
+        self._run_narrator_workflow_phase()
 
     def _coder(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run the Coder role via an opencode session runner (H6.3a)."""

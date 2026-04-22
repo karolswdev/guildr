@@ -3,6 +3,7 @@
 ## Purpose
 
 Assemble Mythos, Recent Story, Next-Step, and Discussion into a single tactical map. Implement Global, Object, and Story Views as lenses over the same scene — not separate routes. Ship the first viewport that answers what/who/what-just-happened/what-next/where-to-intervene on iPhone portrait.
+Narrator output should enter this surface as a visually JRPG-inspired dialogue layer over the map before it expands into deeper Story Cards. That is a UI treatment, not a requirement that the model roleplay a JRPG narrator.
 
 ## Why this phase exists
 
@@ -27,15 +28,17 @@ This is where the system stops feeling like a dashboard and starts feeling like 
 
 ## Tasks
 
-- [ ] Goal Core body: calm glow, low-frequency pulse, tap → project brief sheet.
+- [x] Goal Core body: calm glow, low-frequency pulse, tap → project brief sheet.
 - [ ] Founding Team cluster: personas orbit discovery/plan region; selectable; speech tails on recent statements.
 - [ ] Next-Step Beam: single highlighted corridor from last completed → next slated atom.
 - [ ] Intent Packet visual: spawns at operator avatar/edge → travels to target atom; queued → applied/ignored/superseded states.
 - [ ] DWA Story Satellites: latest bright, older fade into trail; thin tethers to source events/artifacts.
-- [ ] HUD: `Next: <step> · Story: <count> · Cost: <run> · Loop dots`.
-- [ ] Lens toggle: Global / Object / Story. Not routes — scene mutations.
-- [ ] Object View: focus atom, float in/out bodies, bottom sheet (what / consumed / produced / next).
-- [ ] Story View: freeze camera on recent path, dim unrelated atoms, timeline scrubs digests not events.
+- [x] HUD: `Next: <step> · Story: <count> · Cost: <run> · Loop dots`.
+- [x] Lens toggle: Global / Object / Story. Not routes — scene mutations. First pass uses Run / Loop / Object / Story controls over the same scene.
+- [x] Object View: focus atom, float in/out bodies, bottom sheet (what / consumed / produced / next).
+- [x] Story View first pass: focus camera on recent path, dim unrelated atoms, browse digest cards/source refs/discussion without route reload.
+- [ ] Story View digest scrubber: timeline scrubs digests/story cards, not only raw events.
+- [x] Narrator Dialogue: distinctive summary box, typewriter reveal, skip/replay, source affordance, reduced-motion fallback.
 - [ ] Mobile portrait as default device target; test at 375×812.
 - [ ] Semantic Space Kit use: astronaut=operator, mech=builder, rover=CI, spaceship=deploy, planets=loop bodies, radar/antenna/solar=memory/providers/budget.
 - [ ] Replay/Live toggle in top safe-area; lens selection preserved across toggle.
@@ -71,6 +74,7 @@ uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_len
 - Introducing a second scene root per lens breaks motion continuity and intent-packet trajectories. Lenses mutate; they don't re-instantiate.
 - Label overlap is the fastest dashboard-regression: collision-manage DOM overlays, not transform hacks.
 - Story View collapsing into a full-screen modal is a dashboard relapse — keep the map visible, just dim and scrub.
+- Narrator output as a plain stats card is a dashboard relapse — make the UI feel like an in-world dialogue surface, while keeping the model voice neutral and summary-oriented.
 - Loading all 87 Space Kit GLBs on first render — guarded by `test_ultimate_space_kit_manifest.py`; don't break it.
 
 ## Handoff notes

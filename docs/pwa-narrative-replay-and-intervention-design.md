@@ -110,6 +110,23 @@ Examples:
 
 Each DWA must carry source refs so it can be traced back to events and files.
 
+### Narrator Dialogue
+
+The narrator text is neutral project synthesis, not a JRPG roleplay prompt and
+not the authority for workflow state. The PWA presentation can borrow from
+classic JRPG dialogue: a distinctive speaker frame, paced text reveal,
+replay/skip controls, and a visible relationship to the map events happening
+behind it.
+
+The narrator reads validated event/artifact packets and produces UI-ready
+language. It never mutates source files, never becomes the executor, and never
+replaces deterministic ledger truth. If narrator output fails validation, the
+PWA shows the deterministic M04 digest instead.
+
+The narrator can be routed independently from builder roles. A production
+deployment may use a cheap OpenRouter model for narration while coder/tester
+roles run on local/on-prem models.
+
 ### Next-Step Packet
 
 A structured preview of the next workflow step: role, objective, inputs,
@@ -249,6 +266,8 @@ Output:
 PWA presentation:
 
 - A DWA appears as a small story satellite near the relevant atom cluster.
+- The latest DWA can also enter as a JRPG-style narrator dialogue box over the
+  map: speaker name, title, typewriter reveal, skip/replay, and source affordance.
 - On tap, it opens a story card:
   - title,
   - 2-4 highlights,
@@ -568,6 +587,18 @@ Live behavior:
 The Narrator turns recent events into DWAs, discussion highlights, and
 next-step packet text. It does not decide workflow. It explains workflow.
 
+It has two responsibilities:
+
+1. **Synthesis:** turn bounded ledger packets into sourced, validated digest
+   JSON.
+2. **Presentation fit:** provide compact text that the PWA can render inside a
+   high-polish dialogue layer, with pacing and replay behavior.
+
+The PWA presentation requirement is intentional product scope, not decoration.
+The narrator model should behave like a concise project summarizer. The UI can
+present that summary in an in-world dialogue shell, while source refs keep it
+auditable.
+
 ### When It Runs
 
 Initial triggers:
@@ -583,6 +614,34 @@ To avoid token waste, debounce:
 - no more than once per phase,
 - no more than once per 10 events unless a gate/error/intent occurs,
 - skip if the event window contains no user-facing change.
+
+### Model Routing
+
+Narrator execution is a normal routed role. Operators can bind it to a cheap
+hosted model, a local model, or an on-prem OpenAI-compatible endpoint without
+changing coder/tester/reviewer routing:
+
+```yaml
+endpoints:
+  - name: openrouter-cheap
+    base_url: https://openrouter.ai/api
+    model: google/gemini-flash-1.5
+    api_key_env: OPENROUTER_API_KEY
+  - name: local-gpu
+    base_url: http://127.0.0.1:8080
+    model: qwen3-coder:30b
+
+routing:
+  coder:
+    - local-gpu
+  tester:
+    - local-gpu
+  narrator:
+    - openrouter-cheap
+```
+
+The `narrator` opencode agent must remain read-only: `read` and `grep` are
+allowed; `bash`, `write`, `edit`, and network fetch tools are disabled.
 
 ### Input Packet
 

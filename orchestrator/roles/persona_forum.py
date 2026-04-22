@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from orchestrator.lib.control import write_compact_context
+from orchestrator.lib.discussion import append_persona_discussion_entries
 from orchestrator.lib.state import State
 from orchestrator.lib.workflow import update_step_config
 
@@ -30,6 +31,34 @@ class PersonaForum:
     _role: str = "persona_forum"
 
     def execute(self) -> str:
+        self.synthesize(
+            event_bus=self.state.events,
+            project_id=self.state.project_dir.name,
+            compact=True,
+        )
+        return "PERSONA_FORUM.md"
+
+    def synthesize_without_compaction(
+        self,
+        *,
+        event_bus: Any | None = None,
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Write persona artifacts for HTTP control without compacting context."""
+        return self.synthesize(
+            event_bus=event_bus,
+            project_id=project_id,
+            compact=False,
+        )
+
+    def synthesize(
+        self,
+        *,
+        event_bus: Any | None = None,
+        project_id: str | None = None,
+        compact: bool = True,
+    ) -> dict[str, Any]:
+        """Create founding-team artifacts and optional discussion projections."""
         brief = self.state.read_file("qwendea.md")
         personas = self._personas(brief)
         self._persist_personas(personas)
@@ -39,8 +68,22 @@ class PersonaForum:
 
         forum_text = self._fallback_forum(brief, personas)
         self.state.write_file("PERSONA_FORUM.md", forum_text)
-        write_compact_context(self.state.project_dir, max_chars=18000)
-        return "PERSONA_FORUM.md"
+        discussion_entries: list[dict[str, Any]] = []
+        if event_bus is not None:
+            discussion_entries = append_persona_discussion_entries(
+                self.state.project_dir,
+                personas,
+                event_bus=event_bus,
+                project_id=project_id or self.state.project_dir.name,
+                source_refs=["artifact:FOUNDING_TEAM.json", "artifact:PERSONA_FORUM.md"],
+            )
+        if compact:
+            write_compact_context(self.state.project_dir, max_chars=18000)
+        return {
+            "personas": personas,
+            "forum_path": "PERSONA_FORUM.md",
+            "discussion_entries": discussion_entries,
+        }
 
     def _personas(self, brief: str) -> list[dict[str, Any]]:
         config = self.step_config or {}

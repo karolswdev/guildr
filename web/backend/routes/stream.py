@@ -37,9 +37,10 @@ class SimpleEventBus:
         self._subscribers: list[list] = []
         self._history: list[str] = []
         self._history_event_ids: set[str] = set()
+        self._history_events: dict[str, dict[str, Any]] = {}
         self._project_id = project_id
 
-    def emit(self, event_type: str, **fields: Any) -> None:
+    def emit(self, event_type: str, **fields: Any) -> dict[str, Any]:
         """Emit an event to every live subscriber and record it for replay.
 
         SSE wire format: every payload line must be prefixed with ``data: ``
@@ -55,24 +56,31 @@ class SimpleEventBus:
         )
         event_id = event["event_id"]
         if event_id in self._history_event_ids:
-            return
+            return self._history_events[event_id]
 
         data = f"data: {json.dumps(event)}\n\n"
         self._history.append(data)
         self._history_event_ids.add(event_id)
+        self._history_events[event_id] = event
         if len(self._history) > _REPLAY_LIMIT:
             removed = self._history[: len(self._history) - _REPLAY_LIMIT]
             del self._history[: len(self._history) - _REPLAY_LIMIT]
             for raw in removed:
-                event_id = _event_id_from_sse(raw)
-                if event_id:
-                    self._history_event_ids.discard(event_id)
+                evicted_id = _event_id_from_sse(raw)
+                if evicted_id:
+                    self._history_event_ids.discard(evicted_id)
+                    self._history_events.pop(evicted_id, None)
         self._persist_event(event)
+        dead_subscribers: list[list] = []
         for subscriber in self._subscribers:
             try:
                 subscriber.append(data)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Dropping failed SSE subscriber for %s: %s", self._project_id, exc)
+                dead_subscribers.append(subscriber)
+        for subscriber in dead_subscribers:
+            self.unsubscribe(subscriber)
+        return event
 
     def subscribe(self) -> list:
         """Create a subscriber pre-seeded with the recent event history."""

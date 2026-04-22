@@ -13,10 +13,12 @@ from pathlib import Path
 import pytest
 
 from orchestrator.cli.run import (
+    _build_opencode_session_runners,
     _load_config,
     add_run_subparser,
     cmd_run,
 )
+from orchestrator.lib.endpoints import load_endpoints
 
 
 @pytest.fixture
@@ -108,4 +110,18 @@ def test_cmd_run_dry_run_succeeds(
     assert (project / "sprint-plan.md").exists()
     assert (project / "DEPLOY.md").exists()
 
+
+def test_live_runner_builder_includes_narrator(project: Path) -> None:
+    cfg = load_endpoints(
+        {
+            "endpoints": [{"name": "local", "base_url": "http://127.0.0.1:8080", "model": "m"}],
+            "routing": {"narrator": ["local"]},
+        },
+        env={},
+    )
+    assert cfg is not None
+
+    runners = _build_opencode_session_runners(cfg, project)
+
+    assert "narrator" in runners
 

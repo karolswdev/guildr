@@ -11,6 +11,7 @@ from orchestrator.lib.endpoints import load_endpoints
 from orchestrator.lib.opencode_config import (
     OPENCODE_CONFIG_SCHEMA_URL,
     OPENCODE_OPENAI_COMPAT_NPM,
+    build_agent_definitions,
     build_opencode_config,
     opencode_config_path,
     write_opencode_config,
@@ -142,3 +143,13 @@ def test_model_entry_name_includes_endpoint_label() -> None:
     assert payload["provider"]["slow"]["models"]["qwen:30b"]["name"] == (
         "qwen:30b @ slow"
     )
+
+
+def test_narrator_agent_is_read_only() -> None:
+    tools = build_agent_definitions()["narrator"]["tools"]
+    assert tools["read"] is True
+    assert tools["grep"] is True
+    assert tools["bash"] is False
+    assert tools["write"] is False
+    assert tools["edit"] is False
+    assert tools["webfetch"] is False

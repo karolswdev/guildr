@@ -17,6 +17,7 @@ from orchestrator.lib.opencode import (
 )
 from orchestrator.lib.opencode_audit import emit_session_audit
 from orchestrator.lib.raw_io import raw_io_path
+from orchestrator.lib.usage import emit_advisor_usage
 from orchestrator.lib.usage_writer import usage_path
 
 
@@ -178,12 +179,16 @@ def test_usage_carries_session_metadata(state: SimpleNamespace) -> None:
     assert usage["attempt"] == 2
     assert usage["cost_usd"] == 0.0025
     assert usage["cost"]["source"] == "provider_reported"
+    assert usage["finish_reason"] == "stop"
     assert usage["runtime"]["opencode"] == {
-        "session_id": "ses_test", "message_index": 0,
+        "session_id": "ses_test", "message_index": 0, "exit_code": 0,
     }
     assert usage["runtime"]["memory"] == {
         "wake_up_hash": hashlib.sha256(b"wake up").hexdigest(),
         "memory_refs": [".orchestrator/memory/wake-up.md"],
+    }
+    assert usage["provider_metadata"]["opencode"] == {
+        "session_id": "ses_test", "message_index": 0, "exit_code": 0,
     }
 
 
@@ -211,6 +216,9 @@ def test_failed_session_still_audits_with_error_status(state: SimpleNamespace) -
     usage = _read_jsonl(usage_path(state.project_dir))[0]
     assert raw["finish_reason"] == "error"
     assert usage["status"] == "error"
+    assert usage["finish_reason"] == "error"
+    assert usage["error_type"] == "ProviderError"
+    assert usage["error"] == "opencode exited with code 3"
 
 
 def test_zero_cost_reports_unknown_source(state: SimpleNamespace) -> None:
@@ -222,6 +230,82 @@ def test_zero_cost_reports_unknown_source(state: SimpleNamespace) -> None:
     usage = _read_jsonl(usage_path(state.project_dir))[0]
     assert usage["cost_usd"] is None
     assert usage["cost"]["source"] == "unknown"
+
+
+def test_zero_cost_local_provider_uses_local_estimate(state: SimpleNamespace) -> None:
+    rate_dir = state.project_dir / ".orchestrator" / "costs" / "rate-cards"
+    rate_dir.mkdir(parents=True)
+    (rate_dir / "local-test.json").write_text(
+        json.dumps({
+            "rate_card_version": "local-test",
+            "hourly_cost_usd": 36.0,
+            "default_source": "local_estimate",
+        }),
+        encoding="utf-8",
+    )
+    result = _result([
+        _message(text="t", provider="local-gpu", cost=0.0, created_ms=1000, completed_ms=1500),
+    ])
+
+    emit_session_audit(
+        state, result, role="coder", phase="implementation",
+        step="implementation", prompt="p",
+    )
+
+    usage = _read_jsonl(usage_path(state.project_dir))[0]
+    assert usage["cost_usd"] == pytest.approx(0.005)
+    assert usage["source"] == "local_estimate"
+    assert usage["confidence"] == "medium"
+    assert usage["extraction_path"] == "opencode_message.local_estimate"
+    assert usage["cost"]["estimated_cost"] == pytest.approx(0.005)
+    assert usage["cost"]["rate_card_version"] == "local-test"
+    assert usage["rate_card_version"] == "local-test"
+
+
+def test_opencode_and_advisor_usage_rows_share_core_schema(state: SimpleNamespace) -> None:
+    result = _result([_message(text="t", provider="opencode-provider", cost=0.002)])
+    opencode_ids = emit_session_audit(
+        state, result, role="coder", phase="implementation",
+        step="implementation", prompt="p", atom_id="task-1", attempt=1,
+    )
+    advisor_id = emit_advisor_usage(
+        state,
+        provider_kind="advisor",
+        provider_name="claude",
+        model="opus",
+        role="reviewer",
+        step="review",
+        runtime_ms=123.4,
+        status="error",
+        usage={"prompt_tokens": 3, "completion_tokens": 4, "reasoning_tokens": 1},
+        cost_usd=0.1,
+        source="provider_reported",
+        confidence="high",
+        extraction_path="advisor.response.usage",
+        error="advisor failed",
+        provider_metadata={"request_id": "safe", "api_key": "redacted"},
+    )
+
+    rows = _read_jsonl(usage_path(state.project_dir))
+    by_call_id = {row["call_id"]: row for row in rows}
+    shared_keys = {
+        "call_id", "provider_kind", "provider_name", "model", "role", "step",
+        "atom_id", "attempt", "usage", "runtime_ms", "runtime", "cost_usd",
+        "cost", "source", "confidence", "extraction_path", "status",
+        "provider_metadata",
+    }
+    cost_keys = {
+        "currency", "provider_reported_cost", "estimated_cost", "effective_cost",
+        "source", "confidence", "extraction_path", "rate_card_version",
+    }
+    for call_id in [opencode_ids[0], advisor_id]:
+        row = by_call_id[call_id]
+        assert shared_keys <= set(row)
+        assert cost_keys <= set(row["cost"])
+        assert {"input_tokens", "output_tokens", "reasoning_tokens", "total_tokens"} <= set(row["usage"])
+
+    advisor_row = by_call_id[advisor_id]
+    assert "api_key" not in advisor_row["provider_metadata"]
 
 
 def test_join_key_matches_between_raw_io_and_usage(state: SimpleNamespace) -> None:

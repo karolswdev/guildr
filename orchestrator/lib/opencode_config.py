@@ -129,6 +129,11 @@ def build_agent_definitions() -> dict[str, Any]:
             "description": "Reads the diff + test report, emits a verdict. Read-only.",
             "tools": _tools(read=True, glob=True, grep=True),
         },
+        "narrator": {
+            "mode": "primary",
+            "description": "Synthesizes sourced narrative digests from bounded event packets. Read-only.",
+            "tools": _tools(read=True, grep=True),
+        },
         "deployer": {
             "mode": "primary",
             "description": "Produces DEPLOY.md from detected deploy configs + env vars. Read-only.",

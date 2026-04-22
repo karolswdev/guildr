@@ -21,6 +21,8 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
+from orchestrator.lib.scrub import scrub_text
+
 logger = logging.getLogger(__name__)
 
 # -- models ------------------------------------------------------------------
@@ -41,6 +43,24 @@ class ProjectResponse(BaseModel):
 
 class ProjectListResponse(BaseModel):
     projects: list[ProjectResponse]
+
+
+class PersonaBrief(BaseModel):
+    name: str
+    archetype: str | None = None
+    mandate: str | None = None
+    stance: str | None = None
+    veto_scope: str | None = None
+
+
+class ProjectBriefResponse(BaseModel):
+    id: str
+    name: str
+    title: str
+    summary: str
+    founding_team: list[PersonaBrief] = Field(default_factory=list)
+    forum_excerpt: str | None = None
+    source_refs: list[str] = Field(default_factory=list)
 
 
 class StartRequest(BaseModel):
@@ -89,6 +109,66 @@ def _fallback_name(project_dir: Path) -> str:
         except OSError:
             continue
     return project_dir.name
+
+
+def _read_text(path: Path, limit: int = 4000) -> str:
+    try:
+        return path.read_text(encoding="utf-8")[:limit]
+    except OSError:
+        return ""
+
+
+def _brief_title_and_summary(project: Project) -> tuple[str, str, list[str]]:
+    source_refs: list[str] = []
+    raw = _read_text(project.project_dir / "qwendea.md")
+    if raw:
+        source_refs.append("artifact:qwendea.md")
+    if not raw:
+        raw = _read_text(project.project_dir / "initial_idea.txt")
+        if raw:
+            source_refs.append("artifact:initial_idea.txt")
+    lines = [line.strip().lstrip("#").strip() for line in raw.splitlines() if line.strip()]
+    title = scrub_text(lines[0] if lines else project.name)
+    summary = scrub_text(" ".join(lines[1:4]) if len(lines) > 1 else title)
+    return title[:120], summary[:420], source_refs
+
+
+def _founding_team(project_dir: Path) -> tuple[list[PersonaBrief], list[str]]:
+    path = project_dir / "FOUNDING_TEAM.json"
+    if not path.exists():
+        return [], []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return [], []
+    personas_raw = raw.get("personas") if isinstance(raw, dict) else None
+    if not isinstance(personas_raw, list):
+        return [], []
+    personas: list[PersonaBrief] = []
+    for item in personas_raw:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        personas.append(
+            PersonaBrief(
+                name=scrub_text(name)[:80],
+                archetype=scrub_text(item["archetype"]) if isinstance(item.get("archetype"), str) else None,
+                mandate=scrub_text(item["mandate"]) if isinstance(item.get("mandate"), str) else None,
+                stance=scrub_text(item["stance"]) if isinstance(item.get("stance"), str) else None,
+                veto_scope=scrub_text(item["veto_scope"]) if isinstance(item.get("veto_scope"), str) else None,
+            )
+        )
+    return personas[:8], ["artifact:FOUNDING_TEAM.json"] if personas else []
+
+
+def _forum_excerpt(project_dir: Path) -> tuple[str | None, list[str]]:
+    text = _read_text(project_dir / "PERSONA_FORUM.md", limit=1200).strip()
+    if not text:
+        return None, []
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return scrub_text(" ".join(lines[:5]))[:520], ["artifact:PERSONA_FORUM.md"]
 
 
 def _created_at_from_dir(project_dir: Path) -> str:
@@ -328,6 +408,25 @@ def _setup_routes(router_obj: Any) -> Any:
                 )
                 for p in projects
             ]
+        )
+
+    @router_obj.get("/{project_id}/brief", response_model=ProjectBriefResponse)
+    async def get_project_brief(project_id: str) -> ProjectBriefResponse:
+        store = get_store()
+        proj = store.get(project_id)
+        if proj is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        title, summary, source_refs = _brief_title_and_summary(proj)
+        founding_team, team_refs = _founding_team(proj.project_dir)
+        forum_excerpt, forum_refs = _forum_excerpt(proj.project_dir)
+        return ProjectBriefResponse(
+            id=proj.id,
+            name=proj.name,
+            title=title,
+            summary=summary,
+            founding_team=founding_team,
+            forum_excerpt=forum_excerpt,
+            source_refs=[*source_refs, *team_refs, *forum_refs],
         )
 
     @router_obj.get("/{project_id}", response_model=ProjectResponse)
