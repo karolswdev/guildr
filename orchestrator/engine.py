@@ -7,6 +7,7 @@ import inspect
 from pathlib import Path
 from typing import Any, Callable
 
+from orchestrator.lib.artifact_preview import emit_phase_artifact_previews
 from orchestrator.lib.config import Config
 from orchestrator.lib.logger import setup_phase_logger
 from orchestrator.lib.loop_refs import refs_for_phase
@@ -200,6 +201,18 @@ class Orchestrator:
 
             if self._validate(name):
                 phase_done_event = self._events_obj.emit("phase_done", name=name)
+                try:
+                    emit_phase_artifact_previews(
+                        self._events_obj,
+                        self.state.project_dir,
+                        name,
+                        project_id=self.state.project_dir.name,
+                        trigger_event_id=phase_done_event.get("event_id")
+                        if isinstance(phase_done_event, dict)
+                        else None,
+                    )
+                except Exception:  # noqa: BLE001 — preview emission is best-effort
+                    logger.exception("artifact preview emission failed for phase %s", name)
                 emit_loop_event(
                     self._events_obj,
                     "loop_completed",

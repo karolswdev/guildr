@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from orchestrator.lib.memory_palace import memory_event_fields
 from orchestrator.lib.scrub import scrub_text
+
+logger = logging.getLogger(__name__)
 
 
 class NarrativeValidationError(ValueError):
@@ -75,7 +78,7 @@ def emit_narrative_digest(
     )
     written = write_narrative_digest(project_dir, digest)
     artifact_refs = [str(path.relative_to(project_dir)) for path in written]
-    return event_bus.emit(
+    emitted = event_bus.emit(
         "narrative_digest_created",
         project_id=project_id or project_dir.name,
         digest_id=digest["digest_id"],
@@ -96,6 +99,23 @@ def emit_narrative_digest(
         memory_refs=list(memory_fields["memory_refs"]),
         digest=digest,
     )
+    try:
+        from orchestrator.lib.artifact_preview import emit_artifact_preview
+
+        trigger_event_id = emitted.get("event_id") if isinstance(emitted, dict) else None
+        for ref in artifact_refs:
+            if ref.endswith(".md"):
+                emit_artifact_preview(
+                    event_bus,
+                    project_dir,
+                    artifact_ref=ref,
+                    producing_atom_id="narrator",
+                    project_id=project_id or project_dir.name,
+                    trigger_event_id=trigger_event_id,
+                )
+    except Exception:  # noqa: BLE001 — preview emission is best-effort
+        logger.exception("artifact preview emission failed for narrative digest")
+    return emitted
 
 
 def validate_narrative_digest(

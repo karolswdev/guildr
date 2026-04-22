@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,8 @@ from orchestrator.lib.opencode_audit import emit_session_audit
 from orchestrator.lib.scrub import scrub_payload, scrub_text
 from orchestrator.lib.state import State
 from orchestrator.lib.workflow import load_workflow
+
+logger = logging.getLogger(__name__)
 
 _PROMPT_DIR = Path(__file__).resolve().parent / "prompts" / "narrator"
 
@@ -123,7 +126,7 @@ class Narrator:
             f".orchestrator/narrative/digests/{digest['digest_id']}.json",
             f".orchestrator/narrative/digests/{digest['digest_id']}.md",
         ]
-        event_bus.emit(
+        emitted = event_bus.emit(
             "narrative_digest_created",
             project_id=self.state.project_dir.name,
             digest_id=digest["digest_id"],
@@ -145,6 +148,24 @@ class Narrator:
             digest=digest,
             generated_by="narrator",
         )
+        try:
+            from orchestrator.lib.artifact_preview import emit_artifact_preview
+
+            trigger_event_id = (
+                emitted.get("event_id") if isinstance(emitted, dict) else None
+            )
+            for ref in artifact_refs:
+                if ref.endswith(".md"):
+                    emit_artifact_preview(
+                        event_bus,
+                        self.state.project_dir,
+                        artifact_ref=ref,
+                        producing_atom_id="narrator",
+                        project_id=self.state.project_dir.name,
+                        trigger_event_id=trigger_event_id,
+                    )
+        except Exception:  # noqa: BLE001 — preview emission is best-effort
+            logger.exception("artifact preview emission failed for narrative digest")
 
     def _emit_discussion_entry(self, digest: dict[str, Any]) -> None:
         event_bus = getattr(self.state, "events", None)

@@ -44,6 +44,7 @@ export const RUN_EVENT_TYPES = [
   "demo_artifact_created",
   "demo_capture_failed",
   "demo_presented",
+  "artifact_preview_created",
 ] as const;
 
 export type RunEventType = typeof RUN_EVENT_TYPES[number];

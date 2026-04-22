@@ -340,10 +340,13 @@ docs/demo-ceremony-and-replay-evidence.md
 Core idea:
 
 - If a mini-sprint task is visually demoable, the system should capture a
-  durable proof artifact: screenshot first, optional video/trace later.
+  durable proof artifact. For web/PWA work, this should be rooted in a
+  Playwright acceptance/demo spec, with GIF/video/trace/screenshot captured
+  from that same spec run.
 - Demo artifacts live under `.orchestrator/demos/<demo_id>/`.
 - Replay shows recorded demo artifacts, not current live app state.
-- Demo capture is evidence, not pass/fail authority. Tests still decide.
+- Demo capture is ceremony evidence, not pass/fail authority. The Playwright
+  test still decides whether the web demo passed.
 
 Recommended first implementation:
 
@@ -353,11 +356,13 @@ Recommended first implementation:
    - later: `demo_capture_started`, `demo_artifact_created`,
      `demo_capture_failed`, `demo_presented`
 2. Add a small `orchestrator/lib/demo.py` that detects demoable tasks from
-   acceptance criteria/evidence text.
+   acceptance criteria/evidence text and selects an adapter plan, starting with
+   `playwright_web`.
 3. Fold demo events in `EventEngine`.
 4. Render a basic demo card in Story/Object lenses.
-5. Do not automate Playwright capture until the event shape and replay fold are
-   stable.
+5. Do not automate browser capture until the event shape and replay fold are
+   stable. The first slice can emit `playwright_web` plans with `spec_path`,
+   `test_command`, route, viewport, and capture policy.
 
 This should probably land after A-9, because demo cards should carry memory
 provenance from the start.
