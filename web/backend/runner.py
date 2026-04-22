@@ -175,8 +175,7 @@ def _run_orchestrator(
                 endpoints_cfg, project_dir
             )
         else:
-            from orchestrator.cli.run import _build_dry_run_llm
-            orch_kwargs["fake_llm"] = _build_dry_run_llm()
+            orch_kwargs["dry_run"] = True
         orch = Orchestrator(**orch_kwargs)
         bus.emit("run_started", project_id=project_id, dry_run=dry_run, start_at=start_at)
         orch.run(start_at=start_at)

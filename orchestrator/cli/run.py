@@ -94,20 +94,6 @@ def _load_config(args: argparse.Namespace) -> Config:
     return cfg
 
 
-def _build_dry_run_llm() -> object:
-    """Build a plain fake LLM for dry-run mode.
-
-    After H6.3a–e every SDLC role runs through an opencode SessionRunner
-    and its own dry-run double. Post pool-sunset the pre-phase roles
-    (persona_forum, memory_refresh, guru_escalation) do not call the LLM
-    at all, so ``fake_llm`` is only kept for legacy dry-run wiring that
-    expects a non-None slot.
-    """
-    from orchestrator.lib.llm_fake import FakeLLMClient
-
-    return FakeLLMClient()
-
-
 def _build_opencode_session_runners(
     endpoints_cfg: object, project_dir: Path
 ) -> dict[str, object]:
@@ -166,7 +152,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     orch_kwargs: dict[str, object] = {"config": cfg}
     if args.dry_run:
-        orch_kwargs["fake_llm"] = _build_dry_run_llm()
+        orch_kwargs["dry_run"] = True
         mode = "dry-run"
     elif endpoints_cfg is not None:
         orch_kwargs["session_runners"] = _build_opencode_session_runners(

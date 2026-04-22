@@ -14,7 +14,7 @@ def test_web_runner_allows_extra_architect_refine_passes(tmp_path: Path) -> None
     captured = {}
 
     class FakeOrchestrator:
-        def __init__(self, *, config, fake_llm, events, gate_registry=None):
+        def __init__(self, *, config, events, gate_registry=None, **kwargs):
             captured["config"] = config
 
         def run(self) -> None:
@@ -37,7 +37,7 @@ def test_web_runner_passes_resume_step_to_engine(tmp_path: Path) -> None:
     captured = {}
 
     class FakeOrchestrator:
-        def __init__(self, *, config, fake_llm, events, gate_registry=None):
+        def __init__(self, *, config, events, gate_registry=None, **kwargs):
             return None
 
         def run(self, *, start_at=None) -> None:
@@ -62,7 +62,7 @@ def test_web_runner_defaults_to_idle_rpg_mode(tmp_path: Path) -> None:
     captured = {}
 
     class FakeOrchestrator:
-        def __init__(self, *, config, fake_llm, events, gate_registry=None):
+        def __init__(self, *, config, events, gate_registry=None, **kwargs):
             captured["config"] = config
 
         def run(self, *, start_at=None) -> None:
@@ -85,7 +85,7 @@ def test_web_runner_threads_gate_opt_in_into_config(tmp_path: Path) -> None:
     captured = {}
 
     class FakeOrchestrator:
-        def __init__(self, *, config, fake_llm, events, gate_registry=None):
+        def __init__(self, *, config, events, gate_registry=None, **kwargs):
             captured["config"] = config
 
         def run(self, *, start_at=None) -> None:

@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator.cli.run import _build_dry_run_llm
 from orchestrator.engine import Orchestrator
 from orchestrator.lib.config import Config
 
@@ -43,9 +42,7 @@ def test_dry_run_pipeline_produces_expected_artifacts(
     config: Config, project_dir: Path
 ) -> None:
     """Run the full pipeline in dry-run; assert each phase wrote its file."""
-    fake = _build_dry_run_llm()
-
-    orchestrator = Orchestrator(config=config, fake_llm=fake)
+    orchestrator = Orchestrator(config=config, dry_run=True)
     orchestrator.run()
 
     sprint_plan = project_dir / "sprint-plan.md"
@@ -70,8 +67,7 @@ def test_dry_run_pipeline_state_advanced_through_all_phases(
     config: Config, project_dir: Path
 ) -> None:
     """State should record the final phase reached, not crash mid-way."""
-    fake = _build_dry_run_llm()
-    orchestrator = Orchestrator(config=config, fake_llm=fake)
+    orchestrator = Orchestrator(config=config, dry_run=True)
     orchestrator.run()
 
     state_file = project_dir / ".orchestrator" / "state.json"

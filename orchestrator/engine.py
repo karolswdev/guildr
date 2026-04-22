@@ -11,6 +11,7 @@ from orchestrator.lib.config import Config
 from orchestrator.lib.logger import setup_phase_logger
 from orchestrator.lib.loop_refs import refs_for_phase
 from orchestrator.lib.loops import emit_loop_event, loop_stage_for_step
+from orchestrator.lib.next_step import build_next_step_packet
 from orchestrator.lib.state import State
 from orchestrator.lib.workflow import enabled_steps
 
@@ -37,7 +38,7 @@ class Orchestrator:
         gate_registry: object | None = None,
         events: object | None = None,
         git_ops: object | None = None,
-        fake_llm: object | None = None,
+        dry_run: bool = False,
         session_runners: dict[str, Any] | None = None,
     ) -> None:
         # All dependent modules are imported lazily so the engine skeleton
@@ -48,7 +49,7 @@ class Orchestrator:
         self._gate_registry = gate_registry
         self._events = events
         self._git_ops = git_ops
-        self._fake_llm = fake_llm
+        self._dry_run = dry_run
         # Roles migrated to the opencode runtime (H6.3a+) resolve their
         # runner here. Dry-run and the H5.3-style integration tests inject
         # fakes; production wiring builds one ``OpencodeSession`` per
@@ -96,45 +97,36 @@ class Orchestrator:
         1. Runner explicitly injected via ``session_runners[role]`` — the
            production path (built from endpoints routing) and the
            H5-style integration tests that bring their own fake.
-        2. Auto-provided dry-run runner when ``fake_llm`` is set — so
+        2. Auto-provided dry-run runner when ``dry_run=True`` — so
            existing dry-run tests don't each need to hand-build one.
-           Only applies for the ``coder`` role for now (H6.3a); when
-           tester/reviewer/deployer migrate, add auto-runners for them.
         3. ``None`` when nothing matches — caller raises ``PhaseFailure``.
         """
         if role in self._session_runners:
             return self._session_runners[role]
-        if self._fake_llm is not None and role == "coder":
+        if not self._dry_run:
+            return None
+        if role == "coder":
             from orchestrator.roles.coder_dryrun import DryRunCoderRunner
-            runner = DryRunCoderRunner(self.state)
-            self._session_runners[role] = runner
-            return runner
-        if self._fake_llm is not None and role == "reviewer":
+            runner: Any = DryRunCoderRunner(self.state)
+        elif role == "reviewer":
             from orchestrator.roles.reviewer_dryrun import DryRunReviewerRunner
             runner = DryRunReviewerRunner(self.state)
-            self._session_runners[role] = runner
-            return runner
-        if self._fake_llm is not None and role == "deployer":
+        elif role == "deployer":
             from orchestrator.roles.deployer_dryrun import DryRunDeployerRunner
             runner = DryRunDeployerRunner(self.state)
-            self._session_runners[role] = runner
-            return runner
-        if self._fake_llm is not None and role == "tester":
+        elif role == "tester":
             from orchestrator.roles.tester_dryrun import DryRunTesterRunner
             runner = DryRunTesterRunner(self.state)
-            self._session_runners[role] = runner
-            return runner
-        if self._fake_llm is not None and role == "architect":
+        elif role == "architect":
             from orchestrator.roles.architect_dryrun import DryRunArchitectRunner
             runner = DryRunArchitectRunner(self.state)
-            self._session_runners[role] = runner
-            return runner
-        if self._fake_llm is not None and role == "judge":
+        elif role == "judge":
             from orchestrator.roles.architect_dryrun import DryRunJudgeRunner
             runner = DryRunJudgeRunner(self.state)
-            self._session_runners[role] = runner
-            return runner
-        return None
+        else:
+            return None
+        self._session_runners[role] = runner
+        return runner
 
     # -- public API ----------------------------------------------------------
 
@@ -169,6 +161,7 @@ class Orchestrator:
         for attempt in range(self.config.max_retries):
             self.state.current_phase = name
             self.state.save()
+            self._emit_next_step_packet(current_step=name)
             self._events_obj.emit("phase_start", name=name, attempt=attempt)
             emit_loop_event(
                 self._events_obj,
@@ -225,6 +218,7 @@ class Orchestrator:
                 )
                 self.state.retries[name] = attempt + 1
                 self.state.save()
+                self._emit_next_step_packet(completed_step=name)
                 return
 
             # Validator failed — retry with failure context
@@ -293,6 +287,7 @@ class Orchestrator:
                 self.state.gates_approved[handler] = True
                 self.state.save()
                 self._events_obj.emit("gate_decided", gate=handler, decision="approved")
+                self._emit_next_step_packet(completed_step=handler)
                 return
             self._gate(handler)
             return
@@ -380,6 +375,7 @@ class Orchestrator:
             raise PhaseFailure(
                 f"Gate '{name}' rejected: {reason}"
             )
+        self._emit_next_step_packet(completed_step=name)
 
     # -- setup helpers -------------------------------------------------------
 
@@ -424,6 +420,35 @@ class Orchestrator:
             if self._accepts_kwarg(fn, key)
         }
         return fn(**accepted)
+
+    def _emit_next_step_packet(
+        self,
+        *,
+        completed_step: str | None = None,
+        current_step: str | None = None,
+    ) -> None:
+        packet = build_next_step_packet(
+            self.state,
+            completed_step=completed_step,
+            current_step=current_step,
+        )
+        if packet is None:
+            return
+        self._events_obj.emit(
+            "next_step_packet_created",
+            packet_id=packet["packet_id"],
+            step=packet["step"],
+            title=packet["title"],
+            role=packet["role"],
+            packet=packet,
+            source_refs=packet["source_refs"],
+            memory_refs=packet["memory_provenance"]["memory_refs"],
+            artifact_refs=[
+                source.removeprefix("artifact:")
+                for source in packet["source_refs"]
+                if source.startswith("artifact:")
+            ],
+        )
 
     @staticmethod
     def _log_phase_event(
@@ -596,15 +621,12 @@ class Orchestrator:
         deployer.execute("REVIEW.md")
 
     @property
-    def fake_llm(self) -> Any | None:
-        """Access the fake LLM client (used in dry-run mode)."""
-        return self._fake_llm
+    def dry_run(self) -> bool:
+        return self._dry_run
 
-    @fake_llm.setter
-    def fake_llm(self, value: Any) -> None:
-        """Set the fake LLM client."""
-        self._fake_llm = value
+    @dry_run.setter
+    def dry_run(self, value: bool) -> None:
+        self._dry_run = bool(value)
 
     def is_dry_run(self) -> bool:
-        """Return True if the fake LLM client is set."""
-        return self._fake_llm is not None
+        return self._dry_run

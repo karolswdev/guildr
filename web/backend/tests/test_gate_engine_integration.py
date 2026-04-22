@@ -46,7 +46,7 @@ def _make_orchestrator(project_dir: Path, registry) -> Orchestrator:
         project_dir=project_dir,
         require_human_approval=True,
     )
-    return Orchestrator(config=config, fake_llm=None, gate_registry=registry)
+    return Orchestrator(config=config, gate_registry=registry)
 
 
 def _wait_open(registry, name: str, timeout: float = 3.0) -> bool:

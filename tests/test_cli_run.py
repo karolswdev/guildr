@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from orchestrator.cli.run import (
-    _build_dry_run_llm,
     _load_config,
     add_run_subparser,
     cmd_run,
@@ -110,10 +109,3 @@ def test_cmd_run_dry_run_succeeds(
     assert (project / "DEPLOY.md").exists()
 
 
-def test_dry_run_llm_is_vanilla_fake() -> None:
-    """After H6.3e every shape-validating role rides a SessionRunner, so
-    the dry-run LLM is now just a FakeLLMClient with no content dispatch."""
-    from orchestrator.lib.llm_fake import FakeLLMClient
-
-    fake = _build_dry_run_llm()
-    assert isinstance(fake, FakeLLMClient)

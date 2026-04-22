@@ -296,6 +296,25 @@ class TestLoopEvents:
             ("loop_completed", "learn"),
         ]
 
+    def test_phase_boundaries_emit_next_step_packets(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = CaptureEvents()
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events)
+        orchestrator._validate = MagicMock(return_value=True)
+
+        orchestrator._run_phase("memory_refresh", lambda: None)
+
+        packet_events = [event for event in events.events if event["type"] == "next_step_packet_created"]
+        assert [event["packet"]["step"] for event in packet_events] == [
+            "memory_refresh",
+            "persona_forum",
+        ]
+        assert packet_events[0]["packet_id"].startswith("next_")
+        assert packet_events[0]["source_refs"]
+
 
 # ---------------------------------------------------------------------------
 # Tests: _run_phase retries on validator failure

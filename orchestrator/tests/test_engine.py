@@ -12,7 +12,7 @@ class RecordingOrchestrator(Orchestrator):
     """Engine variant that records the executed steps."""
 
     def __init__(self, config: Config) -> None:
-        super().__init__(config=config, fake_llm=object())
+        super().__init__(config=config, dry_run=True)
         self.calls: list[str] = []
 
     def _ensure_git_repo(self) -> None:

@@ -13,7 +13,6 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-from orchestrator.cli.run import _build_dry_run_llm
 from orchestrator.engine import Orchestrator
 from orchestrator.lib.config import Config
 from orchestrator.lib.raw_io import raw_io_path
@@ -55,7 +54,7 @@ def test_raw_io_captures_prompts_and_responses_end_to_end(tmp_path: Path) -> Non
     runners = {"architect": _SentinelArchitectRunner(state_for_runner)}
     Orchestrator(
         config=config,
-        fake_llm=_build_dry_run_llm(),
+        dry_run=True,
         session_runners=runners,
     ).run()
 
