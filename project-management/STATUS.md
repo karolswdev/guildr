@@ -5,15 +5,22 @@ Last updated: 2026-04-22
 ## Honest Current State
 
 **The product claim is "first-class orchestration: follow, review, intervene."
-That claim is now partially true, but not release-complete.** Follow is real
-through SSE plus replay folding. Review is real enough to audit opencode-backed
-role sessions through raw I/O and usage rows, but still needs a full attended
-live walkthrough against real providers. Intervene is no longer a mock surface:
-operator intents are durable, attach to next-step packets, and move to applied
-or ignored terminal states. The April 22 audit wave closed the main cohesion and
-concurrency findings; the remaining work is to make that control plane more
-provider-proven, more provenance-complete, and more visibly tied into the PWA
-lenses.
+That claim is now broadly true for the follow/review surfaces.** Follow is real
+through SSE plus replay folding; review has deep artifact and usage provenance;
+intervene is durable and re-enters the packet flow. The April 22 audit wave
+closed the main cohesion and concurrency findings, and M07 (Artifact Preview
+Depth) is fully landed as of this session — both the demo-ceremony half (A-10
+slices 1–3) and the artifact-preview half (M07 slices 1–4). Every canonical
+artifact write (`sprint-plan.md`, `TEST_REPORT.md`, `REVIEW.md`, `DEPLOY.md`,
+narrative-digest `.md`) now emits an `artifact_preview_created` event with
+sha256, bounded excerpts, secret scrubbing, A-9 provenance, `producing_atom_id`
+anchor, and `PHASE_SOURCE_REFS` lineage; the PWA folds those into
+`snapshot.previews` and renders `artifactPreviewCard` in Story + Object Lens
+rails anchored by atom. That means every atom in the replay view now shows the
+bytes it actually produced — not a summary of them. **The load-bearing remaining
+work is M08 Memory Spine**, which has a solid backend foundation but is missing
+the PWA surface, cross-phase memory diff signalling, and the memory-refs thread
+into narrative/DWA packets. M08 is the next milestone.
 
 ### What actually works
 
@@ -21,17 +28,25 @@ lenses.
   folds those events through `EventEngine` into live and replay snapshots.
 - **Review.** Opencode session exports are translated into `raw-io.jsonl` and
   `usage.jsonl` with shared join keys. Narrative digests and discussion logs
-  now cite source refs instead of inventing summaries without provenance.
+  cite source refs instead of inventing summaries without provenance.
+  **Artifact previews** now round this out: every canonical role artifact is
+  replay-visible as a card with hash, excerpt, and source lineage.
 - **Intervene.** `operator_intent` events persist through
   `.orchestrator/control/intents.jsonl`, appear on next-step packets, and
   become `operator_intent_applied` or `operator_intent_ignored`.
 - **PWA map.** The Three.js game surface now has Next-Step, Object, Story, and
   Goal lenses plus narrator dialogue and compose controls on top of the same
-  replay snapshot.
+  replay snapshot. Both lenses gained demo-ceremony cards (A-10) and
+  artifact-preview cards (M07) in this April 22 wave.
 - **Dry-run pipeline.** `dry_run=True` auto-wires deterministic role runners.
   This is the default local proof path when no live model provider is present.
 - **Live runtime.** Production role work is routed through opencode
   `SessionRunner`s built from `endpoints:` and `routing:` config.
+- **Memory plumbing (backend).** MemPalace init/mine/wake-up/search/status all
+  land; `wake_up_hash` + `memory_refs` are stamped onto `memory_refreshed`,
+  `memory_error`, `next_step_packet_created`, every demo event, and every
+  `artifact_preview_created` event; every opencode-backed role injects the
+  wake-up packet into its prompt.
 
 ### Load-bearing gaps
 
@@ -41,21 +56,20 @@ lenses.
 2. **Live provider confidence.** Usage rows now share one payload path across
    advisor and opencode calls, but a real attended provider walkthrough still
    needs to prove cost/runtime telemetry under live failure and retry behavior.
-3. **Provenance uniformity.** Memory, narrative, discussion, and lens sheets are
-   source-oriented, but the remaining checklist items should make that contract
-   uniform across every generated UI claim. A-9 is the next backend slice.
+3. **Memory surface is invisible in the PWA.** M08's backend provenance is
+   solid, but the operator cannot see it — there is no memory body on the
+   goal core orbit, no memory panel (status / last search / sync control /
+   wake-up preview), no cross-phase diff signal, and no memory-refs thread
+   into narrative digests or discussion. This is the next shippable wave.
 4. **Founding-team cadence and intervention depth.** Intents are durable and
    replayable. A-8 now has a bounded consultation design, including temporary
-   Hero reviewers, but the recurring consultation implementation still needs to
-   land.
-5. **Demo ceremony evidence.** Demoable web/PWA tasks produce durable visual
-   proof artifacts through the landed A-10 slices (detection + plan events,
-   capture lifecycle events, runner + bounded PWA artifact route, Story/Object
-   Lens demo cards driven off replay-folded state). What remains: wiring a real
-   Playwright spec into a shipped mini-sprint so the runner executes against a
-   live browser (current tests use fakes), and optional ffmpeg GIF derivation
-   from `interaction.webm`. M07 owns the demo cards/artifacts surface and M11
-   owns replay/export bundling.
+   Hero reviewers, but the recurring consultation implementation still needs
+   to land.
+5. **Demo-ceremony live-browser proof.** A-10 infrastructure is complete, but
+   every test still uses a fake Playwright runner; wiring a real spec into a
+   shipped mini-sprint is the remaining proof. Optional ffmpeg GIF derivation
+   from `interaction.webm` is also deferred. M11 owns the replay/export
+   bundling of those artifacts.
 
 ## Phase Board
 
@@ -80,14 +94,60 @@ running checklist for product-grade follow/review/intervene work.
 
 ## Next Recommended Task
 
-**Headless/scriptable next step:** Continue the Tier 1/Tier 2 feedback checklist
-in `analysis/04-22-2026-FEEDBACK.md`, with A-8 founding-team re-consultation and
-A-9 provenance parity as the next high-value slices. Each item must move from
-`[~]` to `[x]` only with evidence filled in.
+**Next milestone: M08 Memory Spine.** With M07 artifact previews fully landed,
+the largest remaining visible gap is that MemPalace state is invisible in the
+PWA. Backend provenance (`wake_up_hash`, `memory_refs`, memory events) is
+already stamped everywhere that matters; what is missing is the operator-facing
+surface and the cross-phase diff signal. See
+`project-management/srs-mini-phases/M08-memory-spine-and-mempalace.md` for the
+full checklist.
+
+**Recommended slice order (each shippable independently):**
+
+1. **M08 slice A — PWA memory surface** (highest-impact, pure frontend + a
+   bounded backend route). Add a low-frequency `memory-core:body` on the goal
+   orbit (pattern established by M06C Goal Core). Tap opens a memory sheet
+   showing: MemPalace status (initialized, wing, command availability), latest
+   `wake_up_hash` with a truncated wake-up preview, last search (scrubbed),
+   memory sync button that POSTs to the existing memory route, and a recent
+   list of `memory_refreshed` / `memory_search_completed` / `memory_error`
+   events folded from the snapshot. Fold already exists in `EventEngine`
+   (`memory_status`, `memory_refreshed`, `memory_search_completed`); render
+   them. Test with a new `test_game_map.py` jsdom fixture + bundle assertions.
+
+2. **M08 slice B — cross-phase memory diff event.** After each phase ends,
+   compare the current wake-up hash to the last emitted one and emit a
+   `memory_refreshed` (or a new `memory_diff` event if it's cleaner) with a
+   `hash_changed` flag. This lets the PWA show "memory shifted between
+   architect and testing" without any semantic diff. The orchestrator has the
+   previous hash in the last `memory_refreshed` event on the bus — fold it or
+   re-read `.orchestrator/memory/wake-up.md` and compare sha256.
+
+3. **M08 slice C — memory refs on narrative digests and discussion entries.**
+   `narrative_digest_created` already carries `wake_up_hash` + `memory_refs`
+   through `memory_event_fields`; verify the audit + extend to
+   `discussion_entry_created` and `discussion_highlight_created` so Story
+   Lens rows cite the memory packet that shaped them. Checklist item
+   currently blocked on "DWA/narrative digest refs remain pending until
+   M04/M05."
+
+4. **M08 slice D — quality gates G2/G4/G5/G7 for memory.** Replay
+   determinism (G2) requires fold to use the `wake_up_hash` present at the
+   event index, not current palace state — audit the fold path. G4 requires
+   the memory surface be a body + panel, not a tab grid (will be satisfied
+   by slice A). G5 requires every memory-backed claim cite a ref (extends
+   slice C). G7 requires memory operations that invoke embedding models to
+   emit `usage_recorded` — may be empty today; audit.
+
+**Headless/scriptable path for this session:** Continue with M08 slice A
+(frontend memory surface) — matches the same "land the operator-visible
+surface first" shape as M07 slice 3 and M06C.
 
 **When a human is at the device with providers ready:** run the attended PWA
 walkthrough with `--gate`, real opencode providers, visible gate decisions,
-intent submission before/after a phase boundary, and audit-log inspection.
+intent submission before/after a phase boundary, audit-log inspection, and —
+once M08 slice A lands — a live memory sync via the new memory panel to prove
+the `memory_refreshed` event flows end-to-end with a provider in the loop.
 
 ## Current Verification Commands
 
