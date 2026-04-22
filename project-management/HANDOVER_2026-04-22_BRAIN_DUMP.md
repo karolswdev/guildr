@@ -39,6 +39,7 @@ Read in this order:
 4. `project-management/srs-mini-phases/M03-project-mythos-and-founding-team.md`
 5. `project-management/srs-mini-phases/M08-memory-spine-and-mempalace.md`
 6. `project-management/HANDOVER_M02B.md`
+7. `docs/demo-ceremony-and-replay-evidence.md`
 
 The long `HANDOVER_M02B.md` is still useful for broad project context. This
 file is the latest compact brain dump for what to do next.
@@ -107,6 +108,9 @@ Major areas now in place:
 - A-8 design:
   - `docs/founding-team-consultation-design.md` now defines bounded recurring
     founding-team consultation and temporary Hero reviewers.
+- Demo Ceremony design:
+  - `docs/demo-ceremony-and-replay-evidence.md` defines durable visual proof
+    artifacts for demoable work, plus replay/export rules.
 
 ## Important Files By Surface
 
@@ -322,6 +326,41 @@ Recommended first implementation:
 Important: A-8 should not mutate workflow, task scope, or artifacts. It writes
 discussion state only. Any scope expansion must become
 `operator_decision_required`.
+
+### Option 3 — Demo Ceremony Design To First Slice
+
+This is a product-adoption slice, not the immediate backend correctness slice.
+
+Design source:
+
+```bash
+docs/demo-ceremony-and-replay-evidence.md
+```
+
+Core idea:
+
+- If a mini-sprint task is visually demoable, the system should capture a
+  durable proof artifact: screenshot first, optional video/trace later.
+- Demo artifacts live under `.orchestrator/demos/<demo_id>/`.
+- Replay shows recorded demo artifacts, not current live app state.
+- Demo capture is evidence, not pass/fail authority. Tests still decide.
+
+Recommended first implementation:
+
+1. Add event types:
+   - `demo_planned`
+   - `demo_skipped`
+   - later: `demo_capture_started`, `demo_artifact_created`,
+     `demo_capture_failed`, `demo_presented`
+2. Add a small `orchestrator/lib/demo.py` that detects demoable tasks from
+   acceptance criteria/evidence text.
+3. Fold demo events in `EventEngine`.
+4. Render a basic demo card in Story/Object lenses.
+5. Do not automate Playwright capture until the event shape and replay fold are
+   stable.
+
+This should probably land after A-9, because demo cards should carry memory
+provenance from the start.
 
 ## How To Avoid Breaking The Product
 

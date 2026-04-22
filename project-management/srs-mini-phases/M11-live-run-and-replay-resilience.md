@@ -12,6 +12,7 @@ SRS §13 Reliability + §8 Replay. A tactical command room that forgets on refre
 
 - `docs/srs-council-engine.md` §8, §8.2, §13
 - `docs/sdlc-loop-visualization.md`
+- `docs/demo-ceremony-and-replay-evidence.md`
 - `web/backend/routes/stream.py` (SSE)
 - `web/frontend/src/engine/EventEngine.ts`
 - `M01-event-ledger-foundation.md` (must be done)
@@ -23,7 +24,8 @@ SRS §13 Reliability + §8 Replay. A tactical command room that forgets on refre
 - `orchestrator/lib/loops.py` (fold events into loop state: discover/plan/build/verify/repair/review/ship/learn)
 - Events: `loop_entered`, `loop_blocked`, `loop_repaired`, `loop_completed` (some exist; extend)
 - Replay viewer: play / pause / ff / rewind / scrub / filter / export bundle
-- Export bundle: `.orchestrator/exports/<run_id>.zip` containing events, artifacts, rate-cards, memory wake-up hash
+- Export bundle: `.orchestrator/exports/<run_id>.zip` containing events,
+  artifacts, demo artifacts, rate-cards, memory wake-up hash
 
 ## Tasks
 
@@ -34,7 +36,10 @@ SRS §13 Reliability + §8 Replay. A tactical command room that forgets on refre
 - [ ] Replay controls: play/pause/ff/rewind/scrub by event index or time, filter by phase/role/type/error/gate/memory/advisor/loop stage.
 - [ ] Artifact diff view when event carries `artifact_refs`.
 - [ ] Cost/token counters + budget state shown as of replay point (via M09 snapshot).
-- [ ] Export replay bundle: events, referenced artifacts, rate-card snapshot, workflow JSON, memory wake-up hash — zipped.
+- [ ] Export replay bundle: events, referenced artifacts, demo artifacts,
+  rate-card snapshot, workflow JSON, memory wake-up hash — zipped.
+- [ ] Replay demo cards from recorded `.orchestrator/demos/<demo_id>/`
+  artifacts, never by re-running the app at replay time.
 - [ ] Crash resilience: engine on restart reads last good state from events; never requires recomputing filesystem state.
 - [ ] Regression test: kill the server mid-phase, restart, confirm replay reconstructs UI identically.
 
@@ -59,12 +64,15 @@ uv run pytest -q tests/test_integration_crash_resilience.py
 - [ ] Server restart preserves history; replay produces the same projection.
 - [ ] Loop state = pure fold; no mutable UI state leaks into lane rendering.
 - [ ] Replay scrub shows narrative, cost, loop, next-step snapshots as of the selected event.
-- [ ] Export bundle opens offline and renders the full run (events + artifacts + rate-cards).
+- [ ] Export bundle opens offline and renders the full run (events + artifacts
+  + demo artifacts + rate-cards).
 
 ## Known traps
 
 - Deduping on `ts` instead of `event_id` causes "missing events after reconnect" — hard invariant.
 - Replay that mutates live workflow config is a design bug; replay is read-only.
+- Replay that re-captures a demo from current app state is a design bug; demo
+  replay uses recorded artifacts.
 - Loop state computed from mutable UI toggles regresses the whole principle. Derive, never store.
 
 ## Handoff notes

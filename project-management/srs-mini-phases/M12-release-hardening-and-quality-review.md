@@ -22,6 +22,7 @@ Earlier mini-phases can each be honest in isolation and still compose into an un
 - `project-management/evidence/M12/` for captures and bundle references.
 - Perf / security / accessibility test additions where gaps exist.
 - README + install.sh + record_live_demo.sh validation.
+- `docs/demo-ceremony-and-replay-evidence.md`
 
 ## Tasks
 
@@ -35,6 +36,8 @@ Earlier mini-phases can each be honest in isolation and still compose into an un
 - [ ] Design review protocol run for any architectural change since M01.
 - [ ] DIRECTION_GUARDRAILS six-capture review on iPhone portrait, desktop wide, selected atom, active flow, blocked/repair state, deferred-model loaded, no-overlap state.
 - [ ] Release notes in `docs/release-notes.md` with the acceptance-criteria matrix embedded.
+- [ ] Release evidence includes at least one durable demo ceremony artifact for
+  the PWA map surface, or a documented reason if running headless.
 - [ ] Update `../STATUS.md` Phase Board to reflect mini-phases (or keep as separate track with links).
 
 ## Quality gates
@@ -57,6 +60,8 @@ git diff --check
 ## Done means
 
 - [ ] All SRS §15 acceptance criteria green with linked evidence.
+- [ ] Demo ceremony evidence can be opened from replay/export without
+  re-running the live app.
 - [ ] All cross-phase quality gates green.
 - [ ] Six direction-guardrail captures present for the release build.
 - [ ] A non-developer can open the PWA on mobile and answer the DIRECTION_GUARDRAILS quality questions without reading a table.

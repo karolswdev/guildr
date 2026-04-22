@@ -48,6 +48,9 @@ lenses.
    replayable. A-8 now has a bounded consultation design, including temporary
    Hero reviewers, but the recurring consultation implementation still needs to
    land.
+5. **Demo ceremony evidence.** Demoable web/PWA tasks should eventually produce
+   durable visual proof artifacts, but this is still design-stage. M07 now owns
+   demo cards/artifacts and M11 owns replay/export behavior.
 
 ## Phase Board
 
@@ -63,11 +66,11 @@ running checklist for product-grade follow/review/intervene work.
 | **M04 Narrative Digest/DWA** | Done first pass | Codex | Deterministic narrative digests, discussion projection, source refs, and replay fold exist. |
 | **M05 Narrator Agent** | Done first pass | Codex | Read-only narrator role, sidecar triggers, fallback diagnostics, sidecar state locking, outcome normalization, and PWA dialogue shell exist. |
 | **M06 PWA Lenses/Map Surface** | Done first pass | Codex | Next-Step, Object, Story, and Goal lenses are in the map surface with WebGL fallback coverage. |
-| **M07 Artifact Preview Depth** | Not started | Unassigned | Needs richer artifact inspection and source-backed preview cards inside the PWA. |
+| **M07 Artifact Preview Depth** | Not started | Unassigned | Needs richer artifact inspection, source-backed preview cards, and demo ceremony proof artifacts inside the PWA. |
 | **M08 Memory Spine** | Partial | Codex | MemPalace sync/search/provenance packets exist and are attached to next-step context. Needs broader UI treatment and stronger contract checks. |
 | **M09 Cost/Budget Telemetry** | Partial | Claude | Usage rows and rollups exist. Needs PWA budget controls and provider-aware display. |
 | **M10 Hookability** | Not started | Unassigned | External trigger/plugin boundary still needs design and tests. |
-| **M11 Replay Resilience** | Partial | Codex | Event replay works; needs corruption/rebuild/fallback hardening. |
+| **M11 Replay Resilience** | Partial | Codex | Event replay works; needs corruption/rebuild/fallback hardening and replay/export handling for recorded demo artifacts. |
 | **M12 Release Hardening** | Not started | Unassigned | Requires live attended run, mobile polish, accessibility pass, and packaging checks. |
 
 ## Next Recommended Task
@@ -135,6 +138,7 @@ Append new evidence here instead of burying it in chat.
 
 | Date | Phase/task | Evidence |
 | --- | --- | --- |
+| 2026-04-22 | Design A-10 — demo ceremonies and replay evidence | Added `docs/demo-ceremony-and-replay-evidence.md`, defining optional demo ceremonies for visually demoable mini-sprint work: detection from acceptance/evidence text, durable demo events, `.orchestrator/demos/<demo_id>/` artifact layout, PWA demo cards, and replay/export rules that use recorded artifacts instead of re-running the app. Threaded the design into M07 artifact previews, M11 replay resilience, M12 release hardening, the latest brain dump handover, and the audit as A-10. Evidence: docs-only; `git diff --check` clean |
 | 2026-04-22 | Feedback X-2 — SSE subscriber pruning | Replaced silent subscriber append failure handling in `SimpleEventBus.emit` with a warning and dead-subscriber pruning, and renamed the replay eviction loop variable to avoid shadowing the newly emitted `event_id`. Added `web/backend/tests/test_stream.py::TestSimpleEventBus::test_emit_prunes_failed_subscribers`. Evidence: `uv run pytest -q web/backend/tests/test_stream.py::TestSimpleEventBus::test_emit_prunes_failed_subscribers web/backend/tests/test_stream.py` -> 9 passed |
 | 2026-04-22 | Feedback A-5/A-6/A-7 — usage convergence and sidecar determinism | Routed opencode audit usage through the shared `_usage_payload(...)` path, preserving opencode runtime metadata while adding finish/error/provider metadata fields and local provider cost estimates with rate-card versions. Normalized narrator sidecar exits through `SidecarOutcome` and one finalization path for skipped, runner unavailable, fallback, and completed outcomes. Gated `narrator_pre_step` emission to the first retry attempt so one logical broken step produces one pre-step narrator trigger. Evidence: `uv run pytest -q tests/test_opencode_audit.py` -> 10 passed; `uv run pytest -q tests/test_narrator_sidecar.py` -> 8 passed; `uv run pytest -q tests/test_engine.py::TestRunPhaseRetries::test_missing_pre_step_packet_emits_once_across_retries tests/test_engine.py::TestLoopEvents::test_missing_pre_step_packet_triggers_narrator_sidecar` -> 2 passed; full suite `uv run pytest -q` -> 539 passed, 2 warnings |
 | 2026-04-22 | Feedback A-4 — lifecycle events through bridge | Routed PWA runner lifecycle events through `BridgingEventBus` instead of direct `SimpleEventBus`: `run_started`, `run_complete`, and `run_error` now land in the engine event bus and mirror to SSE. Added a shared memory error event helper so memory route failures use the same memory event/provenance shape as status/refresh/search. Added `web/backend/tests/test_runner.py::test_bridge_event_bus_receives_run_lifecycle_events` and `web/backend/tests/test_memory.py::test_memory_error_route_uses_memory_event_shape`. `uv run pytest -q web/backend/tests/test_runner.py::test_bridge_event_bus_receives_run_lifecycle_events web/backend/tests/test_runner.py web/backend/tests/test_memory.py::test_memory_error_route_uses_memory_event_shape web/backend/tests/test_memory.py` -> 11 passed. `uv run pytest -q web/backend/tests tests/test_events.py` -> 120 passed. Full suite `uv run pytest -q` -> 533 passed, 2 warnings |
