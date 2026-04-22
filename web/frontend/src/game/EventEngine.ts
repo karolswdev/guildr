@@ -558,6 +558,8 @@ export class EventEngine {
       sourceEventIds: arrayOfStrings(digest.source_event_ids ?? event.source_event_ids),
       artifactRefs: arrayOfStrings(digest.artifact_refs ?? event.artifact_refs),
       window: objectValue(digest.window ?? event.window),
+      wakeUpHash: stringOrNull(digest.wake_up_hash ?? event.wake_up_hash),
+      memoryRefs: arrayOfStrings(digest.memory_refs ?? event.memory_refs),
       lastEvent: event,
       raw: { ...digest },
     };
@@ -584,6 +586,8 @@ export class EventEngine {
       sourceRefs: arrayOfStrings(entry.source_refs ?? event.source_refs),
       artifactRefs: arrayOfStrings(entry.artifact_refs ?? event.artifact_refs),
       metadata: objectValue(entry.metadata),
+      wakeUpHash: stringOrNull(entry.wake_up_hash ?? event.wake_up_hash),
+      memoryRefs: arrayOfStrings(entry.memory_refs ?? event.memory_refs),
       lastEvent: event,
       raw: { ...entry },
     };
@@ -608,6 +612,8 @@ export class EventEngine {
       text: key(highlight.text ?? event.text, ""),
       sourceRefs: arrayOfStrings(highlight.source_refs ?? event.source_refs),
       artifactRefs: arrayOfStrings(highlight.artifact_refs ?? event.artifact_refs),
+      wakeUpHash: stringOrNull(highlight.wake_up_hash ?? event.wake_up_hash),
+      memoryRefs: arrayOfStrings(highlight.memory_refs ?? event.memory_refs),
       lastEvent: event,
       raw: { ...highlight },
     };

@@ -459,3 +459,77 @@ def test_discussion_replay_fold(tmp_path: Path) -> None:
         assert.equal(snapshot.discussionHighlights.length, 0);
         """,
     )
+
+
+def test_narrative_and_discussion_provenance_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: 'evt-digest-prov',
+            type: 'narrative_digest_created',
+            wake_up_hash: 'hash-1',
+            memory_refs: ['.orchestrator/memory/wake-up.md'],
+            digest: {
+              digest_id: 'dwa_prov',
+              title: 'Digest with provenance',
+              summary: 'Summary.',
+              highlights: [{ text: 'Hi.', source_refs: ['event:evt-phase-1'] }],
+              risks: [],
+              open_questions: [],
+              next_step_hint: null,
+              source_event_ids: ['evt-phase-1'],
+              artifact_refs: ['.orchestrator/narrative/digests/dwa_prov.json'],
+              window: { from_event_id: 'evt-phase-1', to_event_id: 'evt-phase-1', event_count: 1 },
+              wake_up_hash: 'hash-1',
+              memory_refs: ['.orchestrator/memory/wake-up.md'],
+            },
+          },
+          {
+            event_id: 'evt-disc-prov',
+            type: 'discussion_entry_created',
+            wake_up_hash: 'hash-1',
+            memory_refs: ['.orchestrator/memory/wake-up.md'],
+            entry: {
+              discussion_entry_id: 'disc_prov',
+              speaker: 'Founder',
+              entry_type: 'persona_statement',
+              atom_id: 'persona_forum',
+              text: 'Keep scope sharp.',
+              source_refs: ['artifact:FOUNDING_TEAM.json'],
+              artifact_refs: ['FOUNDING_TEAM.json'],
+              metadata: {},
+              wake_up_hash: 'hash-1',
+              memory_refs: ['.orchestrator/memory/wake-up.md'],
+            },
+          },
+          {
+            event_id: 'evt-high-prov',
+            type: 'discussion_highlight_created',
+            wake_up_hash: 'hash-1',
+            memory_refs: ['.orchestrator/memory/wake-up.md'],
+            highlight: {
+              discussion_highlight_id: 'high_prov',
+              highlight_type: 'persona_forum',
+              atom_id: 'persona_forum',
+              text: 'Founding team convened.',
+              source_refs: ['entry:disc_prov'],
+              artifact_refs: ['PERSONA_FORUM.md'],
+              wake_up_hash: 'hash-1',
+              memory_refs: ['.orchestrator/memory/wake-up.md'],
+            },
+          },
+        ]);
+        const snapshot = engine.snapshot();
+        assert.equal(snapshot.latestDigest.wakeUpHash, 'hash-1');
+        assert.deepEqual(snapshot.latestDigest.memoryRefs, ['.orchestrator/memory/wake-up.md']);
+        assert.equal(snapshot.discussion[0].wakeUpHash, 'hash-1');
+        assert.deepEqual(snapshot.discussion[0].memoryRefs, ['.orchestrator/memory/wake-up.md']);
+        assert.equal(snapshot.discussionHighlights[0].wakeUpHash, 'hash-1');
+        assert.deepEqual(snapshot.discussionHighlights[0].memoryRefs, ['.orchestrator/memory/wake-up.md']);
+        """,
+    )

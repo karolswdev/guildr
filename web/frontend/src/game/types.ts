@@ -123,6 +123,8 @@ export type NarrativeDigest = {
   sourceEventIds: string[];
   artifactRefs: string[];
   window: Record<string, unknown>;
+  wakeUpHash: string | null;
+  memoryRefs: string[];
   lastEvent: RunEvent | null;
   raw: Record<string, unknown>;
 };
@@ -136,6 +138,8 @@ export type DiscussionEntry = {
   sourceRefs: string[];
   artifactRefs: string[];
   metadata: Record<string, unknown>;
+  wakeUpHash: string | null;
+  memoryRefs: string[];
   lastEvent: RunEvent | null;
   raw: Record<string, unknown>;
 };
@@ -147,6 +151,8 @@ export type DiscussionHighlight = {
   text: string;
   sourceRefs: string[];
   artifactRefs: string[];
+  wakeUpHash: string | null;
+  memoryRefs: string[];
   lastEvent: RunEvent | null;
   raw: Record<string, unknown>;
 };

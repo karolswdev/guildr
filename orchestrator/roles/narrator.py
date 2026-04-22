@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.lib.discussion import append_discussion_entry
+from orchestrator.lib.memory_palace import memory_event_fields
 from orchestrator.lib.narrative import (
     build_narrative_digest,
     validate_narrative_digest,
@@ -101,6 +102,9 @@ class Narrator:
             }
 
         digest["generated_by"] = "narrator"
+        provenance = memory_event_fields(None, self.state.project_dir)
+        digest.setdefault("wake_up_hash", provenance["wake_up_hash"])
+        digest.setdefault("memory_refs", list(provenance["memory_refs"]))
         write_narrative_digest(self.state.project_dir, digest)
         if emit:
             self._emit_digest(digest)
@@ -136,6 +140,8 @@ class Narrator:
                 *[f"event:{event_id}" for event_id in digest["source_event_ids"]],
                 *[f"artifact:{ref}" for ref in artifact_refs],
             ],
+            wake_up_hash=digest.get("wake_up_hash"),
+            memory_refs=list(digest.get("memory_refs") or []),
             digest=digest,
             generated_by="narrator",
         )

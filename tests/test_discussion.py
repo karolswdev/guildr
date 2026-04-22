@@ -90,6 +90,70 @@ def test_rebuild_projection_from_discussion_events(tmp_path: Path) -> None:
     )
 
 
+class _RecordingBus:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def emit(self, type: str, **fields):  # type: ignore[no-untyped-def]
+        event = {"type": type, **fields}
+        self.events.append(event)
+        return event
+
+
+def test_discussion_entry_stamps_memory_provenance(tmp_path: Path) -> None:
+    import hashlib
+
+    memory_dir = tmp_path / ".orchestrator" / "memory"
+    memory_dir.mkdir(parents=True)
+    wakeup_body = "# wake-up\nfounding team roster\n"
+    (memory_dir / "wake-up.md").write_text(wakeup_body, encoding="utf-8")
+    expected_hash = hashlib.sha256(wakeup_body.encode("utf-8")).hexdigest()
+
+    bus = _RecordingBus()
+    row = append_discussion_entry(
+        tmp_path,
+        speaker="Founder",
+        entry_type="persona_statement",
+        text="Keep scope sharp.",
+        source_refs=["artifact:FOUNDING_TEAM.json"],
+        event_bus=bus,
+    )
+
+    assert row["wake_up_hash"] == expected_hash
+    assert row["memory_refs"] == [".orchestrator/memory/wake-up.md"]
+    event = bus.events[-1]
+    assert event["type"] == "discussion_entry_created"
+    assert event["wake_up_hash"] == expected_hash
+    assert event["memory_refs"] == [".orchestrator/memory/wake-up.md"]
+    assert event["entry"]["wake_up_hash"] == expected_hash
+    assert event["entry"]["memory_refs"] == [".orchestrator/memory/wake-up.md"]
+
+
+def test_discussion_highlight_stamps_memory_provenance(tmp_path: Path) -> None:
+    import hashlib
+
+    memory_dir = tmp_path / ".orchestrator" / "memory"
+    memory_dir.mkdir(parents=True)
+    wakeup_body = "# wake-up\nproject context\n"
+    (memory_dir / "wake-up.md").write_text(wakeup_body, encoding="utf-8")
+    expected_hash = hashlib.sha256(wakeup_body.encode("utf-8")).hexdigest()
+
+    bus = _RecordingBus()
+    row = append_discussion_highlight(
+        tmp_path,
+        text="Founding team convened.",
+        source_refs=["artifact:PERSONA_FORUM.md"],
+        event_bus=bus,
+    )
+
+    assert row["wake_up_hash"] == expected_hash
+    assert row["memory_refs"] == [".orchestrator/memory/wake-up.md"]
+    event = bus.events[-1]
+    assert event["wake_up_hash"] == expected_hash
+    assert event["memory_refs"] == [".orchestrator/memory/wake-up.md"]
+    assert event["highlight"]["wake_up_hash"] == expected_hash
+
+
 def test_validate_discussion_entry_rejects_unsourced_and_unsafe_refs() -> None:
     row = {
         "discussion_entry_id": "disc_1",

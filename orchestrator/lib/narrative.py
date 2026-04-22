@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from orchestrator.lib.memory_palace import memory_event_fields
 from orchestrator.lib.scrub import scrub_text
 
 
@@ -19,6 +20,7 @@ def build_narrative_digest(
     events: list[dict[str, Any]],
     *,
     next_step_packet: dict[str, Any] | None = None,
+    memory_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a compact deterministic digest from a bounded event window."""
     source_events = [event for event in events if isinstance(event, dict)]
@@ -29,6 +31,7 @@ def build_narrative_digest(
     title = _title_for_window(source_events)
     highlights = _highlights_for_events(source_events)
     artifact_refs = _artifact_refs(source_events, next_step_packet)
+    provenance = memory_fields or {}
     digest = {
         "digest_id": _digest_id(source_events, next_step_packet),
         "window": {
@@ -44,6 +47,8 @@ def build_narrative_digest(
         "next_step_hint": _next_step_hint(next_step_packet),
         "source_event_ids": event_ids,
         "artifact_refs": artifact_refs,
+        "wake_up_hash": provenance.get("wake_up_hash"),
+        "memory_refs": list(provenance.get("memory_refs") or []),
     }
     validate_narrative_digest(digest, source_events)
     return digest
@@ -55,21 +60,24 @@ def emit_narrative_digest(
     events: list[dict[str, Any]],
     *,
     next_step_packet: dict[str, Any] | None = None,
+    project_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Persist and emit a deterministic digest event if the window has content."""
     source_events = [event for event in events if isinstance(event, dict)]
     if not source_events:
         return None
+    memory_fields = memory_event_fields(project_id or project_dir.name, project_dir)
     digest = build_narrative_digest(
         project_dir,
         source_events,
         next_step_packet=next_step_packet,
+        memory_fields=memory_fields,
     )
     written = write_narrative_digest(project_dir, digest)
     artifact_refs = [str(path.relative_to(project_dir)) for path in written]
     return event_bus.emit(
         "narrative_digest_created",
-        project_id=project_dir.name,
+        project_id=project_id or project_dir.name,
         digest_id=digest["digest_id"],
         window=digest["window"],
         title=digest["title"],
@@ -84,6 +92,8 @@ def emit_narrative_digest(
             *[f"event:{event_id}" for event_id in digest["source_event_ids"]],
             *[f"artifact:{ref}" for ref in artifact_refs],
         ],
+        wake_up_hash=memory_fields["wake_up_hash"],
+        memory_refs=list(memory_fields["memory_refs"]),
         digest=digest,
     )
 

@@ -62,6 +62,43 @@ def test_emit_narrative_digest_writes_artifacts_and_event(tmp_path: Path) -> Non
         assert (tmp_path / ref).exists()
 
 
+def test_emit_narrative_digest_stamps_memory_provenance(tmp_path: Path) -> None:
+    memory_dir = tmp_path / ".orchestrator" / "memory"
+    memory_dir.mkdir(parents=True)
+    wakeup_body = "# wake-up\nproject context here\n"
+    (memory_dir / "wake-up.md").write_text(wakeup_body, encoding="utf-8")
+
+    bus = EventBus()
+    source = bus.emit("phase_done", name="memory_refresh", run_id="run-1")
+
+    emitted = emit_narrative_digest(
+        bus,
+        tmp_path,
+        [source],
+        next_step_packet={"step": "persona_forum", "title": "Team"},
+    )
+
+    import hashlib
+
+    expected_hash = hashlib.sha256(wakeup_body.encode("utf-8")).hexdigest()
+    assert emitted is not None
+    assert emitted["wake_up_hash"] == expected_hash
+    assert emitted["memory_refs"] == [".orchestrator/memory/wake-up.md"]
+    assert emitted["digest"]["wake_up_hash"] == expected_hash
+    assert emitted["digest"]["memory_refs"] == [".orchestrator/memory/wake-up.md"]
+
+
+def test_emit_narrative_digest_without_wakeup_has_null_hash(tmp_path: Path) -> None:
+    bus = EventBus()
+    source = bus.emit("phase_done", name="memory_refresh", run_id="run-1")
+
+    emitted = emit_narrative_digest(bus, tmp_path, [source])
+
+    assert emitted is not None
+    assert emitted["wake_up_hash"] is None
+    assert emitted["memory_refs"] == []
+
+
 def test_validate_narrative_digest_rejects_unsourced_and_unsafe_refs() -> None:
     source = {"event_id": "evt-1", "type": "phase_done", "name": "implementation"}
     digest = build_narrative_digest(Path("."), [source])

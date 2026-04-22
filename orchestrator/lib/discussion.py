@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.lib.event_schema import new_event_id, now_iso
+from orchestrator.lib.memory_palace import memory_event_fields
 from orchestrator.lib.scrub import scrub_payload, scrub_text
 
 
@@ -41,8 +42,10 @@ def append_discussion_entry(
     metadata: dict[str, Any] | None = None,
     event_bus: Any | None = None,
     project_id: str | None = None,
+    memory_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Append one scrubbed discussion entry and optionally emit its event."""
+    provenance = memory_fields if memory_fields is not None else memory_event_fields(project_id, project_dir)
     row = {
         "discussion_entry_id": f"disc_{new_event_id()}",
         "ts": now_iso(),
@@ -53,6 +56,8 @@ def append_discussion_entry(
         "source_refs": _dedupe(source_refs or []),
         "artifact_refs": _safe_artifact_refs(artifact_refs or []),
         "metadata": scrub_payload(metadata or {}),
+        "wake_up_hash": provenance.get("wake_up_hash"),
+        "memory_refs": list(provenance.get("memory_refs") or []),
     }
     validate_discussion_entry(row)
     _append_jsonl(discussion_log_path(project_dir), row)
@@ -68,6 +73,8 @@ def append_discussion_entry(
             text=row["text"],
             source_refs=row["source_refs"],
             artifact_refs=row["artifact_refs"],
+            wake_up_hash=row["wake_up_hash"],
+            memory_refs=list(row["memory_refs"]),
         )
     return row
 
@@ -82,8 +89,10 @@ def append_discussion_highlight(
     artifact_refs: list[str] | None = None,
     event_bus: Any | None = None,
     project_id: str | None = None,
+    memory_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Append one sourced discussion highlight and optionally emit its event."""
+    provenance = memory_fields if memory_fields is not None else memory_event_fields(project_id, project_dir)
     row = {
         "discussion_highlight_id": f"high_{new_event_id()}",
         "ts": now_iso(),
@@ -92,6 +101,8 @@ def append_discussion_highlight(
         "text": scrub_text(text.strip()),
         "source_refs": _dedupe(source_refs or []),
         "artifact_refs": _safe_artifact_refs(artifact_refs or []),
+        "wake_up_hash": provenance.get("wake_up_hash"),
+        "memory_refs": list(provenance.get("memory_refs") or []),
     }
     validate_discussion_highlight(row)
     _append_jsonl(discussion_highlights_path(project_dir), row)
@@ -106,6 +117,8 @@ def append_discussion_highlight(
             text=row["text"],
             source_refs=row["source_refs"],
             artifact_refs=row["artifact_refs"],
+            wake_up_hash=row["wake_up_hash"],
+            memory_refs=list(row["memory_refs"]),
         )
     return row
 
@@ -121,6 +134,7 @@ def append_persona_discussion_entries(
     """Project persona mandates into the durable discussion log."""
     rows: list[dict[str, Any]] = []
     refs = source_refs or ["artifact:FOUNDING_TEAM.json", "artifact:PERSONA_FORUM.md"]
+    provenance = memory_event_fields(project_id, project_dir)
     for persona in sorted(personas, key=lambda item: int(item.get("turn_order", 0) or 0)):
         name = _string(persona.get("name")) or "Persona"
         mandate = _string(persona.get("mandate")) or "Provide concise review feedback."
@@ -137,6 +151,7 @@ def append_persona_discussion_entries(
             metadata={"persona": scrub_payload(persona)},
             event_bus=event_bus,
             project_id=project_id,
+            memory_fields=provenance,
         ))
     if rows:
         append_discussion_highlight(
@@ -148,6 +163,7 @@ def append_persona_discussion_entries(
             artifact_refs=["PERSONA_FORUM.md"],
             event_bus=event_bus,
             project_id=project_id,
+            memory_fields=provenance,
         )
     return rows
 
@@ -169,6 +185,8 @@ def rebuild_projection(project_dir: Path, events: list[dict[str, Any]]) -> dict[
                 "source_refs": event.get("source_refs"),
                 "artifact_refs": event.get("artifact_refs"),
                 "metadata": {},
+                "wake_up_hash": event.get("wake_up_hash"),
+                "memory_refs": event.get("memory_refs") or [],
             }
             if isinstance(entry, dict):
                 validate_discussion_entry(entry)
@@ -182,6 +200,8 @@ def rebuild_projection(project_dir: Path, events: list[dict[str, Any]]) -> dict[
                 "text": event.get("text"),
                 "source_refs": event.get("source_refs"),
                 "artifact_refs": event.get("artifact_refs"),
+                "wake_up_hash": event.get("wake_up_hash"),
+                "memory_refs": event.get("memory_refs") or [],
             }
             if isinstance(highlight, dict):
                 validate_discussion_highlight(highlight)

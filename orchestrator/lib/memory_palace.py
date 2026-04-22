@@ -105,6 +105,17 @@ def memory_status(project_id: str | None, project_dir: Path) -> dict[str, Any]:
     }
 
 
+def memory_event_fields(project_id: str | None, project_dir: Path) -> dict[str, Any]:
+    """Compact provenance fields to stamp on user-facing events (A-9)."""
+    _ = project_id
+    path = wakeup_path(project_dir)
+    refs = [".orchestrator/memory/wake-up.md"] if path.exists() else []
+    return {
+        "wake_up_hash": wakeup_hash(project_dir),
+        "memory_refs": refs,
+    }
+
+
 def memory_provenance(project_id: str | None, project_dir: Path) -> dict[str, Any]:
     """Return the compact memory packet other projections should cite."""
     status = memory_status(project_id, project_dir)
