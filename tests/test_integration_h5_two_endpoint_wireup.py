@@ -29,6 +29,7 @@ from orchestrator.lib.pool import Endpoint, UpstreamPool
 from orchestrator.lib.pool_log import pool_log_path
 from orchestrator.roles.coder_dryrun import DryRunCoderRunner
 from orchestrator.roles.deployer_dryrun import DryRunDeployerRunner
+from orchestrator.roles.tester_dryrun import DryRunTesterRunner
 from orchestrator.roles.reviewer_dryrun import DryRunReviewerRunner
 
 
@@ -100,6 +101,7 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
     state_for_runners = State(project_dir)
     runners = {
         "coder": DryRunCoderRunner(state_for_runners),
+        "tester": DryRunTesterRunner(state_for_runners),
         "reviewer": DryRunReviewerRunner(state_for_runners),
         "deployer": DryRunDeployerRunner(state_for_runners),
     }
@@ -143,6 +145,10 @@ def test_two_endpoint_pool_drives_full_pipeline(project_dir: Path) -> None:
     )
     assert "deployer" not in by_role, (
         "deployer was expected to bypass the pool (opencode session, H6.3d), "
+        f"but appeared in pool.jsonl"
+    )
+    assert "tester" not in by_role, (
+        "tester was expected to bypass the pool (opencode session, H6.3b), "
         f"but appeared in pool.jsonl"
     )
     seen_roles = set(by_role) & set(role_to_expected)
@@ -198,6 +204,7 @@ def test_fallback_when_preferred_endpoint_raises(project_dir: Path) -> None:
     state_for_runners = State(project_dir)
     runners = {
         "coder": DryRunCoderRunner(state_for_runners),
+        "tester": DryRunTesterRunner(state_for_runners),
         "reviewer": DryRunReviewerRunner(state_for_runners),
         "deployer": DryRunDeployerRunner(state_for_runners),
     }

@@ -1,262 +1,150 @@
-"""Tester role — independently runs sprint-plan evidence commands."""
+"""Tester role — runs evidence commands via opencode (H6.3b).
+
+One opencode session per ``execute()`` pass. The role still extracts
+the shell-runnable evidence commands from each sprint-plan task (so the
+agent isn't free to invent its own verification story), but hands them
+to an agent which runs them via its bash tool and writes the final
+``TEST_REPORT.md`` as its last assistant message. The orchestrator
+writes that text verbatim, the way ``Deployer`` writes ``DEPLOY.md`` —
+downstream gates parse the exact shape below, so we don't trust the
+agent's file-write tool for the report itself.
+
+Helpers for evidence-command extraction and validation are kept as
+static methods: they feed the prompt and are covered by unit tests
+that don't need an opencode session.
+"""
 
 from __future__ import annotations
 
 import logging
 import re
-import subprocess
-from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from orchestrator.lib.llm import LLMClient
-from orchestrator.lib.sprint_plan import (
-    Task,
-    apply_evidence_patch,
-    parse_tasks,
-)
+from orchestrator.lib.control import append_operator_context
+from orchestrator.lib.opencode import SessionRunner
+from orchestrator.lib.opencode_audit import emit_session_audit
+from orchestrator.lib.sprint_plan import Task, parse_tasks
 from orchestrator.lib.state import State
-from orchestrator.roles.base import BaseRole
 
 logger = logging.getLogger(__name__)
 
+_PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+
 
 class TesterError(Exception):
-    """Raised when the Tester encounters a fatal error."""
+    """Raised when the Tester cannot complete its session."""
 
 
-@dataclass
-class TaskResult:
-    """Result of verifying a single task."""
-
-    task_id: int
-    task_name: str
-    status: str  # VERIFIED | MISMATCH | RERUN_FAILED
-    evidence: list[dict[str, str]]
-    notes: str = ""
-
-
-class Tester(BaseRole):
-    """Runs Evidence Required commands and records actual outputs."""
+class Tester:
+    """Runs one opencode session that verifies every sprint-plan task."""
 
     _phase: str = "testing"
     _role: str = "tester"
 
     def __init__(
         self,
-        llm: LLMClient,
+        runner: SessionRunner,
         state: State,
         phase_logger: Any = None,
     ) -> None:
-        super().__init__(llm, state, phase_logger=phase_logger)
+        self.runner = runner
+        self.state = state
+        self._phase_logger = phase_logger
 
     # -- public API ----------------------------------------------------------
 
     def execute(self, sprint_plan_path: str = "sprint-plan.md") -> str:
-        """Execute verification on all tasks.
-
-        Returns the path to TEST_REPORT.md.
-        Raises TesterError on fatal failure.
-        """
         plan_text = self.state.read_file(sprint_plan_path)
         tasks = parse_tasks(plan_text)
 
         if not tasks:
             logger.warning("No tasks found in sprint plan")
-            self._write_report(sprint_plan_path, [])
+            self.state.write_file(
+                "TEST_REPORT.md",
+                "# Test Report\n\nTasks verified: 0\n",
+            )
             return "TEST_REPORT.md"
 
-        results: list[TaskResult] = []
-        for task in tasks:
-            logger.info("Tester: verifying task %d: %s", task.id, task.name)
-            result = self._verify_task(plan_text, task, sprint_plan_path)
-            results.append(result)
+        task_block = self._render_tasks_for_prompt(tasks)
+        template = self._load_prompt("tester", "generate")
+        prompt = template.format(task_block=task_block)
+        prompt = self._augment_prompt(prompt)
 
-        self._write_report(sprint_plan_path, results)
+        try:
+            result = self.runner.run(prompt)
+        except Exception as exc:
+            raise TesterError(f"opencode session failed: {exc}") from exc
+
+        # Audit first — failed sessions still leave a forensic trail.
+        emit_session_audit(
+            self.state,
+            result,
+            role=self._role,
+            phase=self._phase,
+            step=self._phase,
+            prompt=prompt,
+        )
+
+        if result.exit_code != 0:
+            raise TesterError(
+                f"opencode session exited with rc={result.exit_code}: "
+                f"{result.assistant_text[:200]!r}"
+            )
+
+        report = result.assistant_text.strip()
+        if not report:
+            raise TesterError(
+                "opencode session returned no assistant text — nothing to write"
+            )
+        self.state.write_file("TEST_REPORT.md", report)
         return "TEST_REPORT.md"
 
-    def verify_task(self, sprint_plan_path: str, task_id: int) -> TaskResult:
-        """Verify a single task by ID.
+    # -- prompt rendering ----------------------------------------------------
 
-        Returns the TaskResult for the task.
-        Raises TesterError if the task is not found or has no evidence log.
+    @classmethod
+    def _render_tasks_for_prompt(cls, tasks: list[Task]) -> str:
+        """Emit the per-task block the tester prompt interpolates.
+
+        Each task lists its id, name, acceptance criteria, and the
+        shell-runnable evidence commands the framework extracted. Any
+        validation error (e.g. long-running dev server) is flagged in
+        place so the agent records it as FAIL without running it.
         """
-        plan_text = self.state.read_file(sprint_plan_path)
-        tasks = parse_tasks(plan_text)
-        target = None
-        for t in tasks:
-            if t.id == task_id:
-                target = t
-                break
+        blocks: list[str] = []
+        for task in tasks:
+            block = [f"### Task {task.id}: {task.name}"]
+            if task.acceptance_criteria:
+                block.append("Acceptance criteria:")
+                for ac in task.acceptance_criteria:
+                    block.append(f"- {ac}")
+            commands = cls._extract_commands(task.evidence_required)
+            if not commands:
+                block.append(
+                    "Evidence commands: NONE — mark this task as "
+                    "RERUN_FAILED (missing runnable command)."
+                )
+            else:
+                block.append("Evidence commands (run each one, record exit code + trimmed output):")
+                for item in commands:
+                    err = cls._command_validation_error(item["command"])
+                    if err:
+                        block.append(f"- {item['label']} — SKIP / FAIL: {err}")
+                    else:
+                        block.append(f"- {item['label']} — run: `{item['command']}`")
+            blocks.append("\n".join(block))
+        return "\n\n".join(blocks)
 
-        if target is None:
-            raise TesterError(f"Task {task_id} not found in sprint plan")
-        return self._verify_task(plan_text, target, sprint_plan_path)
-
-    # -- task verification ---------------------------------------------------
-
-    def _verify_task(
-        self, plan_text: str, task: Task, sprint_plan_path: str
-    ) -> TaskResult:
-        """Verify a single task by running commands from Evidence Required."""
-        commands = self._extract_commands(task.evidence_required)
-        evidence: list[dict[str, str]] = []
-        evidence_entries: list[dict[str, Any]] = []
-
-        if not commands:
-            return TaskResult(
-                task_id=task.id,
-                task_name=task.name,
-                status="RERUN_FAILED",
-                evidence=[{
-                    "result": "FAIL",
-                    "output": "No runnable Evidence Required command found",
-                }],
-                notes="Each task must include at least one shell-runnable evidence command.",
-            )
-
-        all_passed = True
-        for item in commands:
-            validation_error = self._command_validation_error(item["command"])
-            if validation_error:
-                all_passed = False
-                label = f"{item['label']} (`{item['command']}`)"
-                evidence.append({
-                    "result": "FAIL",
-                    "output": validation_error,
-                })
-                evidence_entries.append({
-                    "check": label,
-                    "output": validation_error,
-                    "passed": False,
-                })
-                continue
-
-            rc, output = self._run_cmd(item["command"], cwd=self.state.project_dir)
-            passed = rc == 0
-            all_passed = all_passed and passed
-            clean_output = self._trim_output(output)
-            label = f"{item['label']} (`{item['command']}`)"
-            evidence.append({
-                "result": "PASS" if passed else "FAIL",
-                "output": clean_output,
-            })
-            evidence_entries.append({
-                "check": label,
-                "output": clean_output,
-                "passed": passed,
-            })
-
-        plan_text = self.state.read_file(sprint_plan_path)
-        plan_text = apply_evidence_patch(
-            plan_text,
-            {"task_id": task.id, "entries": evidence_entries},
-        )
-        self.state.write_file(sprint_plan_path, plan_text)
-
-        return TaskResult(
-            task_id=task.id,
-            task_name=task.name,
-            status="VERIFIED" if all_passed else "RERUN_FAILED",
-            evidence=evidence,
-            notes="" if all_passed else "One or more evidence commands failed.",
-        )
-
-    # -- evidence log formatting ---------------------------------------------
+    # -- helpers -------------------------------------------------------------
 
     @staticmethod
-    def _format_evidence_log(entries: list[dict[str, Any]]) -> str:
-        """Format evidence log entries for the prompt."""
-        lines = []
-        for i, entry in enumerate(entries, 1):
-            check = entry.get("check", "")
-            output = entry.get("output", "")
-            passed = entry.get("passed", False)
-            marker = "[x]" if passed else "[ ]"
-            line = f"- {marker} {check}"
-            if output:
-                line += f", output recorded: ```{output}```"
-            lines.append(line)
-        return "\n".join(lines)
+    def _load_prompt(role: str, name: str) -> str:
+        return (_PROMPT_DIR / role / f"{name}.txt").read_text(encoding="utf-8")
 
-    # -- result parsing ------------------------------------------------------
+    def _augment_prompt(self, prompt: str) -> str:
+        return append_operator_context(self.state.project_dir, self._phase, prompt)
 
-    def _parse_result(self, raw: str, task: Task) -> TaskResult:
-        """Parse the Tester's markdown result into a TaskResult."""
-        # Extract status
-        status_match = re.search(
-            r"Status:\s*(VERIFIED|MISMATCH|RERUN_FAILED)", raw
-        )
-        status = status_match.group(1) if status_match else "RERUN_FAILED"
-
-        # Extract evidence items
-        evidence: list[dict[str, str]] = []
-        evidence_matches = re.finditer(
-            r"Evidence\s+\d+:\s*(PASS|FAIL)\s*—\s*(.+?)(?=\n-|\n\n|\Z)",
-            raw,
-            re.DOTALL,
-        )
-        for m in evidence_matches:
-            evidence.append({
-                "result": m.group(1),
-                "output": m.group(2).strip(),
-            })
-
-        # Extract notes
-        notes_match = re.search(r"Notes:\s*(.+?)(?:\n\n|\Z)", raw, re.DOTALL)
-        notes = notes_match.group(1).strip() if notes_match else ""
-
-        return TaskResult(
-            task_id=task.id,
-            task_name=task.name,
-            status=status,
-            evidence=evidence,
-            notes=notes,
-        )
-
-    # -- report writing ------------------------------------------------------
-
-    def _write_report(
-        self, sprint_plan_path: str, results: list[TaskResult]
-    ) -> None:
-        """Write TEST_REPORT.md with per-task status."""
-        lines = [
-            "# Test Report",
-            "",
-            f"Tasks verified: {len(results)}",
-            "",
-        ]
-
-        for r in results:
-            lines.append(f"### Task {r.task_id}: {r.task_name}")
-            lines.append(f"- Status: {r.status}")
-            for i, ev in enumerate(r.evidence, 1):
-                lines.append(f"- Evidence {i}: {ev['result']} — {ev['output']}")
-            if r.notes:
-                lines.append(f"- Notes: {r.notes}")
-            lines.append("")
-
-        report = "\n".join(lines)
-        self.state.write_file("TEST_REPORT.md", report)
-
-    # -- helper: run shell command -------------------------------------------
-
-    @staticmethod
-    def _run_cmd(cmd: str, timeout: int = 120, cwd=None) -> tuple[int, str]:
-        """Run a shell command and return (returncode, stdout)."""
-        try:
-            result = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=cwd,
-            )
-            return result.returncode, result.stdout + result.stderr
-        except subprocess.TimeoutExpired:
-            return -1, f"Command timed out after {timeout}s"
-        except Exception as exc:
-            return -1, str(exc)
+    # -- command extraction (prompt inputs) ----------------------------------
 
     @staticmethod
     def _extract_commands(evidence_required: list[str]) -> list[dict[str, str]]:
@@ -306,10 +194,3 @@ class Tester(BaseRole):
                 "test, or a bounded smoke script."
             )
         return None
-
-    @staticmethod
-    def _trim_output(output: str, limit: int = 2000) -> str:
-        output = output.strip()
-        if len(output) <= limit:
-            return output
-        return output[:limit] + "\n...<truncated>"

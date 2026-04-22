@@ -120,6 +120,11 @@ class Orchestrator:
             runner = DryRunDeployerRunner(self.state)
             self._session_runners[role] = runner
             return runner
+        if self._fake_llm is not None and role == "tester":
+            from orchestrator.roles.tester_dryrun import DryRunTesterRunner
+            runner = DryRunTesterRunner(self.state)
+            self._session_runners[role] = runner
+            return runner
         return None
 
     def _llm_for(self, role: str) -> Any:
@@ -500,14 +505,14 @@ class Orchestrator:
         coder.execute("sprint-plan.md")
 
     def _tester(self, *, phase_logger: logging.Logger | None = None) -> None:
-        """Run the Tester role."""
+        """Run the Tester role via an opencode session runner (H6.3b)."""
         from orchestrator.roles.tester import Tester
 
-        llm = self._llm_for("tester")
-        if llm is None:
+        runner = self._session_runner_for("tester")
+        if runner is None:
             raise PhaseFailure("testing")
 
-        tester = Tester(llm, self.state, phase_logger=phase_logger)
+        tester = Tester(runner, self.state, phase_logger=phase_logger)
         tester.execute("sprint-plan.md")
 
     def _guru_escalation(

@@ -135,13 +135,6 @@ _DRY_RUN_JUDGE_JSON = (
     '"risk":{"score":1,"issues":[]}}'
 )
 
-_DRY_RUN_TESTER_REPORT = (
-    "### Task 1: bootstrap\n"
-    "- Status: VERIFIED\n"
-    "- Evidence 1: PASS — README.md\n"
-    "- Notes: dry-run\n"
-)
-
 def _build_dry_run_llm() -> object:
     """Build a content-aware fake LLM for dry-run mode.
 
@@ -175,8 +168,6 @@ def _build_dry_run_llm() -> object:
             # Order matters — check most specific markers first.
             if "skeptical senior engineering manager" in sys_lower:
                 return _r(_DRY_RUN_JUDGE_JSON)
-            if "you are a qa engineer" in sys_lower:
-                return _r(_DRY_RUN_TESTER_REPORT)
             return _r(_DRY_RUN_SPRINT_PLAN)
 
     return _ContentAwareFake()
@@ -201,7 +192,7 @@ def _build_opencode_session_runners(
     endpoints_by_name = {ep.name: ep for ep in endpoints_cfg.endpoints}  # type: ignore[attr-defined]
 
     runners: dict[str, object] = {}
-    for role in ("coder", "reviewer", "deployer"):
+    for role in ("coder", "tester", "reviewer", "deployer"):
         routes = endpoints_cfg.routing.get(role) or []  # type: ignore[attr-defined]
         if not routes:
             continue

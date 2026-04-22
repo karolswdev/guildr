@@ -122,13 +122,6 @@ def test_dry_run_llm_dispatches_by_role() -> None:
     ])
     assert '"specificity"' in judge.content
 
-    # Coder no longer goes through fake_llm — it's driven by a SessionRunner
-    # (see orchestrator/roles/coder_dryrun.py). Only the remaining LLM roles
-    # still ride this dispatch.
-
-    tester = fake.chat([{"role": "system", "content": "You are a QA engineer."}])
-    assert "VERIFIED" in tester.content
-
-    # Reviewer / Deployer no longer go through fake_llm — they're driven by
-    # SessionRunners (see reviewer_dryrun.py / deployer_dryrun.py) after
-    # H6.3c / H6.3d.
+    # Coder / Tester / Reviewer / Deployer no longer go through fake_llm —
+    # each is driven by a SessionRunner (see *_dryrun.py) after H6.3a/b/c/d.
+    # Only architect + judge still ride this dispatch.

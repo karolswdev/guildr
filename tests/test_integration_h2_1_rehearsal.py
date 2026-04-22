@@ -33,13 +33,12 @@ from web.backend.runner import _run_orchestrator
 
 
 _EXPECTED_GATES = ("approve_sprint_plan", "approve_review")
-# Roles that make at least one LLM call in the dry-run pipeline. The
-# tester phase does not invoke an LLM in dry-run — it shells out to pytest —
-# so its absence from raw-io.jsonl is correct, not a regression.
-# Coder was dropped after H6.3a (opencode session, no raw-io emission) and
-# restored in H6.4 once ``emit_session_audit`` rewired the audit trail to
-# mirror opencode session results into raw-io.jsonl + usage.jsonl.
-_EXPECTED_ROLES = {"architect", "coder", "reviewer", "deployer"}
+# Roles that land a row in raw-io.jsonl during the dry-run pipeline.
+# Coder / Reviewer / Deployer / Tester ride an opencode SessionRunner after
+# H6.3a–d; each emits via ``emit_session_audit`` which mirrors the opencode
+# session into raw-io.jsonl + usage.jsonl. Architect still uses the direct
+# LLMClient path.
+_EXPECTED_ROLES = {"architect", "coder", "tester", "reviewer", "deployer"}
 
 
 def _wait_for(predicate, timeout: float = 30.0, interval: float = 0.05) -> bool:
