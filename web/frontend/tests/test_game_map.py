@@ -286,6 +286,11 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "object-demo-rail" in text
     assert "demoArtifactUrl" in text
     assert "storyDemoCard" in text
+    assert "artifactPreviewCard" in text
+    assert "story-preview-rail" in text
+    assert "object-preview-rail" in text
+    assert "preview-card" in text
+    assert "preview-excerpt" in text
 
 
 def test_demo_artifact_url_and_card_helpers(tmp_path: Path) -> None:
@@ -358,6 +363,82 @@ def test_demo_artifact_url_and_card_helpers(tmp_path: Path) -> None:
         assert.ok(failHtml.includes('data-demo-status="failed"'));
         assert.ok(failHtml.includes('boom: selector missing'));
         assert.ok(!failHtml.includes('data-role="demo-thumb"'));
+        """,
+        include_three=True,
+    )
+
+
+def test_artifact_preview_card_helper(tmp_path: Path) -> None:
+    run_script(
+        tmp_path,
+        GAME_SHELL_TS,
+        """
+        import assert from 'node:assert/strict';
+
+        globalThis.document = {
+          createElement: () => {
+            const node = { textContent: '', get innerHTML() { return String(this.textContent).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } };
+            return node;
+          },
+        };
+
+        const { artifactPreviewCard } = await import('__BUNDLE__');
+
+        const textPreview = {
+          eventId: 'evt-1',
+          artifactRef: 'sprint-plan.md',
+          producingAtomId: 'architect_plan',
+          projectId: 'proj-1',
+          hash: '0123456789abcdef0123456789abcdef',
+          bytes: 4096,
+          mime: 'text/markdown',
+          excerpt: '# Sprint\\n<script>alert(1)</script>',
+          excerptKind: 'text_head',
+          truncated: true,
+          triggerEventId: 'trigger-xyz',
+          sourceRefs: ['qwendea.md'],
+          wakeUpHash: 'abc',
+          memoryRefs: [],
+          ts: 0,
+        };
+
+        const html = artifactPreviewCard(textPreview);
+        assert.ok(html.includes('data-role="preview-card"'));
+        assert.ok(html.includes('data-preview-ref="sprint-plan.md"'));
+        assert.ok(html.includes('data-preview-atom="architect_plan"'));
+        assert.ok(html.includes('data-excerpt-kind="text_head"'));
+        assert.ok(html.includes('4.0 KiB'));
+        assert.ok(html.includes('#0123456789ab'));
+        assert.ok(html.includes('atom: architect_plan'));
+        assert.ok(html.includes('text/markdown'));
+        assert.ok(html.includes('qwendea.md'));
+        assert.ok(html.includes('Truncated'));
+        assert.ok(html.includes('&lt;script&gt;'), 'excerpt must be HTML-escaped');
+        assert.ok(!html.includes('<script>alert'));
+
+        const binary = {
+          ...textPreview,
+          artifactRef: 'image.png',
+          excerpt: '[binary artifact: image.png (2048 bytes)]',
+          excerptKind: 'binary_placeholder',
+          mime: 'image/png',
+          truncated: false,
+        };
+        const binaryHtml = artifactPreviewCard(binary);
+        assert.ok(binaryHtml.includes('data-excerpt-kind="binary_placeholder"'));
+        assert.ok(binaryHtml.includes('binary artifact: image.png'));
+        assert.ok(!binaryHtml.includes('Truncated'));
+
+        const untruncated = { ...textPreview, excerpt: 'short', truncated: false, excerptKind: 'text_tail' };
+        const untruncatedHtml = artifactPreviewCard(untruncated);
+        assert.ok(!untruncatedHtml.includes('Truncated'));
+        assert.ok(untruncatedHtml.includes('data-excerpt-kind="text_tail"'));
+
+        const bytesSmall = artifactPreviewCard({ ...textPreview, bytes: 500 });
+        assert.ok(bytesSmall.includes('500 B'));
+
+        const bytesMb = artifactPreviewCard({ ...textPreview, bytes: 3 * 1024 * 1024 });
+        assert.ok(bytesMb.includes('3.0 MiB'));
         """,
         include_three=True,
     )

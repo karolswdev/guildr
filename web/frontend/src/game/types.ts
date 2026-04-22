@@ -228,6 +228,29 @@ export type DemoPlan = {
   raw: Record<string, unknown>;
 };
 
+export type ArtifactPreviewExcerptKind =
+  | "text_head"
+  | "text_tail"
+  | "binary_placeholder";
+
+export type ArtifactPreview = {
+  eventId: string | null;
+  artifactRef: string;
+  producingAtomId: string | null;
+  projectId: string;
+  hash: string;
+  bytes: number;
+  mime: string;
+  excerpt: string;
+  excerptKind: ArtifactPreviewExcerptKind;
+  truncated: boolean;
+  triggerEventId: string | null;
+  sourceRefs: string[];
+  wakeUpHash: string | null;
+  memoryRefs: string[];
+  ts: number | null;
+};
+
 export type EngineSnapshot = {
   projectId: string;
   runId: string | null;
@@ -243,6 +266,8 @@ export type EngineSnapshot = {
   discussionHighlights: DiscussionHighlight[];
   demos: DemoPlan[];
   latestDemo: DemoPlan | null;
+  previews: ArtifactPreview[];
+  latestPreview: ArtifactPreview | null;
   pendingIntents: Record<string, OperatorIntentState>;
   appliedIntents: Record<string, OperatorIntentState>;
   ignoredIntents: Record<string, OperatorIntentState>;

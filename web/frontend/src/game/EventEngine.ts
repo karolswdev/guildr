@@ -1,4 +1,6 @@
 import type {
+  ArtifactPreview,
+  ArtifactPreviewExcerptKind,
   AtomLoopStatus,
   AtomState,
   AtomStatus,
@@ -43,6 +45,7 @@ export class EventEngine {
   private discussion: DiscussionEntry[] = [];
   private discussionHighlights: DiscussionHighlight[] = [];
   private demos: DemoPlan[] = [];
+  private previews: ArtifactPreview[] = [];
   private pendingIntents: Record<string, OperatorIntentState> = {};
   private appliedIntents: Record<string, OperatorIntentState> = {};
   private ignoredIntents: Record<string, OperatorIntentState> = {};
@@ -133,6 +136,7 @@ export class EventEngine {
     this.discussion = [];
     this.discussionHighlights = [];
     this.demos = [];
+    this.previews = [];
     this.pendingIntents = {};
     this.appliedIntents = {};
     this.ignoredIntents = {};
@@ -167,6 +171,7 @@ export class EventEngine {
     this.discussion = [];
     this.discussionHighlights = [];
     this.demos = [];
+    this.previews = [];
     this.pendingIntents = {};
     this.appliedIntents = {};
     this.ignoredIntents = {};
@@ -201,6 +206,8 @@ export class EventEngine {
       discussionHighlights: this.discussionHighlights.map(cloneDiscussionHighlight),
       demos: this.demos.map(cloneDemoPlan),
       latestDemo: this.demos.length > 0 ? cloneDemoPlan(this.demos[this.demos.length - 1]) : null,
+      previews: this.previews.map(cloneArtifactPreview),
+      latestPreview: this.previews.length > 0 ? cloneArtifactPreview(this.previews[this.previews.length - 1]) : null,
       pendingIntents: cloneIntentMap(this.pendingIntents),
       appliedIntents: cloneIntentMap(this.appliedIntents),
       ignoredIntents: cloneIntentMap(this.ignoredIntents),
@@ -237,6 +244,7 @@ export class EventEngine {
     this.discussion = [];
     this.discussionHighlights = [];
     this.demos = [];
+    this.previews = [];
     this.pendingIntents = {};
     this.appliedIntents = {};
     this.ignoredIntents = {};
@@ -368,6 +376,9 @@ export class EventEngine {
       type === "demo_presented"
     ) {
       this.applyDemoCaptureEvent(event, type);
+    }
+    if (type === "artifact_preview_created") {
+      this.applyArtifactPreviewEvent(event);
     }
     if (type === "operator_intent") {
       this.applyOperatorIntent(event);
@@ -806,6 +817,40 @@ export class EventEngine {
     }
   }
 
+  private applyArtifactPreviewEvent(event: RunEvent): void {
+    const artifactRef = key(event.artifact_ref, "");
+    if (!artifactRef) {
+      return;
+    }
+    const next: ArtifactPreview = {
+      eventId: stringOrNull(event.event_id),
+      artifactRef,
+      producingAtomId: stringOrNull(event.producing_atom_id),
+      projectId: key(event.project_id, this.projectId),
+      hash: key(event.hash, ""),
+      bytes: numberOrZero(event.bytes),
+      mime: key(event.mime, "application/octet-stream"),
+      excerpt: key(event.excerpt, ""),
+      excerptKind: previewExcerptKind(event.excerpt_kind),
+      truncated: event.truncated === true,
+      triggerEventId: stringOrNull(event.trigger_event_id),
+      sourceRefs: arrayOfStrings(event.source_refs),
+      wakeUpHash: stringOrNull(event.wake_up_hash),
+      memoryRefs: arrayOfStrings(event.memory_refs),
+      ts: timeMs(event.ts),
+    };
+    const matchIndex = this.previews.findIndex(
+      (item) =>
+        item.artifactRef === next.artifactRef &&
+        item.producingAtomId === next.producingAtomId,
+    );
+    if (matchIndex >= 0) {
+      this.previews[matchIndex] = next;
+    } else {
+      this.previews.push(next);
+    }
+  }
+
   private applyOperatorIntent(event: RunEvent): void {
     const clientIntentId = intentClientId(event);
     if (!clientIntentId) {
@@ -1095,6 +1140,21 @@ function cloneDemoPlan(plan: DemoPlan): DemoPlan {
     lastEvent: plan.lastEvent ? { ...plan.lastEvent } : null,
     raw: { ...plan.raw },
   };
+}
+
+function cloneArtifactPreview(preview: ArtifactPreview): ArtifactPreview {
+  return {
+    ...preview,
+    sourceRefs: [...preview.sourceRefs],
+    memoryRefs: [...preview.memoryRefs],
+  };
+}
+
+function previewExcerptKind(value: unknown): ArtifactPreviewExcerptKind {
+  if (value === "text_head" || value === "text_tail" || value === "binary_placeholder") {
+    return value;
+  }
+  return "text_head";
 }
 
 function demoViewport(value: unknown): DemoViewport | null {

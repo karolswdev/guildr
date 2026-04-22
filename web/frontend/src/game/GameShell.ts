@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { AssetManager } from "./assets/AssetManager.js";
 import { EventEngine } from "./EventEngine.js";
 import { SceneManager, type SpatialViewLevel } from "./SceneManager.js";
-import type { DemoArtifact, DemoPlan, DemoStatus, DemoViewport, EngineSnapshot, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
+import type { ArtifactPreview, DemoArtifact, DemoPlan, DemoStatus, DemoViewport, EngineSnapshot, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
 
 type GameShellOptions = {
   projectId: string;
@@ -805,6 +805,18 @@ export class GameShell {
             </div>
           `;
         })()}
+        ${(() => {
+          const previews = snapshot.previews.filter((preview) => preview.producingAtomId === atomId);
+          if (previews.length === 0) {
+            return "";
+          }
+          return `
+            <div data-role="object-preview-rail" style="display: grid; gap: 7px;">
+              <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Artifact previews</div>
+              ${previews.slice(-2).reverse().map((preview) => artifactPreviewCard(preview)).join("")}
+            </div>
+          `;
+        })()}
         <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px;">
           <button data-action-command="shape" style="${objectCommandStyle("#41C7C7")}">Shape</button>
           <button data-action-command="interject" style="${objectCommandStyle("#E8EAF0")}">Nudge</button>
@@ -857,6 +869,18 @@ export class GameShell {
             <div data-role="story-demo-rail" style="display: grid; gap: 8px;">
               <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Demo ceremonies</div>
               ${demos.map((demo) => storyDemoCard(demo, this.options.projectId)).join("")}
+            </div>
+          `;
+        })()}
+        ${(() => {
+          const previews = snapshot.previews.slice(-3).reverse();
+          if (previews.length === 0) {
+            return "";
+          }
+          return `
+            <div data-role="story-preview-rail" style="display: grid; gap: 8px;">
+              <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Artifact previews</div>
+              ${previews.map((preview) => artifactPreviewCard(preview)).join("")}
             </div>
           `;
         })()}
@@ -1453,6 +1477,68 @@ export function storyDemoCard(demo: DemoPlan, projectId: string): string {
           ${sourceChips}
         </div>
       ` : ""}
+    </div>
+  `;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KiB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function previewExcerptBlock(preview: ArtifactPreview): string {
+  if (preview.excerptKind === "binary_placeholder") {
+    return `<div style="font-size: 11px; color: #8C92A8; font-style: italic;">${escapeHtml(preview.excerpt)}</div>`;
+  }
+  const suffix = preview.truncated
+    ? `<div style="font-size: 10px; color: #8C92A8; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.5px;">Truncated · ${escapeHtml(preview.excerptKind === "text_tail" ? "tail" : "head")}</div>`
+    : "";
+  return `
+    <pre data-role="preview-excerpt" data-excerpt-kind="${escapeHtml(preview.excerptKind)}" style="margin: 0; padding: 8px; border-radius: 6px; background: #0B0D14; color: #D9D2B2; font-size: 11px; line-height: 1.4; max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;">${escapeHtml(preview.excerpt)}</pre>
+    ${suffix}
+  `;
+}
+
+export function artifactPreviewCard(preview: ArtifactPreview): string {
+  const refName = preview.artifactRef.split("/").pop() || preview.artifactRef;
+  const shortHash = preview.hash ? preview.hash.slice(0, 12) : "";
+  const atom = preview.producingAtomId
+    ? `<span style="${refChipStyle()}">atom: ${escapeHtml(preview.producingAtomId)}</span>`
+    : "";
+  const mime = preview.mime
+    ? `<span style="${refChipStyle()}">${escapeHtml(preview.mime)}</span>`
+    : "";
+  const hashChip = shortHash
+    ? `<span style="${refChipStyle()}">#${escapeHtml(shortHash)}</span>`
+    : "";
+  const sourceChips = preview.sourceRefs.slice(0, 4)
+    .map((ref) => `<span style="${refChipStyle()}">${escapeHtml(ref)}</span>`)
+    .join("");
+
+  return `
+    <div data-role="preview-card" data-preview-ref="${escapeHtml(preview.artifactRef)}" data-preview-atom="${escapeHtml(preview.producingAtomId ?? "")}" data-excerpt-kind="${escapeHtml(preview.excerptKind)}" style="display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(217,184,77,0.28); border-radius: 8px; background: rgba(217,184,77,0.06);">
+      <div style="display: flex; align-items: start; justify-content: space-between; gap: 8px;">
+        <div style="min-width: 0;">
+          <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Artifact preview</div>
+          <div style="font-size: 13px; color: #E8EAF0; font-weight: 900; margin-top: 3px; overflow-wrap: anywhere;">${escapeHtml(refName)}</div>
+          <div style="font-size: 11px; color: #8C92A8; margin-top: 3px; overflow-wrap: anywhere;">${escapeHtml(preview.artifactRef)}</div>
+        </div>
+        <div style="display: inline-flex; gap: 5px; flex: 0 0 auto;">
+          <span style="${refChipStyle()}">${escapeHtml(formatBytes(preview.bytes))}</span>
+        </div>
+      </div>
+      ${previewExcerptBlock(preview)}
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        ${atom}
+        ${mime}
+        ${hashChip}
+        ${sourceChips}
+      </div>
     </div>
   `;
 }
