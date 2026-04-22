@@ -1,4 +1,13 @@
-"""Architect role — produces sprint-plan.md from qwendea.md."""
+"""Architect role — produces sprint-plan.md via opencode (H6.3e).
+
+Two opencode sessions per execute() pass: one ``architect`` session
+generates/refines the sprint plan, one ``judge`` session scores it
+against the rubric. Both agents run with every tool disabled (see
+``opencode_config.build_agent_definitions``) — they are strict
+text/JSON completions. The multi-attempt JSON-repair loop inside
+``_self_evaluate`` fires fresh judge sessions rather than continuing
+one, because our ``SessionRunner`` protocol is stateless by design.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +20,8 @@ from typing import Any
 
 from orchestrator.lib.config import Config
 from orchestrator.lib.control import append_operator_context
-from orchestrator.lib.llm import LLMClient
+from orchestrator.lib.opencode import SessionRunner
+from orchestrator.lib.opencode_audit import emit_session_audit
 from orchestrator.lib.sprint_plan import parse_tasks
 from orchestrator.lib.state import State
 
@@ -19,36 +29,22 @@ logger = logging.getLogger(__name__)
 
 _PROMPT_DIR = Path(__file__).resolve().parent / "prompts" / "architect"
 
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
-
 
 class ArchitectFailure(Exception):
     """Raised when the Architect exhausts all retry passes."""
 
 
-# ---------------------------------------------------------------------------
-# Prompt loading
-# ---------------------------------------------------------------------------
-
-
 def _load_prompt(name: str) -> str:
-    """Load a prompt template from the architect prompts directory."""
     path = _PROMPT_DIR / f"{name}.txt"
     return path.read_text(encoding="utf-8")
 
 
-# ---------------------------------------------------------------------------
-# Architect
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class Architect:
-    """Generates and self-evaluates sprint plans."""
+    """Generates and self-evaluates sprint plans via opencode sessions."""
 
-    llm: LLMClient
+    runner: SessionRunner
+    judge_runner: SessionRunner
     state: State
     config: Config
     _phase_logger: Any = None
@@ -71,8 +67,6 @@ class Architect:
     # -- public API ----------------------------------------------------------
 
     def execute(self) -> str:
-        """Run the self-eval loop. Returns path to sprint-plan.md on
-        success. Raises ArchitectFailure on exhaustion."""
         qwendea = self.state.read_file("qwendea.md")
 
         best_plan: str | None = None
@@ -107,7 +101,6 @@ class Architect:
     # -- generation ----------------------------------------------------------
 
     def _generate(self, qwendea: str) -> str:
-        """Generate an initial sprint plan from qwendea.md."""
         system_prompt = _load_prompt("generate")
         user_prompt = (
             f"Here is the project specification:\n\n"
@@ -116,176 +109,51 @@ class Architect:
         )
         user_prompt = self._append_forum_context(user_prompt)
         user_prompt = append_operator_context(self.state.project_dir, self._phase, user_prompt)
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-
-        import time
-        from orchestrator.lib.event_schema import new_event_id
-        call_id = new_event_id()
-        start = time.monotonic()
-        try:
-            response = self.llm.chat(messages, max_tokens=16384, call_id=call_id)
-            elapsed_ms = (time.monotonic() - start) * 1000
-            from orchestrator.lib.usage import emit_llm_usage
-            emit_llm_usage(
-                self.state,
-                self.llm,
-                response,
-                role=self._role,
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                call_id=call_id,
-            )
-            if self._phase_logger is not None:
-                from orchestrator.lib.logger import log_llm_call
-                log_llm_call(
-                    self._phase_logger,
-                    phase=self._phase,
-                    role=self._role,
-                    messages=messages,
-                    response=response,
-                    latency_ms=elapsed_ms,
-                    endpoint=getattr(self.llm, "base_url", None),
-                    request_id=call_id,
-                )
-            return response.content
-        except Exception as e:
-            elapsed_ms = (time.monotonic() - start) * 1000
-            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
-            emit_llm_usage(
-                self.state,
-                self.llm,
-                None,
-                role=self._role,
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                call_id=call_id,
-                status="error",
-                error=e,
-            )
-            emit_provider_error(
-                self.state,
-                provider_kind=type(self.llm).__name__,
-                provider_name=type(self.llm).__name__,
-                model="",
-                role=self._role,
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                error=e,
-                call_id=call_id,
-            )
-            if self._phase_logger is not None:
-                from orchestrator.lib.logger import log_llm_error
-                log_llm_error(
-                    self._phase_logger,
-                    phase=self._phase,
-                    role=self._role,
-                    error=e,
-                    latency_ms=elapsed_ms,
-                )
-            raise
+        prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
+        return self._run_architect_session(prompt)
 
     def _refine(self, qwendea: str, prior: str, prior_eval: dict[str, Any]) -> str:
-        """Refine a sprint plan with targeted corrective feedback.
-
-        Strips prior reasoning_content from the conversation history and
-        injects only the failed-criteria feedback.
-        """
         system_prompt = _load_prompt("generate")
         refine_template = _load_prompt("refine")
-
-        # Build the failures description from the prior evaluation
         failures = self._format_failures(prior_eval)
-
         current_plan_text = f"Here is your previous sprint-plan.md:\n\n```\n{prior}\n```"
         failures_text = refine_template.format(failures=failures, current_plan=current_plan_text)
         failures_text = self._append_forum_context(failures_text)
         failures_text = append_operator_context(self.state.project_dir, self._phase, failures_text)
+        prompt = f"{system_prompt}\n\n---\n\n{failures_text}"
+        return self._run_architect_session(prompt)
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": failures_text},
-        ]
-
-        import time
-        from orchestrator.lib.event_schema import new_event_id
-        call_id = new_event_id()
-        start = time.monotonic()
+    def _run_architect_session(self, prompt: str) -> str:
         try:
-            response = self.llm.chat(messages, max_tokens=16384, call_id=call_id)
-            elapsed_ms = (time.monotonic() - start) * 1000
-            from orchestrator.lib.usage import emit_llm_usage
-            emit_llm_usage(
-                self.state,
-                self.llm,
-                response,
-                role=self._role,
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                call_id=call_id,
+            result = self.runner.run(prompt)
+        except Exception as exc:
+            raise ArchitectFailure(f"opencode architect session failed: {exc}") from exc
+
+        emit_session_audit(
+            self.state,
+            result,
+            role=self._role,
+            phase=self._phase,
+            step=self._phase,
+            prompt=prompt,
+        )
+
+        if result.exit_code != 0:
+            raise ArchitectFailure(
+                f"opencode architect session exited with rc={result.exit_code}: "
+                f"{result.assistant_text[:200]!r}"
             )
-            if self._phase_logger is not None:
-                from orchestrator.lib.logger import log_llm_call
-                log_llm_call(
-                    self._phase_logger,
-                    phase=self._phase,
-                    role=self._role,
-                    messages=messages,
-                    response=response,
-                    latency_ms=elapsed_ms,
-                    endpoint=getattr(self.llm, "base_url", None),
-                    request_id=call_id,
-                )
-            return response.content
-        except Exception as e:
-            elapsed_ms = (time.monotonic() - start) * 1000
-            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
-            emit_llm_usage(
-                self.state,
-                self.llm,
-                None,
-                role=self._role,
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                call_id=call_id,
-                status="error",
-                error=e,
+        text = result.assistant_text.strip()
+        if not text:
+            raise ArchitectFailure(
+                "opencode architect session returned no assistant text"
             )
-            emit_provider_error(
-                self.state,
-                provider_kind=type(self.llm).__name__,
-                provider_name=type(self.llm).__name__,
-                model="",
-                role=self._role,
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                error=e,
-                call_id=call_id,
-            )
-            if self._phase_logger is not None:
-                from orchestrator.lib.logger import log_llm_error
-                log_llm_error(
-                    self._phase_logger,
-                    phase=self._phase,
-                    role=self._role,
-                    error=e,
-                    latency_ms=elapsed_ms,
-                )
-            raise
+        return text
 
     # -- self-evaluation -----------------------------------------------------
 
     def _self_evaluate(self, qwendea: str, plan: str) -> tuple[int, dict[str, Any]]:
-        """Run the adversarial judge over qwendea.md + plan.
-
-        Returns (score, evaluation_dict).
-        Handles JSON parsing robustness: strict → re-prompt → regex fallback.
-        """
         judge_prompt = _load_prompt("judge")
-
         user_prompt = (
             f"Here is the project specification:\n\n"
             f"```\n{qwendea}\n```\n\n"
@@ -294,41 +162,62 @@ class Architect:
         )
         user_prompt = self._append_forum_context(user_prompt)
         user_prompt = append_operator_context(self.state.project_dir, self._phase, user_prompt)
+        base_prompt = f"{judge_prompt}\n\n---\n\n{user_prompt}"
 
-        messages = [
-            {"role": "system", "content": judge_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-
-        # Try 1: strict parse
-        raw = self._call_judge(messages)
+        # Attempt 1: strict parse on a fresh session.
+        raw = self._call_judge(base_prompt)
         result = self._parse_json(raw)
         if result is not None:
             self._apply_local_plan_checks(plan, result)
             return self._compute_score(result)
 
-        # Try 2: re-prompt with correction
-        messages.append({"role": "assistant", "content": raw})
-        messages.append({
-            "role": "user",
-            "content": "Your last output was not valid JSON. "
-                       "Return only the JSON object, nothing else.",
-        })
-        raw = self._call_judge(messages)
+        # Attempt 2: fresh session, prompt carries the previous malformed
+        # output + a re-JSON directive. Sessions are stateless by design,
+        # so "re-prompt" is just a new prompt with more context.
+        repair_prompt = (
+            f"{base_prompt}\n\n---\n\n"
+            f"Your previous output was not valid JSON:\n\n"
+            f"```\n{raw}\n```\n\n"
+            f"Return only the JSON object, nothing else."
+        )
+        raw = self._call_judge(repair_prompt)
         result = self._parse_json(raw)
         if result is not None:
             self._apply_local_plan_checks(plan, result)
             return self._compute_score(result)
 
-        # Try 3: regex fallback
+        # Attempt 3: regex salvage over the most-recent raw text.
         result = self._extract_json_regex(raw)
         if result is not None:
             self._apply_local_plan_checks(plan, result)
             return self._compute_score(result)
 
-        # Final failure: return score 0 with reason
         logger.warning("Architect self-eval: all JSON parsing attempts failed")
         return 0, {"reason": "malformed"}
+
+    def _call_judge(self, prompt: str) -> str:
+        try:
+            result = self.judge_runner.run(prompt)
+        except Exception as exc:
+            raise ArchitectFailure(f"opencode judge session failed: {exc}") from exc
+
+        emit_session_audit(
+            self.state,
+            result,
+            role="judge",
+            phase=self._phase,
+            step=self._phase,
+            prompt=prompt,
+        )
+
+        if result.exit_code != 0:
+            raise ArchitectFailure(
+                f"opencode judge session exited with rc={result.exit_code}: "
+                f"{result.assistant_text[:200]!r}"
+            )
+        return result.assistant_text
+
+    # -- evaluation post-processing -----------------------------------------
 
     @classmethod
     def _apply_local_plan_checks(
@@ -336,7 +225,6 @@ class Architect:
         plan: str,
         evaluation: dict[str, Any],
     ) -> None:
-        """Enforce verifier invariants even if the LLM judge misses them."""
         completeness_issues = cls._plan_structure_issues(plan)
         specificity_issues: list[str] = []
         evidence_issues: list[str] = []
@@ -388,7 +276,6 @@ class Architect:
 
     @staticmethod
     def _evidence_issue(evidence: str) -> str | None:
-        """Return why an Evidence Required item is not verifier-safe."""
         lowered = evidence.lower()
         if re.search(
             r"\b(npm|pnpm|yarn)\s+run\s+dev\b|\b(next|vite)\s+dev\b|\bwebpack\s+serve\b|\bpython\s+-m\s+http\.server\b|\buvicorn\b|^vite(?:\s|$)",
@@ -399,77 +286,8 @@ class Architect:
             return "browser/manual observation is not automated evidence"
         return None
 
-    def _call_judge(self, messages: list[dict]) -> str:
-        """Send the judge prompt and return raw response content."""
-        import time
-        from orchestrator.lib.event_schema import new_event_id
-        call_id = new_event_id()
-        start = time.monotonic()
-        try:
-            response = self.llm.chat(messages, max_tokens=4096, call_id=call_id)
-            elapsed_ms = (time.monotonic() - start) * 1000
-            from orchestrator.lib.usage import emit_llm_usage
-            emit_llm_usage(
-                self.state,
-                self.llm,
-                response,
-                role="judge",
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                call_id=call_id,
-            )
-            if self._phase_logger is not None:
-                from orchestrator.lib.logger import log_llm_call
-                log_llm_call(
-                    self._phase_logger,
-                    phase=self._phase,
-                    role="judge",
-                    messages=messages,
-                    response=response,
-                    latency_ms=elapsed_ms,
-                    endpoint=getattr(self.llm, "base_url", None),
-                    request_id=call_id,
-                )
-            return response.content
-        except Exception as e:
-            elapsed_ms = (time.monotonic() - start) * 1000
-            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
-            emit_llm_usage(
-                self.state,
-                self.llm,
-                None,
-                role="judge",
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                call_id=call_id,
-                status="error",
-                error=e,
-            )
-            emit_provider_error(
-                self.state,
-                provider_kind=type(self.llm).__name__,
-                provider_name=type(self.llm).__name__,
-                model="",
-                role="judge",
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                error=e,
-                call_id=call_id,
-            )
-            if self._phase_logger is not None:
-                from orchestrator.lib.logger import log_llm_error
-                log_llm_error(
-                    self._phase_logger,
-                    phase=self._phase,
-                    role="judge",
-                    error=e,
-                    latency_ms=elapsed_ms,
-                )
-            raise
-
     @staticmethod
     def _parse_json(raw: str) -> dict[str, Any] | None:
-        """Try strict JSON parse. Returns None on failure."""
         try:
             data = json.loads(raw)
             if isinstance(data, dict):
@@ -480,7 +298,6 @@ class Architect:
 
     @staticmethod
     def _extract_json_regex(raw: str) -> dict[str, Any] | None:
-        """Extract the outermost {...} block from raw text."""
         match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', raw)
         if match:
             try:
@@ -491,7 +308,6 @@ class Architect:
 
     @staticmethod
     def _compute_score(evaluation: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        """Compute total score (0-6) from evaluation dict."""
         score = 0
         for criterion in ["specificity", "testability", "evidence",
                           "completeness", "feasibility", "risk"]:
@@ -503,12 +319,6 @@ class Architect:
     # -- pass/fail logic -----------------------------------------------------
 
     def _passes(self, score: int, evaluation: dict[str, Any]) -> bool:
-        """Check if the plan passes the evaluation rubric.
-
-        Pass requires:
-        - Score >= architect_pass_threshold
-        - All MANDATORY criteria score 1
-        """
         if score < self.config.architect_pass_threshold:
             return False
         for c in self.MANDATORY:
@@ -523,11 +333,9 @@ class Architect:
     # -- escalation ----------------------------------------------------------
 
     def _escalate(self, drafts: list[tuple[str, int, dict[str, Any]]]) -> None:
-        """Write escalation artifacts and prepare for human review."""
         drafts_dir = self.state.project_dir / ".orchestrator" / "drafts"
         drafts_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write each draft
         for i, (plan, score, evaluation) in enumerate(drafts, start=1):
             plan_path = drafts_dir / f"architect-pass-{i}.md"
             plan_path.write_text(plan, encoding="utf-8")
@@ -537,7 +345,6 @@ class Architect:
                 json.dumps(evaluation, indent=2), encoding="utf-8"
             )
 
-        # Write human-readable escalation summary
         escalation_path = self.state.project_dir / ".orchestrator" / "escalation.md"
         lines = [
             "# Architect Escalation",
@@ -582,7 +389,6 @@ class Architect:
     # -- helpers -------------------------------------------------------------
 
     def _format_failures(self, evaluation: dict[str, Any]) -> str:
-        """Format failed criteria as human-readable feedback."""
         if "reason" in evaluation:
             return evaluation["reason"]
 

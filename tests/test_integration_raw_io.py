@@ -17,22 +17,23 @@ from orchestrator.cli.run import _build_dry_run_llm
 from orchestrator.engine import Orchestrator
 from orchestrator.lib.config import Config
 from orchestrator.lib.raw_io import raw_io_path
+from orchestrator.lib.state import State
+from orchestrator.roles.architect_dryrun import DryRunArchitectRunner
 
 
 _QWENDEA_SENTINEL = "QWENDEA-SENTINEL-a7f39c4"
 _RESPONSE_SENTINEL = "RESPONSE-SENTINEL-b21e8d6"
 
 
-def _sentinel_fake():
-    inner = _build_dry_run_llm()
-    inner_chat = inner.chat
+class _SentinelArchitectRunner(DryRunArchitectRunner):
+    """Injects the response sentinel into the architect's first assistant
+    text_part so raw-io.jsonl can be asserted on it end-to-end."""
 
-    def chat(messages, **kw):
-        response = inner_chat(messages, **kw)
-        return replace(response, reasoning=f"{_RESPONSE_SENTINEL} // {response.reasoning}")
-
-    inner.chat = chat  # type: ignore[assignment]
-    return inner
+    def run(self, prompt: str):
+        result = super().run(prompt)
+        msg = result.messages[0]
+        stamped = replace(msg, text_parts=[f"{_RESPONSE_SENTINEL} // {''.join(msg.text_parts)}"])
+        return replace(result, messages=[stamped])
 
 
 def test_raw_io_captures_prompts_and_responses_end_to_end(tmp_path: Path) -> None:
@@ -50,7 +51,13 @@ def test_raw_io_captures_prompts_and_responses_end_to_end(tmp_path: Path) -> Non
         architect_max_passes=2,
     )
 
-    Orchestrator(config=config, fake_llm=_sentinel_fake()).run()
+    state_for_runner = State(project_dir)
+    runners = {"architect": _SentinelArchitectRunner(state_for_runner)}
+    Orchestrator(
+        config=config,
+        fake_llm=_build_dry_run_llm(),
+        session_runners=runners,
+    ).run()
 
     path = raw_io_path(project_dir)
     assert path.exists(), "raw-io.jsonl was not written"
@@ -75,6 +82,6 @@ def test_raw_io_captures_prompts_and_responses_end_to_end(tmp_path: Path) -> Non
     assert len(set(request_ids)) == len(request_ids), "request_ids are not unique"
 
     prompt_hits = sum(1 for r in records if _QWENDEA_SENTINEL in json.dumps(r["messages"]))
-    response_hits = sum(1 for r in records if _RESPONSE_SENTINEL in (r.get("reasoning_content") or ""))
+    response_hits = sum(1 for r in records if _RESPONSE_SENTINEL in (r.get("response_content") or ""))
     assert prompt_hits >= 1, "at least one captured record should carry qwendea prompt content"
-    assert response_hits >= 1, "at least one captured record should carry response reasoning content"
+    assert response_hits >= 1, "at least one captured record should carry response content"

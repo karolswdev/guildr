@@ -125,6 +125,16 @@ class Orchestrator:
             runner = DryRunTesterRunner(self.state)
             self._session_runners[role] = runner
             return runner
+        if self._fake_llm is not None and role == "architect":
+            from orchestrator.roles.architect_dryrun import DryRunArchitectRunner
+            runner = DryRunArchitectRunner(self.state)
+            self._session_runners[role] = runner
+            return runner
+        if self._fake_llm is not None and role == "judge":
+            from orchestrator.roles.architect_dryrun import DryRunJudgeRunner
+            runner = DryRunJudgeRunner(self.state)
+            self._session_runners[role] = runner
+            return runner
         return None
 
     def _llm_for(self, role: str) -> Any:
@@ -438,16 +448,21 @@ class Orchestrator:
         phase_logger.handle(record)
 
     def _architect(self, *, phase_logger: logging.Logger | None = None) -> None:
-        """Run the Architect role."""
+        """Run the Architect role via opencode session runners (H6.3e)."""
         from orchestrator.roles.architect import Architect
 
-        llm = self._llm_for("architect")
-        if llm is None:
+        runner = self._session_runner_for("architect")
+        judge_runner = self._session_runner_for("judge")
+        if runner is None or judge_runner is None:
             raise PhaseFailure("architect")
 
-        architect = Architect(llm, self.state, self.config, _phase_logger=phase_logger)
-        # Architect.execute() writes sprint-plan.md itself and returns the
-        # path. Don't overwrite the file with the returned string.
+        architect = Architect(
+            runner=runner,
+            judge_runner=judge_runner,
+            state=self.state,
+            config=self.config,
+            _phase_logger=phase_logger,
+        )
         architect.execute()
 
     def _memory_refresh(

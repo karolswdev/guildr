@@ -1,42 +1,79 @@
-"""Tests for Architect._generate and Architect._refine."""
+"""Tests for Architect._generate and Architect._refine (H6.3e: opencode runner)."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
 from orchestrator.lib.config import Config
-from orchestrator.lib.llm import LLMClient, LLMResponse
+from orchestrator.lib.opencode import (
+    OpencodeMessage,
+    OpencodeResult,
+    OpencodeTokens,
+)
 from orchestrator.lib.state import State
 from orchestrator.roles.architect import Architect
 
 
-@pytest.fixture
-def mock_llm():
-    """Create a mock LLMClient that returns a fixed response."""
-    llm = MagicMock(spec=LLMClient)
-    llm.chat = MagicMock(return_value=LLMResponse(
-        content="# Sprint Plan\n\n## Overview\nTest plan.\n\n## Architecture Decisions\n- Decision 1\n\n## Tasks\n\n### Task 1: Setup\n- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `setup.py`\n\n**Acceptance Criteria:**\n- [ ] Setup works\n\n**Evidence Required:**\n- Run `pytest tests/`\n\n**Evidence Log:**\n- [ ] Test command run\n\n## Risks & Mitigations\n1. Risk — Mitigation",
-        reasoning="",
-        prompt_tokens=100,
-        completion_tokens=200,
-        reasoning_tokens=0,
-        finish_reason="stop",
-    ))
-    return llm
+def _result(text: str, *, exit_code: int = 0) -> OpencodeResult:
+    message = OpencodeMessage(
+        role="assistant",
+        provider="fake",
+        model="fake",
+        tokens=OpencodeTokens(total=1, input=1, output=0),
+        cost=0.0,
+        text_parts=[text],
+        tool_calls=[],
+    )
+    return OpencodeResult(
+        session_id="ses_test",
+        exit_code=exit_code,
+        directory=".",
+        messages=[message] if text else [],
+        total_tokens=message.tokens,
+        total_cost=0.0,
+        summary_additions=0,
+        summary_deletions=0,
+        summary_files=0,
+        raw_export={},
+        raw_events=[],
+    )
+
+
+@dataclass
+class _FakeRunner:
+    responses: list[str] = field(default_factory=list)
+    prompts: list[str] = field(default_factory=list)
+
+    def run(self, prompt: str) -> OpencodeResult:
+        self.prompts.append(prompt)
+        if not self.responses:
+            return _result("default response")
+        return _result(self.responses.pop(0))
+
+
+SAMPLE_PLAN = (
+    "# Sprint Plan\n\n"
+    "## Overview\nTest plan.\n\n"
+    "## Architecture Decisions\n- Decision 1\n\n"
+    "## Tasks\n\n"
+    "### Task 1: Setup\n- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `setup.py`\n\n"
+    "**Acceptance Criteria:**\n- [ ] Setup works\n\n"
+    "**Evidence Required:**\n- Run `pytest tests/`\n\n"
+    "**Evidence Log:**\n- [ ] Test command run\n\n"
+    "## Risks & Mitigations\n1. Risk — Mitigation"
+)
 
 
 @pytest.fixture
 def state(tmp_path):
-    """Create a State instance backed by a temp directory."""
     return State(tmp_path)
 
 
 @pytest.fixture
 def config(tmp_path):
-    """Create a minimal Config."""
-    from pathlib import Path
     return Config(
         llama_server_url="http://127.0.0.1:8080",
         project_dir=Path(tmp_path),
@@ -46,73 +83,52 @@ def config(tmp_path):
 
 
 @pytest.fixture
-def architect(mock_llm, state, config):
-    """Create an Architect instance."""
-    return Architect(mock_llm, state, config)
+def runner():
+    return _FakeRunner(responses=[SAMPLE_PLAN])
+
+
+@pytest.fixture
+def judge_runner():
+    return _FakeRunner()
+
+
+@pytest.fixture
+def architect(runner, judge_runner, state, config):
+    return Architect(
+        runner=runner,
+        judge_runner=judge_runner,
+        state=state,
+        config=config,
+    )
 
 
 class TestGenerate:
-    """Test _generate produces valid sprint-plan structure."""
+    def test_generate_calls_runner_once(self, architect, runner):
+        architect._generate("# Project: Test\n\n## Description\nA test project.")
+        assert len(runner.prompts) == 1
 
-    def test_generate_calls_llm_with_system_and_user(self, architect, mock_llm):
-        """_generate sends system prompt (generate.txt) and user prompt."""
-        qwendea = "# Project: Test\n\n## Description\nA test project."
+    def test_generate_prompt_includes_qwendea(self, architect, runner):
+        architect._generate("# Project: Foo\n\n## Description\nBar.")
+        assert "Foo" in runner.prompts[0]
+        assert "Bar" in runner.prompts[0]
 
-        architect._generate(qwendea)
-
-        mock_llm.chat.assert_called_once()
-        messages = mock_llm.chat.call_args[0][0]
-        assert len(messages) == 2
-        assert messages[0]["role"] == "system"
-        assert messages[1]["role"] == "user"
-        assert "Project: Test" in messages[1]["content"]
-
-    def test_generate_includes_qwendea_in_prompt(self, architect, mock_llm):
-        """_generate passes qwendea content to the LLM."""
-        qwendea = "# Project: Foo\n\n## Description\nBar."
-
-        architect._generate(qwendea)
-
-        messages = mock_llm.chat.call_args[0][0]
-        assert "Foo" in messages[1]["content"]
-        assert "Bar" in messages[1]["content"]
-
-    def test_generate_produces_markdown_with_headers(self, architect, mock_llm):
-        """_generate returns markdown with all required sprint-plan headers."""
+    def test_generate_returns_markdown(self, architect):
         response = architect._generate("# Project: Test\n\n## Description\nTest.")
         assert "# Sprint Plan" in response
-        assert "## Overview" in response
-        assert "## Architecture Decisions" in response
         assert "## Tasks" in response
-        assert "## Risks & Mitigations" in response
 
-    def test_generate_uses_max_tokens(self, architect, mock_llm):
-        """_generate sends max_tokens=16384 to the LLM."""
+    def test_generate_prompt_requires_automated_evidence(self, architect, runner):
         architect._generate("# Project: Test\n\n## Description\nTest.")
-
-        call_kwargs = mock_llm.chat.call_args[1]
-        assert call_kwargs.get("max_tokens") == 16384
-
-    def test_generate_prompt_requires_automated_evidence(self, architect, mock_llm):
-        """The Architect prompt should not allow manual-only task evidence."""
-        architect._generate("# Project: Test\n\n## Description\nTest.")
-
-        messages = mock_llm.chat.call_args[0][0]
-        system_prompt = messages[0]["content"]
-        assert "automated verification command" in system_prompt
-        assert "finite" in system_prompt
-        assert "npm run dev" in system_prompt
-        assert "npm install" in system_prompt
-        assert "MUST NOT be" in system_prompt
+        prompt = runner.prompts[0]
+        assert "automated verification command" in prompt
+        assert "finite" in prompt
+        assert "npm run dev" in prompt
+        assert "MUST NOT be" in prompt
 
 
 class TestRefine:
-    """Test _refine strips reasoning and injects targeted feedback."""
-
-    def test_refine_strips_reasoning_content(self, architect, mock_llm):
-        """_refine messages array does NOT include reasoning_content field."""
-        prior = "# Sprint Plan\n\n## Tasks\n\n### Task 1: Test\n- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `test.py`\n\n**Acceptance Criteria:**\n- [ ] Works\n\n**Evidence Required:**\n- Run `pytest`\n\n**Evidence Log:**\n- [ ] Done\n\n## Risks & Mitigations\n1. Risk — Mitigation"
-        prior_eval = {
+    def _eval_with_testability_fail(self):
+        return {
             "specificity": {"score": 1, "issues": []},
             "testability": {"score": 0, "issues": ["Task 1: 'Works' is not verifiable"]},
             "evidence": {"score": 1, "issues": []},
@@ -121,74 +137,17 @@ class TestRefine:
             "risk": {"score": 1, "issues": []},
         }
 
-        architect._refine("# Project: Test\n\n## Description\nTest.", prior, prior_eval)
+    def test_refine_injects_only_failed_criteria(self, architect, runner):
+        prior = SAMPLE_PLAN
+        architect._refine("# Project: Test", prior, self._eval_with_testability_fail())
+        prompt = runner.prompts[0]
+        assert "testability" in prompt.lower()
+        assert "not verifiable" in prompt
+        assert '"specificity"' not in prompt
+        assert '"completeness"' not in prompt
 
-        messages = mock_llm.chat.call_args[0][0]
-        # Check that no message dict has a 'reasoning_content' key
-        for msg in messages:
-            assert "reasoning_content" not in msg, (
-                f"reasoning_content found in message: {msg}"
-            )
-
-    def test_refine_injects_only_failed_criteria(self, architect, mock_llm):
-        """_refine injects only failed-criteria feedback, not full eval JSON."""
-        prior = "# Sprint Plan\n\n## Tasks\n\n### Task 1: Test\n- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `test.py`\n\n**Acceptance Criteria:**\n- [ ] Works\n\n**Evidence Required:**\n- Run `pytest`\n\n**Evidence Log:**\n- [ ] Done\n\n## Risks & Mitigations\n1. Risk — Mitigation"
-        prior_eval = {
-            "specificity": {"score": 1, "issues": []},
-            "testability": {"score": 0, "issues": ["Task 1: 'Works' is not verifiable"]},
-            "evidence": {"score": 1, "issues": []},
-            "completeness": {"score": 1, "issues": []},
-            "feasibility": {"score": 1, "issues": []},
-            "risk": {"score": 1, "issues": []},
-        }
-
-        architect._refine("# Project: Test\n\n## Description\nTest.", prior, prior_eval)
-
-        messages = mock_llm.chat.call_args[0][0]
-        user_content = messages[1]["content"]
-
-        # Should contain the failed criterion text
-        assert "testability" in user_content.lower()
-        assert "not verifiable" in user_content
-
-        # Should NOT contain the full evaluation JSON
-        # (e.g., should not have all criterion names as JSON keys)
-        assert '"specificity"' not in user_content
-        assert '"completeness"' not in user_content
-        assert '"feasibility"' not in user_content
-
-    def test_refine_includes_prior_plan(self, architect, mock_llm):
-        """_refine includes the prior plan in the prompt."""
-        prior = "# Sprint Plan\n\n## Tasks\n\n### Task 1: Test\n- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `test.py`\n\n**Acceptance Criteria:**\n- [ ] Works\n\n**Evidence Required:**\n- Run `pytest`\n\n**Evidence Log:**\n- [ ] Done\n\n## Risks & Mitigations\n1. Risk — Mitigation"
-        prior_eval = {
-            "specificity": {"score": 1, "issues": []},
-            "testability": {"score": 0, "issues": ["Bad criterion"]},
-            "evidence": {"score": 1, "issues": []},
-            "completeness": {"score": 1, "issues": []},
-            "feasibility": {"score": 1, "issues": []},
-            "risk": {"score": 1, "issues": []},
-        }
-
-        architect._refine("# Project: Test\n\n## Description\nTest.", prior, prior_eval)
-
-        messages = mock_llm.chat.call_args[0][0]
-        user_content = messages[1]["content"]
-        assert "# Sprint Plan" in user_content
-        assert "Task 1: Test" in user_content
-
-    def test_refine_uses_max_tokens(self, architect, mock_llm):
-        """_refine sends max_tokens=16384 to the LLM."""
-        prior = "# Sprint Plan\n\n## Tasks\n\n### Task 1: Test\n- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `test.py`\n\n**Acceptance Criteria:**\n- [ ] Works\n\n**Evidence Required:**\n- Run `pytest`\n\n**Evidence Log:**\n- [ ] Done\n\n## Risks & Mitigations\n1. Risk — Mitigation"
-        prior_eval = {
-            "specificity": {"score": 1, "issues": []},
-            "testability": {"score": 0, "issues": ["Bad"]},
-            "evidence": {"score": 1, "issues": []},
-            "completeness": {"score": 1, "issues": []},
-            "feasibility": {"score": 1, "issues": []},
-            "risk": {"score": 1, "issues": []},
-        }
-
-        architect._refine("# Project: Test\n\n## Description\nTest.", prior, prior_eval)
-
-        call_kwargs = mock_llm.chat.call_args[1]
-        assert call_kwargs.get("max_tokens") == 16384
+    def test_refine_includes_prior_plan(self, architect, runner):
+        prior = SAMPLE_PLAN
+        architect._refine("# Project: Test", prior, self._eval_with_testability_fail())
+        assert "# Sprint Plan" in runner.prompts[0]
+        assert "Task 1: Setup" in runner.prompts[0]

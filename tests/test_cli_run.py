@@ -110,18 +110,10 @@ def test_cmd_run_dry_run_succeeds(
     assert (project / "DEPLOY.md").exists()
 
 
-def test_dry_run_llm_dispatches_by_role() -> None:
-    """Regression guard: each role gets its own canned response shape."""
+def test_dry_run_llm_is_vanilla_fake() -> None:
+    """After H6.3e every shape-validating role rides a SessionRunner, so
+    the dry-run LLM is now just a FakeLLMClient with no content dispatch."""
+    from orchestrator.lib.llm_fake import FakeLLMClient
+
     fake = _build_dry_run_llm()
-
-    architect = fake.chat([{"role": "system", "content": "You are a senior software architect."}])
-    assert "Evidence Required:" in architect.content
-
-    judge = fake.chat([
-        {"role": "system", "content": "You are a skeptical senior engineering manager."}
-    ])
-    assert '"specificity"' in judge.content
-
-    # Coder / Tester / Reviewer / Deployer no longer go through fake_llm —
-    # each is driven by a SessionRunner (see *_dryrun.py) after H6.3a/b/c/d.
-    # Only architect + judge still ride this dispatch.
+    assert isinstance(fake, FakeLLMClient)

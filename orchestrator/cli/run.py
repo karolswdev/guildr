@@ -94,83 +94,20 @@ def _load_config(args: argparse.Namespace) -> Config:
     return cfg
 
 
-_DRY_RUN_SPRINT_PLAN = (
-    "# Sprint Plan (dry-run)\n\n"
-    "## Overview\n"
-    "Dry-run uses a single tiny slice that still preserves traceability.\n\n"
-    "## Memory Tiers\n"
-    "- **Global Memory:** dry-run stays self-contained and verifier-safe.\n"
-    "- **Sprint Memory:** produce one README artifact and verify it from the shell.\n"
-    "- **Task Packet Memory:** remember the target file, evidence command, and expected output.\n\n"
-    "## Traceability Matrix\n"
-    "- `REQ-1` -> Task 1\n"
-    "- `RISK-1` -> Task 1\n\n"
-    "## Architecture Decisions\n"
-    "- Keep dry-run self-contained.\n\n"
-    "## Tasks\n\n"
-    "### Task 1: bootstrap\n"
-    "- **Priority**: P0\n"
-    "- **Dependencies**: none\n"
-    "- **Files**: `README.md`\n\n"
-    "**Acceptance Criteria:**\n"
-    "- [ ] README exists\n\n"
-    "**Evidence Required:**\n"
-    "- Run `ls README.md`\n\n"
-    "**Evidence Log:** (filled by Coder, verified by Tester, committed by orchestrator)\n"
-    "- [ ] README.md check pending\n\n"
-    "**Implementation Notes:**\n"
-    "Source Requirements: `REQ-1`, `RISK-1`\n"
-    "Task Memory: Create README.md and keep verification bounded to a single ls command.\n"
-    "Determinism Notes: Only README.md may change; verifier expects README.md to exist.\n\n"
-    "## Risks & Mitigations\n"
-    "1. None - dry-run fixture only.\n"
-)
-
-_DRY_RUN_JUDGE_JSON = (
-    '{"specificity":{"score":1,"issues":[]},'
-    '"testability":{"score":1,"issues":[]},'
-    '"evidence":{"score":1,"issues":[]},'
-    '"completeness":{"score":1,"issues":[]},'
-    '"feasibility":{"score":1,"issues":[]},'
-    '"risk":{"score":1,"issues":[]}}'
-)
-
 def _build_dry_run_llm() -> object:
-    """Build a content-aware fake LLM for dry-run mode.
+    """Build a plain fake LLM for dry-run mode.
 
-    Different role calls have different output shape requirements
-    (markdown plan, strict JSON judge, file-list JSON for coder, etc.).
-    A flat role→response map collides because every call's last message
-    role is "user". So we dispatch on system-prompt content instead.
+    After H6.3a–e every SDLC role with a well-defined artifact shape
+    (architect, judge, coder, tester, reviewer, deployer) is driven by
+    an opencode SessionRunner and its own dry-run double. The only
+    roles still reaching ``self._fake_llm`` are persona_forum,
+    memory_refresh, and guru_escalation — none of which validate the
+    fake's content beyond "the call succeeded", so a vanilla
+    ``FakeLLMClient`` is enough.
     """
-    from orchestrator.lib.llm import LLMResponse
     from orchestrator.lib.llm_fake import FakeLLMClient
 
-    def _r(content: str) -> LLMResponse:
-        return LLMResponse(
-            content=content,
-            reasoning="",
-            prompt_tokens=0,
-            completion_tokens=max(1, len(content.split())),
-            reasoning_tokens=0,
-            finish_reason="stop",
-        )
-
-    class _ContentAwareFake(FakeLLMClient):
-        def chat(self, messages, **kw):  # type: ignore[override]
-            self.call_count += 1
-            sys_content = ""
-            for m in messages:
-                if m.get("role") == "system":
-                    sys_content = m.get("content", "")
-                    break
-            sys_lower = sys_content.lower()
-            # Order matters — check most specific markers first.
-            if "skeptical senior engineering manager" in sys_lower:
-                return _r(_DRY_RUN_JUDGE_JSON)
-            return _r(_DRY_RUN_SPRINT_PLAN)
-
-    return _ContentAwareFake()
+    return FakeLLMClient()
 
 
 def _build_opencode_session_runners(
@@ -192,8 +129,13 @@ def _build_opencode_session_runners(
     endpoints_by_name = {ep.name: ep for ep in endpoints_cfg.endpoints}  # type: ignore[attr-defined]
 
     runners: dict[str, object] = {}
-    for role in ("coder", "tester", "reviewer", "deployer"):
+    for role in ("architect", "judge", "coder", "tester", "reviewer", "deployer"):
         routes = endpoints_cfg.routing.get(role) or []  # type: ignore[attr-defined]
+        # Judge re-uses architect's routing by default — operators rarely
+        # declare a separate line for it and the rubric doubles as a
+        # smaller-model task on the same endpoint.
+        if not routes and role == "judge":
+            routes = endpoints_cfg.routing.get("architect") or []  # type: ignore[attr-defined]
         if not routes:
             continue
         entry = routes[0]

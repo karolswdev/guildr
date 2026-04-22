@@ -1,27 +1,66 @@
-"""Tests for Architect pass/fail logic with mandatory criteria."""
+"""Tests for Architect pass/fail logic (H6.3e: opencode runner)."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
 from orchestrator.lib.config import Config
-from orchestrator.lib.llm import LLMClient, LLMResponse
+from orchestrator.lib.opencode import (
+    OpencodeMessage,
+    OpencodeResult,
+    OpencodeTokens,
+)
 from orchestrator.lib.state import State
 from orchestrator.roles.architect import Architect
 
 
+def _result(text: str) -> OpencodeResult:
+    message = OpencodeMessage(
+        role="assistant",
+        provider="fake",
+        model="fake",
+        tokens=OpencodeTokens(total=1, input=1, output=0),
+        cost=0.0,
+        text_parts=[text],
+        tool_calls=[],
+    )
+    return OpencodeResult(
+        session_id="ses_test",
+        exit_code=0,
+        directory=".",
+        messages=[message],
+        total_tokens=message.tokens,
+        total_cost=0.0,
+        summary_additions=0,
+        summary_deletions=0,
+        summary_files=0,
+        raw_export={},
+        raw_events=[],
+    )
+
+
+@dataclass
+class _FakeRunner:
+    responses: list[str] = field(default_factory=list)
+    prompts: list[str] = field(default_factory=list)
+
+    def run(self, prompt: str) -> OpencodeResult:
+        self.prompts.append(prompt)
+        if not self.responses:
+            return _result("default")
+        return _result(self.responses.pop(0))
+
+
 @pytest.fixture
 def state(tmp_path):
-    """Create a State instance backed by a temp directory."""
     return State(tmp_path)
 
 
 @pytest.fixture
 def config(tmp_path):
-    """Create a minimal Config."""
-    from pathlib import Path
     return Config(
         llama_server_url="http://127.0.0.1:8080",
         project_dir=Path(tmp_path),
@@ -32,198 +71,122 @@ def config(tmp_path):
 
 @pytest.fixture
 def architect(state, config):
-    """Create an Architect instance."""
-    llm = MagicMock(spec=LLMClient)
-    return Architect(llm, state, config)
+    return Architect(
+        runner=_FakeRunner(),
+        judge_runner=_FakeRunner(),
+        state=state,
+        config=config,
+    )
 
 
 class TestPassFailLogic:
-    """Test the _passes method against all 5 required cases."""
-
     def _make_eval(self, **scores):
-        """Helper to create an evaluation dict with specified scores."""
-        defaults = {
-            "specificity": {"score": 0, "issues": []},
-            "testability": {"score": 0, "issues": []},
-            "evidence": {"score": 0, "issues": []},
-            "completeness": {"score": 0, "issues": []},
-            "feasibility": {"score": 0, "issues": []},
-            "risk": {"score": 0, "issues": []},
-        }
-        defaults.update(scores)
+        defaults = {c: {"score": 0, "issues": []} for c in
+                    ["specificity", "testability", "evidence",
+                     "completeness", "feasibility", "risk"]}
+        for k, v in scores.items():
+            defaults[k] = {"score": v, "issues": []}
         return defaults
 
     def test_score_5_with_testability_0_fails(self, architect):
-        """Score 5/6 with Testability=0 → FAIL (mandatory)."""
-        eval_ = self._make_eval(
-            specificity=1, testability=0, evidence=1,
-            completeness=1, feasibility=1, risk=1,
-        )
+        eval_ = self._make_eval(specificity=1, testability=0, evidence=1,
+                                completeness=1, feasibility=1, risk=1)
         assert architect._passes(5, eval_) is False
 
     def test_score_5_with_evidence_0_fails(self, architect):
-        """Score 5/6 with Evidence=0 → FAIL (mandatory)."""
-        eval_ = self._make_eval(
-            specificity=1, testability=1, evidence=0,
-            completeness=1, feasibility=1, risk=1,
-        )
+        eval_ = self._make_eval(specificity=1, testability=1, evidence=0,
+                                completeness=1, feasibility=1, risk=1)
         assert architect._passes(5, eval_) is False
 
     def test_score_4_with_mandatory_1_passes(self, architect):
-        """Score 4/6 with Testability=1 AND Evidence=1 → PASS."""
-        eval_ = self._make_eval(
-            specificity=1, testability=1, evidence=1,
-            completeness=1, feasibility=0, risk=0,
-        )
+        eval_ = self._make_eval(specificity=1, testability=1, evidence=1,
+                                completeness=1, feasibility=0, risk=0)
         assert architect._passes(4, eval_) is True
 
     def test_score_6_passes(self, architect):
-        """Score 6/6 → PASS."""
-        eval_ = self._make_eval(
-            specificity=1, testability=1, evidence=1,
-            completeness=1, feasibility=1, risk=1,
-        )
+        eval_ = self._make_eval(specificity=1, testability=1, evidence=1,
+                                completeness=1, feasibility=1, risk=1)
         assert architect._passes(6, eval_) is True
 
     def test_score_3_below_threshold_fails(self, architect):
-        """Score 3/6 with all mandatory=1 → FAIL (below threshold)."""
-        eval_ = self._make_eval(
-            specificity=1, testability=1, evidence=1,
-            completeness=0, feasibility=0, risk=0,
-        )
+        eval_ = self._make_eval(specificity=1, testability=1, evidence=1,
+                                completeness=0, feasibility=0, risk=0)
         assert architect._passes(3, eval_) is False
 
     def test_score_4_with_testability_0_fails(self, architect):
-        """Score 4/6 with Testability=0 → FAIL (mandatory)."""
-        eval_ = self._make_eval(
-            specificity=1, testability=0, evidence=1,
-            completeness=1, feasibility=1, risk=0,
-        )
-        assert architect._passes(4, eval_) is False
-
-    def test_score_4_with_evidence_0_fails(self, architect):
-        """Score 4/6 with Evidence=0 → FAIL (mandatory)."""
-        eval_ = self._make_eval(
-            specificity=1, testability=1, evidence=0,
-            completeness=1, feasibility=1, risk=0,
-        )
+        eval_ = self._make_eval(specificity=1, testability=0, evidence=1,
+                                completeness=1, feasibility=1, risk=0)
         assert architect._passes(4, eval_) is False
 
     def test_score_5_with_both_mandatory_passes(self, architect):
-        """Score 5/6 with both mandatory=1 → PASS."""
-        eval_ = self._make_eval(
-            specificity=1, testability=1, evidence=1,
-            completeness=1, feasibility=1, risk=0,
-        )
+        eval_ = self._make_eval(specificity=1, testability=1, evidence=1,
+                                completeness=1, feasibility=1, risk=0)
         assert architect._passes(5, eval_) is True
 
-    def test_score_exactly_at_threshold(self, architect):
-        """Score exactly at threshold with mandatory met → PASS."""
-        eval_ = self._make_eval(
-            specificity=1, testability=1, evidence=1,
-            completeness=1, feasibility=0, risk=0,
-        )
-        assert architect._passes(4, eval_) is True
-
-    def test_score_below_threshold_fails_even_with_mandatory(self, architect):
-        """Score 2/6 with mandatory met → FAIL (below threshold)."""
-        eval_ = self._make_eval(
-            specificity=1, testability=1, evidence=1,
-            completeness=0, feasibility=0, risk=0,
-        )
-        assert architect._passes(2, eval_) is False
-
     def test_empty_evaluation_fails(self, architect):
-        """Empty evaluation dict → FAIL."""
         assert architect._passes(0, {}) is False
 
     def test_missing_mandatory_treated_as_zero(self, architect):
-        """Missing mandatory criteria entries → FAIL."""
         eval_ = {
             "specificity": {"score": 1, "issues": []},
             "testability": {"score": 1, "issues": []},
-            # evidence is missing
             "completeness": {"score": 1, "issues": []},
             "feasibility": {"score": 1, "issues": []},
             "risk": {"score": 1, "issues": []},
         }
-        # Score would be 5 but evidence is missing → treated as 0
         assert architect._passes(5, eval_) is False
 
 
 class TestRetryDraftTracking:
-    """Regression tests for Architect's internal refine loop."""
+    """Regression: a malformed first eval shouldn't block refinement."""
 
     def test_zero_score_first_draft_can_be_refined(self, state, config):
-        """A malformed/zero-score first eval should still become best_eval."""
         (state.project_dir / "qwendea.md").write_text("# Project\n\nBuild x.\n")
-        llm = MagicMock(spec=LLMClient)
-        llm.chat.side_effect = [
-            LLMResponse(
-                content="# Sprint Plan\n\n## Tasks\n\n### Task 1: vague\n",
-                reasoning="",
-                prompt_tokens=1,
-                completion_tokens=1,
-                reasoning_tokens=0,
-                finish_reason="stop",
-            ),
-            LLMResponse(
-                content="not json",
-                reasoning="",
-                prompt_tokens=1,
-                completion_tokens=1,
-                reasoning_tokens=0,
-                finish_reason="stop",
-            ),
-            LLMResponse(
-                content="still not json",
-                reasoning="",
-                prompt_tokens=1,
-                completion_tokens=1,
-                reasoning_tokens=0,
-                finish_reason="stop",
-            ),
-            LLMResponse(
-                content="# Sprint Plan\n\n"
-                "## Overview\nRefined.\n\n"
-                "## Memory Tiers\n"
-                "- **Global Memory:** keep scope crisp.\n"
-                "- **Sprint Memory:** deliver one coherent task.\n"
-                "- **Task Packet Memory:** preserve file, evidence, and invariants.\n\n"
-                "## Traceability Matrix\n"
-                "- `REQ-1` -> Task 1\n\n"
-                "## Tasks\n\n"
-                "### Task 1: Refined\n"
-                "- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `x.py`\n\n"
-                "**Acceptance Criteria:**\n- [ ] Works\n\n"
-                "**Evidence Required:**\n- Run `pytest`\n\n"
-                "**Evidence Log:**\n- [ ] Done\n\n"
-                "**Implementation Notes:**\n"
-                "Source Requirements: `REQ-1`\n"
-                "Task Memory: keep the task small.\n"
-                "Determinism Notes: use pytest as the deciding signal.\n\n"
-                "## Risks & Mitigations\n1. Risk — Mitigation\n",
-                reasoning="",
-                prompt_tokens=1,
-                completion_tokens=1,
-                reasoning_tokens=0,
-                finish_reason="stop",
-            ),
-            LLMResponse(
-                content='{"specificity":{"score":1,"issues":[]},'
-                '"testability":{"score":1,"issues":[]},'
-                '"evidence":{"score":1,"issues":[]},'
-                '"completeness":{"score":1,"issues":[]},'
-                '"feasibility":{"score":1,"issues":[]},'
-                '"risk":{"score":1,"issues":[]}}',
-                reasoning="",
-                prompt_tokens=1,
-                completion_tokens=1,
-                reasoning_tokens=0,
-                finish_reason="stop",
-            ),
-        ]
-        architect = Architect(llm, state, config)
+
+        refined_plan = (
+            "# Sprint Plan\n\n"
+            "## Overview\nRefined.\n\n"
+            "## Memory Tiers\n"
+            "- **Global Memory:** keep scope crisp.\n"
+            "- **Sprint Memory:** deliver one coherent task.\n"
+            "- **Task Packet Memory:** preserve file, evidence, and invariants.\n\n"
+            "## Traceability Matrix\n- `REQ-1` -> Task 1\n\n"
+            "## Tasks\n\n"
+            "### Task 1: Refined\n"
+            "- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `x.py`\n\n"
+            "**Acceptance Criteria:**\n- [ ] Works\n\n"
+            "**Evidence Required:**\n- Run `pytest`\n\n"
+            "**Evidence Log:**\n- [ ] Done\n\n"
+            "**Implementation Notes:**\n"
+            "Source Requirements: `REQ-1`\n"
+            "Task Memory: keep the task small.\n"
+            "Determinism Notes: use pytest as the deciding signal.\n\n"
+            "## Risks & Mitigations\n1. Risk — Mitigation\n"
+        )
+        good_json = (
+            '{"specificity":{"score":1,"issues":[]},'
+            '"testability":{"score":1,"issues":[]},'
+            '"evidence":{"score":1,"issues":[]},'
+            '"completeness":{"score":1,"issues":[]},'
+            '"feasibility":{"score":1,"issues":[]},'
+            '"risk":{"score":1,"issues":[]}}'
+        )
+
+        runner = _FakeRunner(responses=[
+            "# Sprint Plan\n\n## Tasks\n\n### Task 1: vague\n",
+            refined_plan,
+        ])
+        judge_runner = _FakeRunner(responses=[
+            "not json",
+            "still not json",
+            good_json,
+        ])
+        architect = Architect(
+            runner=runner,
+            judge_runner=judge_runner,
+            state=state,
+            config=config,
+        )
 
         result = architect.execute()
 

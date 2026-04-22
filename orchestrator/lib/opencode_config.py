@@ -75,6 +75,65 @@ def build_opencode_config(cfg: EndpointsConfig) -> dict[str, Any]:
     return {
         "$schema": OPENCODE_CONFIG_SCHEMA_URL,
         "provider": providers,
+        "agent": build_agent_definitions(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Agent definitions (H6.3e)
+# ---------------------------------------------------------------------------
+
+# Tool surface opencode exposes today (from ``opencode agent create --help``):
+# bash, read, write, edit, glob, grep, webfetch, task, todowrite.
+_ALL_TOOLS = ("bash", "read", "write", "edit", "glob", "grep", "webfetch", "task", "todowrite")
+
+
+def _tools(**overrides: bool) -> dict[str, bool]:
+    """Start every tool disabled; flip the ones named in overrides."""
+    base = {tool: False for tool in _ALL_TOOLS}
+    base.update(overrides)
+    return base
+
+
+def build_agent_definitions() -> dict[str, Any]:
+    """Per-role opencode agents with explicit tool allowlists (H6.3e).
+
+    The architect and judge produce a text or JSON completion with no
+    tool calls — so every tool is disabled. Agent-driven roles keep the
+    minimal surface they actually need; nothing declared here grants
+    wider access than the H6.3a–d behaviour they replaced.
+    """
+    return {
+        "architect": {
+            "mode": "primary",
+            "description": "Produces sprint-plan.md from qwendea.md. Text output only.",
+            "tools": _tools(),
+        },
+        "judge": {
+            "mode": "primary",
+            "description": "Scores an architect sprint plan against the rubric. JSON output only.",
+            "tools": _tools(),
+        },
+        "coder": {
+            "mode": "primary",
+            "description": "Implements one sprint-plan task per session; reads + writes project files.",
+            "tools": _tools(read=True, write=True, edit=True, glob=True, grep=True),
+        },
+        "tester": {
+            "mode": "primary",
+            "description": "Runs each task's Evidence Required commands and emits TEST_REPORT.md.",
+            "tools": _tools(bash=True, read=True, glob=True, grep=True),
+        },
+        "reviewer": {
+            "mode": "primary",
+            "description": "Reads the diff + test report, emits a verdict. Read-only.",
+            "tools": _tools(read=True, glob=True, grep=True),
+        },
+        "deployer": {
+            "mode": "primary",
+            "description": "Produces DEPLOY.md from detected deploy configs + env vars. Read-only.",
+            "tools": _tools(read=True, glob=True, grep=True),
+        },
     }
 
 

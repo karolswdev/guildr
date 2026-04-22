@@ -38,7 +38,7 @@ _EXPECTED_GATES = ("approve_sprint_plan", "approve_review")
 # H6.3a–d; each emits via ``emit_session_audit`` which mirrors the opencode
 # session into raw-io.jsonl + usage.jsonl. Architect still uses the direct
 # LLMClient path.
-_EXPECTED_ROLES = {"architect", "coder", "tester", "reviewer", "deployer"}
+_EXPECTED_ROLES = {"architect", "judge", "coder", "tester", "reviewer", "deployer"}
 
 
 def _wait_for(predicate, timeout: float = 30.0, interval: float = 0.05) -> bool:
