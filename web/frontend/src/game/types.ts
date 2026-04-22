@@ -177,6 +177,28 @@ export type LoopSnapshot = {
   lastLoopEvent: RunEvent | null;
 };
 
+export type DemoPlan = {
+  demoId: string;
+  status: "planned" | "skipped";
+  adapter: string;
+  confidence: string;
+  reason: string;
+  taskId: string | null;
+  atomId: string | null;
+  startCommand: string;
+  testCommand: string;
+  specPath: string;
+  route: string;
+  viewports: string[];
+  capturePolicy: string[];
+  sourceRefs: string[];
+  artifactRefs: string[];
+  wakeUpHash: string | null;
+  memoryRefs: string[];
+  lastEvent: RunEvent | null;
+  raw: Record<string, unknown>;
+};
+
 export type EngineSnapshot = {
   projectId: string;
   runId: string | null;
@@ -190,6 +212,8 @@ export type EngineSnapshot = {
   latestDigest: NarrativeDigest | null;
   discussion: DiscussionEntry[];
   discussionHighlights: DiscussionHighlight[];
+  demos: DemoPlan[];
+  latestDemo: DemoPlan | null;
   pendingIntents: Record<string, OperatorIntentState>;
   appliedIntents: Record<string, OperatorIntentState>;
   ignoredIntents: Record<string, OperatorIntentState>;

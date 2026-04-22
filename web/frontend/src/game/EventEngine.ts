@@ -5,6 +5,7 @@ import type {
   CostBucket,
   CostSnapshot,
   CostSource,
+  DemoPlan,
   DiscussionEntry,
   DiscussionHighlight,
   EngineSnapshot,
@@ -38,6 +39,7 @@ export class EventEngine {
   private digests: NarrativeDigest[] = [];
   private discussion: DiscussionEntry[] = [];
   private discussionHighlights: DiscussionHighlight[] = [];
+  private demos: DemoPlan[] = [];
   private pendingIntents: Record<string, OperatorIntentState> = {};
   private appliedIntents: Record<string, OperatorIntentState> = {};
   private ignoredIntents: Record<string, OperatorIntentState> = {};
@@ -127,6 +129,7 @@ export class EventEngine {
     this.digests = [];
     this.discussion = [];
     this.discussionHighlights = [];
+    this.demos = [];
     this.pendingIntents = {};
     this.appliedIntents = {};
     this.ignoredIntents = {};
@@ -160,6 +163,7 @@ export class EventEngine {
     this.digests = [];
     this.discussion = [];
     this.discussionHighlights = [];
+    this.demos = [];
     this.pendingIntents = {};
     this.appliedIntents = {};
     this.ignoredIntents = {};
@@ -192,6 +196,8 @@ export class EventEngine {
       latestDigest: this.digests.length > 0 ? cloneNarrativeDigest(this.digests[this.digests.length - 1]) : null,
       discussion: this.discussion.map(cloneDiscussionEntry),
       discussionHighlights: this.discussionHighlights.map(cloneDiscussionHighlight),
+      demos: this.demos.map(cloneDemoPlan),
+      latestDemo: this.demos.length > 0 ? cloneDemoPlan(this.demos[this.demos.length - 1]) : null,
       pendingIntents: cloneIntentMap(this.pendingIntents),
       appliedIntents: cloneIntentMap(this.appliedIntents),
       ignoredIntents: cloneIntentMap(this.ignoredIntents),
@@ -227,6 +233,7 @@ export class EventEngine {
     this.digests = [];
     this.discussion = [];
     this.discussionHighlights = [];
+    this.demos = [];
     this.pendingIntents = {};
     this.appliedIntents = {};
     this.ignoredIntents = {};
@@ -347,6 +354,9 @@ export class EventEngine {
     }
     if (type === "discussion_highlight_created") {
       this.applyDiscussionHighlight(event);
+    }
+    if (type === "demo_planned" || type === "demo_skipped") {
+      this.applyDemoEvent(event, type === "demo_planned" ? "planned" : "skipped");
     }
     if (type === "operator_intent") {
       this.applyOperatorIntent(event);
@@ -625,6 +635,41 @@ export class EventEngine {
     }
   }
 
+  private applyDemoEvent(event: RunEvent, status: "planned" | "skipped"): void {
+    const plan = objectValue(event.plan);
+    const demoId = key(event.demo_id ?? plan.demo_id, "");
+    if (!demoId) {
+      return;
+    }
+    const next: DemoPlan = {
+      demoId,
+      status,
+      adapter: key(event.adapter ?? plan.adapter, "playwright_web"),
+      confidence: key(event.confidence ?? plan.confidence, "not_demoable"),
+      reason: key(event.reason ?? plan.reason, ""),
+      taskId: stringOrNull(event.task_id ?? plan.task_id),
+      atomId: stringOrNull(event.atom_id ?? plan.atom_id),
+      startCommand: key(event.start_command ?? plan.start_command, ""),
+      testCommand: key(event.test_command ?? plan.test_command, ""),
+      specPath: key(event.spec_path ?? plan.spec_path, ""),
+      route: key(event.route ?? plan.route, ""),
+      viewports: arrayOfStrings(event.viewports ?? plan.viewports),
+      capturePolicy: arrayOfStrings(event.capture_policy ?? plan.capture_policy),
+      sourceRefs: arrayOfStrings(event.source_refs),
+      artifactRefs: arrayOfStrings(event.artifact_refs),
+      wakeUpHash: stringOrNull(event.wake_up_hash),
+      memoryRefs: arrayOfStrings(event.memory_refs),
+      lastEvent: event,
+      raw: { ...plan },
+    };
+    const index = this.demos.findIndex((item) => item.demoId === demoId);
+    if (index >= 0) {
+      this.demos[index] = next;
+    } else {
+      this.demos.push(next);
+    }
+  }
+
   private applyOperatorIntent(event: RunEvent): void {
     const clientIntentId = intentClientId(event);
     if (!clientIntentId) {
@@ -895,6 +940,19 @@ function cloneDiscussionHighlight(highlight: DiscussionHighlight): DiscussionHig
     artifactRefs: [...highlight.artifactRefs],
     lastEvent: highlight.lastEvent ? { ...highlight.lastEvent } : null,
     raw: { ...highlight.raw },
+  };
+}
+
+function cloneDemoPlan(plan: DemoPlan): DemoPlan {
+  return {
+    ...plan,
+    viewports: [...plan.viewports],
+    capturePolicy: [...plan.capturePolicy],
+    sourceRefs: [...plan.sourceRefs],
+    artifactRefs: [...plan.artifactRefs],
+    memoryRefs: [...plan.memoryRefs],
+    lastEvent: plan.lastEvent ? { ...plan.lastEvent } : null,
+    raw: { ...plan.raw },
   };
 }
 

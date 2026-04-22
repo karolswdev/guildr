@@ -55,6 +55,9 @@ NARRATOR_SIDECAR_COMPLETED: Final = "narrator_sidecar_completed"
 ATOM_STARTED: Final = "atom_started"
 ATOM_COMPLETED: Final = "atom_completed"
 
+DEMO_PLANNED: Final = "demo_planned"
+DEMO_SKIPPED: Final = "demo_skipped"
+
 EVENT_TYPES: frozenset[str] = frozenset({
     RUN_STARTED,
     RUN_COMPLETE,
@@ -95,6 +98,8 @@ EVENT_TYPES: frozenset[str] = frozenset({
     NARRATOR_SIDECAR_COMPLETED,
     ATOM_STARTED,
     ATOM_COMPLETED,
+    DEMO_PLANNED,
+    DEMO_SKIPPED,
 })
 
 

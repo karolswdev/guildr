@@ -38,6 +38,8 @@ export const RUN_EVENT_TYPES = [
   "narrator_sidecar_completed",
   "atom_started",
   "atom_completed",
+  "demo_planned",
+  "demo_skipped",
 ] as const;
 
 export type RunEventType = typeof RUN_EVENT_TYPES[number];

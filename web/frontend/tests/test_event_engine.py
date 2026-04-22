@@ -461,6 +461,66 @@ def test_discussion_replay_fold(tmp_path: Path) -> None:
     )
 
 
+def test_demo_events_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: 'evt-demo-plan',
+            type: 'demo_planned',
+            demo_id: 'demo_abc',
+            adapter: 'playwright_web',
+            confidence: 'explicit_playwright',
+            reason: 'acceptance text requested a Playwright demo',
+            task_id: 'task-001',
+            atom_id: 'implementation',
+            test_command: 'npx playwright test web/frontend/tests/demo/game-map.spec.ts',
+            spec_path: 'web/frontend/tests/demo/game-map.spec.ts',
+            route: '/game',
+            viewports: ['mobile'],
+            capture_policy: ['gif', 'webm', 'trace', 'screenshot'],
+            source_refs: ['event:evt-phase-1'],
+            artifact_refs: [],
+            wake_up_hash: 'hash-a10',
+            memory_refs: ['.orchestrator/memory/wake-up.md'],
+          },
+          {
+            event_id: 'evt-demo-skip',
+            type: 'demo_skipped',
+            demo_id: 'demo_xyz',
+            adapter: 'playwright_web',
+            confidence: 'not_demoable',
+            reason: 'no runnable visual surface detected',
+            task_id: 'task-002',
+            source_refs: ['event:evt-phase-2'],
+            artifact_refs: [],
+            wake_up_hash: null,
+            memory_refs: [],
+          },
+        ]);
+        const snapshot = engine.snapshot();
+        assert.equal(snapshot.demos.length, 2);
+        assert.equal(snapshot.demos[0].status, 'planned');
+        assert.equal(snapshot.demos[0].adapter, 'playwright_web');
+        assert.equal(snapshot.demos[0].route, '/game');
+        assert.deepEqual(snapshot.demos[0].viewports, ['mobile']);
+        assert.equal(snapshot.demos[0].wakeUpHash, 'hash-a10');
+        assert.equal(snapshot.demos[1].status, 'skipped');
+        assert.equal(snapshot.demos[1].confidence, 'not_demoable');
+        assert.equal(snapshot.latestDemo.demoId, 'demo_xyz');
+
+        engine.scrubTo(0);
+        const replay = engine.snapshot();
+        assert.equal(replay.demos.length, 1);
+        assert.equal(replay.latestDemo.demoId, 'demo_abc');
+        """,
+    )
+
+
 def test_narrative_and_discussion_provenance_fold(tmp_path: Path) -> None:
     run_engine_script(
         tmp_path,
