@@ -119,8 +119,11 @@ class TestRunOrder:
         # Mock the roles to track call order
         call_order = []
 
-        def mock_architect():
-            call_order.append("architect")
+        def mock_architect_plan():
+            call_order.append("architect_plan")
+
+        def mock_architect_refine():
+            call_order.append("architect_refine")
 
         def mock_persona_forum():
             call_order.append("persona_forum")
@@ -154,7 +157,8 @@ class TestRunOrder:
 
         # Patch role methods
         orchestrator._persona_forum = mock_persona_forum
-        orchestrator._architect = mock_architect
+        orchestrator._architect_plan = mock_architect_plan
+        orchestrator._architect_refine = mock_architect_refine
         orchestrator._micro_task_breakdown = mock_micro_task_breakdown
         orchestrator._coder = mock_coder
         orchestrator._tester = mock_tester
@@ -166,7 +170,8 @@ class TestRunOrder:
 
         assert call_order == [
             "persona_forum",
-            "architect",
+            "architect_plan",
+            "architect_refine",
             "micro_task_breakdown",
             "implementation",
             "testing",
@@ -200,6 +205,8 @@ class TestRunOrder:
         orchestrator._gate = MagicMock()
         orchestrator._persona_forum = MagicMock()
         orchestrator._architect = MagicMock()
+        orchestrator._architect_plan = MagicMock()
+        orchestrator._architect_refine = MagicMock()
         orchestrator._micro_task_breakdown = MagicMock()
         orchestrator._coder = MagicMock()
         orchestrator._tester = MagicMock()
@@ -238,6 +245,8 @@ class TestRunOrder:
         orchestrator._gate = MagicMock()
         orchestrator._persona_forum = MagicMock()
         orchestrator._architect = MagicMock()
+        orchestrator._architect_plan = MagicMock()
+        orchestrator._architect_refine = MagicMock()
         orchestrator._micro_task_breakdown = MagicMock()
         orchestrator._coder = MagicMock()
         orchestrator._tester = MagicMock()

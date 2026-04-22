@@ -190,6 +190,8 @@ class TestDryRunIntegration:
 
         orchestrator._persona_forum = MagicMock()
         orchestrator._architect = mock_architect
+        orchestrator._architect_plan = mock_architect
+        orchestrator._architect_refine = MagicMock()
         orchestrator._micro_task_breakdown = MagicMock()
         orchestrator._coder = MagicMock()
         orchestrator._tester = MagicMock()
@@ -277,6 +279,8 @@ class TestDryRunIntegration:
 
         orchestrator._persona_forum = MagicMock()
         orchestrator._architect = mock_architect
+        orchestrator._architect_plan = mock_architect
+        orchestrator._architect_refine = MagicMock()
         orchestrator._micro_task_breakdown = MagicMock()
         orchestrator._coder = mock_coder
         orchestrator._tester = mock_tester
@@ -356,6 +360,8 @@ class TestZeroRealCalls:
         orchestrator._gate = MagicMock()
         orchestrator._persona_forum = MagicMock()
         orchestrator._architect = MagicMock()
+        orchestrator._architect_plan = MagicMock()
+        orchestrator._architect_refine = MagicMock()
         orchestrator._micro_task_breakdown = MagicMock()
         orchestrator._coder = MagicMock()
         orchestrator._tester = MagicMock()

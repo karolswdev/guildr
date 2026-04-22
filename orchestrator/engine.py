@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from orchestrator.lib.config import Config
 from orchestrator.lib.logger import setup_phase_logger
+from orchestrator.lib.loop_refs import refs_for_phase
 from orchestrator.lib.loops import emit_loop_event, loop_stage_for_step
 from orchestrator.lib.state import State
 from orchestrator.lib.workflow import enabled_steps
@@ -192,6 +193,7 @@ class Orchestrator:
                 "loop_entered",
                 step=name,
                 attempt=attempt,
+                **refs_for_phase(name, self.state, include_outputs=False),
             )
             phase_logger = self._make_phase_logger(name)
             self._log_phase_event(
@@ -211,6 +213,7 @@ class Orchestrator:
                     step=name,
                     error=str(e),
                     attempt=attempt,
+                    **refs_for_phase(name, self.state, include_outputs=False),
                 )
                 self._log_phase_event(
                     phase_logger,
@@ -230,6 +233,7 @@ class Orchestrator:
                     "loop_completed",
                     step=name,
                     attempt=attempt,
+                    **refs_for_phase(name, self.state, include_outputs=True),
                 )
                 self._log_phase_event(
                     phase_logger,
@@ -250,6 +254,7 @@ class Orchestrator:
                 loop_stage=stage,
                 attempt=attempt,
                 reason="validator_failed",
+                **refs_for_phase(name, self.state, include_outputs=True),
             )
             emit_loop_event(
                 self._events_obj,
@@ -258,6 +263,7 @@ class Orchestrator:
                 loop_stage="repair",
                 attempt=attempt + 1,
                 reason="validator_failed",
+                **refs_for_phase(name, self.state, include_outputs=False),
             )
             self._events_obj.emit("phase_retry", name=name, attempt=attempt + 1)
             next_attempt = min(attempt + 2, self.config.max_retries)
@@ -280,6 +286,8 @@ class Orchestrator:
             "memory_refresh": self._memory_refresh,
             "persona_forum": self._persona_forum,
             "architect": self._architect,
+            "architect_plan": self._architect_plan,
+            "architect_refine": self._architect_refine,
             "micro_task_breakdown": self._micro_task_breakdown,
             "implementation": self._coder,
             "testing": self._tester,
@@ -295,6 +303,15 @@ class Orchestrator:
     def _run_gate_or_checkpoint(self, step: dict[str, Any]) -> None:
         handler = step["handler"]
         if step["type"] == "gate":
+            if handler == "approve_plan_draft" and self._plan_draft_auto_approved():
+                logger.info(
+                    "Gate 'approve_plan_draft' auto-approved (pass-1 plan already passed rubric)"
+                )
+                self._gate_registry_obj.decide(handler, "approved")
+                self.state.gates_approved[handler] = True
+                self.state.save()
+                self._events_obj.emit("gate_decided", gate=handler, decision="approved")
+                return
             self._gate(handler)
             return
         if handler == "operator_checkpoint":
@@ -320,6 +337,7 @@ class Orchestrator:
 
         validators = {
             "architect": validate_architect,
+            "architect_refine": validate_architect,
             "implementation": validate_implementation,
             "testing": validate_testing,
             "review": validate_review,
@@ -447,23 +465,53 @@ class Orchestrator:
             setattr(record, key, value)
         phase_logger.handle(record)
 
-    def _architect(self, *, phase_logger: logging.Logger | None = None) -> None:
-        """Run the Architect role via opencode session runners (H6.3e)."""
+    def _build_architect(
+        self, phase: str, phase_logger: logging.Logger | None
+    ) -> Any:
         from orchestrator.roles.architect import Architect
 
         runner = self._session_runner_for("architect")
         judge_runner = self._session_runner_for("judge")
         if runner is None or judge_runner is None:
-            raise PhaseFailure("architect")
+            raise PhaseFailure(phase)
 
-        architect = Architect(
+        return Architect(
             runner=runner,
             judge_runner=judge_runner,
             state=self.state,
             config=self.config,
             _phase_logger=phase_logger,
+            _phase=phase,
         )
-        architect.execute()
+
+    def _architect(self, *, phase_logger: logging.Logger | None = None) -> None:
+        """Legacy combined architect phase (plan + refine in one step)."""
+        self._build_architect("architect", phase_logger).execute()
+
+    def _architect_plan(self, *, phase_logger: logging.Logger | None = None) -> None:
+        """Run architect pass 1 only (H6.5). Stashes draft + status for
+        ``approve_plan_draft`` gate and the ``architect_refine`` phase."""
+        self._build_architect("architect_plan", phase_logger).plan()
+
+    def _plan_draft_auto_approved(self) -> bool:
+        """True when pass-1 already produced sprint-plan.md — skip gate."""
+        import json as _json
+
+        status_path = (
+            self.state.project_dir / ".orchestrator" / "drafts" / "architect-plan-status.json"
+        )
+        if not status_path.exists():
+            return False
+        try:
+            status = _json.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        return status.get("status") == "done"
+
+    def _architect_refine(self, *, phase_logger: logging.Logger | None = None) -> None:
+        """Run architect refinement passes (H6.5). No-op when pass 1
+        already produced sprint-plan.md."""
+        self._build_architect("architect_refine", phase_logger).refine()
 
     def _memory_refresh(
         self,

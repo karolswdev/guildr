@@ -12,6 +12,8 @@ PHASE_HANDLERS = (
     "memory_refresh",
     "persona_forum",
     "architect",
+    "architect_plan",
+    "architect_refine",
     "micro_task_breakdown",
     "implementation",
     "testing",
@@ -19,7 +21,7 @@ PHASE_HANDLERS = (
     "review",
     "deployment",
 )
-GATE_HANDLERS = ("approve_sprint_plan", "approve_review")
+GATE_HANDLERS = ("approve_plan_draft", "approve_sprint_plan", "approve_review")
 CHECKPOINT_HANDLERS = ("operator_checkpoint",)
 SUPPORTED_HANDLERS = PHASE_HANDLERS + GATE_HANDLERS + CHECKPOINT_HANDLERS
 
@@ -44,10 +46,24 @@ DEFAULT_WORKFLOW: list[dict[str, Any]] = [
         },
     },
     {
-        "id": "architect",
-        "title": "Architect",
+        "id": "architect_plan",
+        "title": "Architect — Plan (pass 1)",
         "type": "phase",
-        "handler": "architect",
+        "handler": "architect_plan",
+        "enabled": True,
+    },
+    {
+        "id": "approve_plan_draft",
+        "title": "Approve Plan Draft",
+        "type": "gate",
+        "handler": "approve_plan_draft",
+        "enabled": True,
+    },
+    {
+        "id": "architect_refine",
+        "title": "Architect — Refine",
+        "type": "phase",
+        "handler": "architect_refine",
         "enabled": True,
     },
     {
@@ -160,8 +176,11 @@ def validate_workflow(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ids = [step["id"] for step in normalized]
     if len(ids) != len(set(ids)):
         raise ValueError("Workflow step ids must be unique")
-    if "architect" not in ids:
-        raise ValueError("Workflow must include an 'architect' step")
+    if "architect" not in ids and "architect_plan" not in ids:
+        raise ValueError(
+            "Workflow must include an 'architect' step (or the split "
+            "'architect_plan' + 'architect_refine' pair)"
+        )
     if "deployment" not in ids:
         raise ValueError("Workflow must include a 'deployment' step")
     return normalized
@@ -171,12 +190,26 @@ def default_workflow() -> list[dict[str, Any]]:
     return deepcopy(DEFAULT_WORKFLOW)
 
 
+_H6_5_SPLIT_STEP_IDS = frozenset({
+    "architect_plan",
+    "approve_plan_draft",
+    "architect_refine",
+})
+
+
 def _merge_missing_default_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Insert newly introduced default steps into legacy saved workflows."""
     merged = list(steps)
     ids = {step["id"] for step in merged}
+    # H6.5 compat: if a legacy workflow still uses the combined 'architect'
+    # step, don't splice in the new plan/approve/refine trio alongside it —
+    # that would double-run the role. Operators opt into the split by
+    # replacing 'architect' with the three new steps explicitly.
+    legacy_architect_present = "architect" in ids
     for index, default_step in enumerate(default_workflow()):
         if default_step["id"] in ids:
+            continue
+        if legacy_architect_present and default_step["id"] in _H6_5_SPLIT_STEP_IDS:
             continue
         insert_at = len(merged)
         for later_default in DEFAULT_WORKFLOW[index + 1:]:

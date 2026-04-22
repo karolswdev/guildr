@@ -13,6 +13,8 @@ PHASES = (
     "memory_refresh",
     "persona_forum",
     "architect",
+    "architect_plan",
+    "architect_refine",
     "micro_task_breakdown",
     "implementation",
     "testing",
@@ -20,11 +22,14 @@ PHASES = (
     "review",
     "deployment",
 )
-GATES = ("approve_sprint_plan", "approve_review")
+GATES = ("approve_plan_draft", "approve_sprint_plan", "approve_review")
 RUN_STEPS = (
     "memory_refresh",
     "persona_forum",
     "architect",
+    "architect_plan",
+    "approve_plan_draft",
+    "architect_refine",
     "approve_sprint_plan",
     "micro_task_breakdown",
     "implementation",

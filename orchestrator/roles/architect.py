@@ -67,27 +67,77 @@ class Architect:
     # -- public API ----------------------------------------------------------
 
     def execute(self) -> str:
+        """Legacy single-phase entry point: plan + refine back-to-back.
+
+        Kept for workflow.json files still pinning the combined
+        ``architect`` handler. The H6.5 default workflow instead calls
+        ``plan()``, fires the ``approve_plan_draft`` gate, then calls
+        ``refine()`` — with a human decision point between the two.
+        """
+        status = self.plan()
+        if status["status"] == "done":
+            return "sprint-plan.md"
+        return self.refine()
+
+    def plan(self) -> dict[str, Any]:
+        """Run pass 1 only: generate + judge.
+
+        If the first draft passes the rubric, writes ``sprint-plan.md``
+        and stashes a status file flagged ``done``. Otherwise writes the
+        draft + eval under ``.orchestrator/drafts/`` and stashes the
+        status as ``needs_refine`` so ``refine()`` can pick up where we
+        left off in a later phase.
+        """
         qwendea = self.state.read_file("qwendea.md")
+        plan = self._generate(qwendea)
+        score, evaluation = self._self_evaluate(qwendea, plan)
 
-        best_plan: str | None = None
-        best_score = 0
-        best_eval: dict[str, Any] | None = None
-        drafts: list[tuple[str, int, dict[str, Any]]] = []
+        if self._passes(score, evaluation):
+            self.state.write_file("sprint-plan.md", plan)
+            status = {"status": "done", "score": score, "pass_num": 1}
+            self._write_plan_status(status)
+            return status
 
-        for pass_num in range(1, self.config.architect_max_passes + 1):
-            if pass_num == 1:
-                plan = self._generate(qwendea)
-            else:
-                plan = self._refine(qwendea, best_plan, best_eval)
+        self._write_draft(1, plan, evaluation)
+        status = {
+            "status": "needs_refine",
+            "score": score,
+            "pass_num": 1,
+            "best_draft": "architect-pass-1.md",
+            "best_eval": "architect-pass-1-eval.json",
+        }
+        self._write_plan_status(status)
+        return status
 
+    def refine(self) -> str:
+        """Run passes 2..max_passes if ``plan()`` flagged needs_refine.
+
+        No-op when the status file is missing or already ``done``.
+        Escalates (and raises ``ArchitectFailure``) when every pass fails
+        the rubric.
+        """
+        status = self._read_plan_status()
+        if status is None or status.get("status") == "done":
+            return "sprint-plan.md"
+
+        qwendea = self.state.read_file("qwendea.md")
+        drafts = self._load_saved_drafts(status)
+        best_plan, best_score, best_eval = drafts[-1]
+
+        for pass_num in range(2, self.config.architect_max_passes + 1):
+            plan = self._refine(qwendea, best_plan, best_eval)
             score, evaluation = self._self_evaluate(qwendea, plan)
             drafts.append((plan, score, evaluation))
+            self._write_draft(pass_num, plan, evaluation)
 
             if self._passes(score, evaluation):
                 self.state.write_file("sprint-plan.md", plan)
+                self._write_plan_status(
+                    {"status": "done", "score": score, "pass_num": pass_num}
+                )
                 return "sprint-plan.md"
 
-            if best_eval is None or score > best_score:
+            if score > best_score:
                 best_plan = plan
                 best_score = score
                 best_eval = evaluation
@@ -97,6 +147,55 @@ class Architect:
             f"Architect failed after {self.config.architect_max_passes} "
             f"passes (best score: {best_score}/6)"
         )
+
+    # -- plan/refine status + draft persistence ------------------------------
+
+    def _plan_status_path(self) -> Path:
+        return self.state.project_dir / ".orchestrator" / "drafts" / "architect-plan-status.json"
+
+    def _write_plan_status(self, status: dict[str, Any]) -> None:
+        path = self._plan_status_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(status, indent=2), encoding="utf-8")
+
+    def _read_plan_status(self) -> dict[str, Any] | None:
+        path = self._plan_status_path()
+        if not path.exists():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+    def _write_draft(self, pass_num: int, plan: str, evaluation: dict[str, Any]) -> None:
+        drafts_dir = self.state.project_dir / ".orchestrator" / "drafts"
+        drafts_dir.mkdir(parents=True, exist_ok=True)
+        (drafts_dir / f"architect-pass-{pass_num}.md").write_text(plan, encoding="utf-8")
+        (drafts_dir / f"architect-pass-{pass_num}-eval.json").write_text(
+            json.dumps(evaluation, indent=2), encoding="utf-8"
+        )
+
+    def _load_saved_drafts(
+        self, status: dict[str, Any]
+    ) -> list[tuple[str, int, dict[str, Any]]]:
+        drafts_dir = self.state.project_dir / ".orchestrator" / "drafts"
+        drafts: list[tuple[str, int, dict[str, Any]]] = []
+        pass_num = 1
+        while True:
+            plan_path = drafts_dir / f"architect-pass-{pass_num}.md"
+            eval_path = drafts_dir / f"architect-pass-{pass_num}-eval.json"
+            if not plan_path.exists() or not eval_path.exists():
+                break
+            plan = plan_path.read_text(encoding="utf-8")
+            evaluation = json.loads(eval_path.read_text(encoding="utf-8"))
+            score, _ = self._compute_score(evaluation)
+            drafts.append((plan, score, evaluation))
+            pass_num += 1
+        if not drafts:
+            raise ArchitectFailure(
+                "refine() called but no architect-pass-N.md drafts found on disk"
+            )
+        return drafts
 
     # -- generation ----------------------------------------------------------
 

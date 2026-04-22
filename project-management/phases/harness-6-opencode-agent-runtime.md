@@ -183,4 +183,81 @@ integration test expectations, update the dry-run fixture.
 
 ## Evidence log
 
-Append here as tasks land.
+- 2026-04-21 — H6.5 shipped. Audit first confirmed the load-bearing
+  H6.5 invariant was already structurally satisfied (gates only fire
+  between phases via `engine._run_gate_or_checkpoint`; no role's
+  `execute()` touches the gate registry; `SessionRunner.run()` calls
+  are all one-shot so there is no mid-session pause point to protect).
+  On top of the audit, the architect two-pass loop was split into two
+  engine phases with a human gate between. Landing points:
+  `orchestrator/roles/architect.py` now exposes `plan()` (pass 1 only —
+  generate + judge; writes `sprint-plan.md` if rubric passes, otherwise
+  `.orchestrator/drafts/architect-pass-1.md` + `-eval.json` + an
+  `architect-plan-status.json` status file), `refine()` (reads the
+  status file; no-op when `status == "done"`; otherwise runs passes
+  2..`architect_max_passes` from the stashed draft, escalating on
+  exhaustion), and a legacy `execute()` wrapper that calls both
+  back-to-back for workflow.json files still pinning the combined
+  `architect` handler. New engine handlers `_architect_plan` /
+  `_architect_refine` share a `_build_architect(phase, phase_logger)`
+  helper. New gate handler `approve_plan_draft` has conditional
+  auto-approve in `_run_gate_or_checkpoint`: when the status file
+  flags `done`, the gate resolves to approved without opening — humans
+  only see it when there is a draft to review. Workflow contract:
+  `lib/workflow.py` adds `architect_plan` + `architect_refine` to
+  `PHASE_HANDLERS` and `approve_plan_draft` to `GATE_HANDLERS`;
+  `DEFAULT_WORKFLOW` replaces the single `architect` step with the
+  three-step `architect_plan` → `approve_plan_draft` → `architect_refine`
+  sequence; `_merge_missing_default_steps` has a compat rule that
+  skips splicing the new trio into legacy workflow.json files still
+  carrying a combined `architect` step (avoids double-running).
+  `lib/control.py` `PHASES` / `GATES` / `RUN_STEPS` updated in lockstep.
+  `lib/validators.py` still owns `validate_architect`; the engine
+  validator map wires it to both `architect` and `architect_refine`
+  (no validator on `architect_plan` — pass 1 may legitimately leave
+  `sprint-plan.md` unwritten when it fails rubric). New test file
+  `tests/test_architect_plan_refine_split.py` (9 tests) locks in:
+  plan() on rubric-pass vs rubric-fail, refine() no-op when done,
+  refine() resume + escalation, gate auto-approve vs fire in all three
+  status-file conditions, legacy execute() wrapper. Existing engine /
+  dry-run tests updated to mock the split handlers. Full suite: 561
+  passed / 1 skipped.
+
+- 2026-04-21 — H6.3e shipped (commit `54eb125`). Architect + Judge
+  migrated off `LLMClient` to opencode no-tools agents. Key landing
+  points: `orchestrator/lib/opencode_config.py::build_agent_definitions`
+  now emits explicit per-role `tools:` allowlists (architect+judge fully
+  disabled); `orchestrator/roles/architect.py` dataclass takes
+  `runner` + `judge_runner` `SessionRunner`s; stateless JSON re-prompt
+  loop concatenates malformed prior output into a fresh judge prompt;
+  new `orchestrator/roles/architect_dryrun.py` with
+  `DryRunArchitectRunner` + `DryRunJudgeRunner`; engine
+  `_session_runner_for` auto-builds them when `fake_llm` is set;
+  `cli/run.py::_build_opencode_session_runners` now covers every SDLC
+  role and falls back to architect's routing for judge. Tests: all four
+  `test_architect_*.py` files rewritten around `_FakeRunner`;
+  `test_cli_run.py::test_dry_run_llm_is_vanilla_fake` replaces the
+  content-aware dispatch test (fake is now a plain `FakeLLMClient`);
+  H2.1 rehearsal's `_EXPECTED_ROLES` adds `judge`; H5.3 integration
+  test now asserts every H6-migrated role bypasses the pool and
+  exercises fallback via `SyncPoolClient` directly. Suite: 551 passed,
+  1 skipped. H6.4 sunset prerequisite met: after H6.3e no SDLC role
+  reaches the pool in any code path, so `SyncPoolClient`/
+  `UpstreamPool`/`LLMClient`/`pool.jsonl`/`pool_log.py`/`sync_pool.py`
+  are now deletion candidates modulo persona_forum / memory_refresh /
+  guru_escalation, which still `self._llm_for(role)` into the pool.
+- 2026-04-21 — H6.6 end-to-end guardrail shipped. New
+  `tests/test_integration_h6_opencode_pipeline.py` installs a role-aware
+  fake `opencode` binary on `PATH`, runs the real CLI live/config path
+  (`--config`, not `--dry-run`), lets `cli/run.py` generate the
+  per-project `opencode.json`, and drives the full SDLC role sequence
+  through production `OpencodeSession` subprocesses. The guard asserts
+  `architect`, fallback `judge`, `coder`, `tester`, `reviewer`, and
+  `deployer` sessions all ran with `OPENCODE_CONFIG` and
+  `OPENCODE_DISABLE_AUTOUPDATE=1`; expected artifacts landed; and
+  `raw-io.jsonl` / `usage.jsonl` contain matching opencode join keys
+  for every SDLC role. Verification:
+  `uv run pytest -q tests/test_integration_h6_opencode_pipeline.py` →
+  1 passed;
+  `uv run pytest -q tests/test_integration_h6_opencode_pipeline.py tests/test_opencode_session.py tests/test_opencode_audit.py`
+  → 17 passed; `git diff --check` clean.
