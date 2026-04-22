@@ -281,3 +281,83 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "/intents" in text
     assert "client_intent_id" in text
     assert "newClientIntentId" in text
+    assert "demo-card" in text
+    assert "story-demo-rail" in text
+    assert "object-demo-rail" in text
+    assert "demoArtifactUrl" in text
+    assert "storyDemoCard" in text
+
+
+def test_demo_artifact_url_and_card_helpers(tmp_path: Path) -> None:
+    run_script(
+        tmp_path,
+        GAME_SHELL_TS,
+        """
+        import assert from 'node:assert/strict';
+
+        globalThis.document = {
+          createElement: () => {
+            const node = { textContent: '', get innerHTML() { return String(this.textContent).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } };
+            return node;
+          },
+        };
+
+        const { demoArtifactUrl, storyDemoCard } = await import('__BUNDLE__');
+
+        const viewport = { name: 'mobile', width: 393, height: 852 };
+        const gif = { ref: '.orchestrator/demos/demo_abc123/demo.gif', kind: 'gif', sha256: 'hh', bytes: 10, testStatus: 'passed', viewport, eventId: 'e1' };
+        const png = { ref: '.orchestrator/demos/demo_abc123/mobile.png', kind: 'screenshot', sha256: 'pp', bytes: 5, testStatus: 'passed', viewport, eventId: 'e2' };
+        const demo = {
+          demoId: 'demo_abc123',
+          status: 'presented',
+          adapter: 'playwright_web',
+          confidence: 'explicit_playwright',
+          reason: 'Maps should open on mobile',
+          taskId: 'task-1',
+          atomId: 'implementation',
+          startCommand: 'npm run dev',
+          testCommand: 'npx playwright test',
+          specPath: 'demo/game-map.spec.ts',
+          route: '/game',
+          viewports: ['mobile'],
+          capturePolicy: ['gif','trace'],
+          viewport,
+          artifacts: [gif, png],
+          testStatus: 'passed',
+          captureError: null,
+          summaryRef: '.orchestrator/demos/demo_abc123/metadata.json',
+          sourceRefs: ['src/game/Map.ts'],
+          artifactRefs: [gif.ref, png.ref],
+          wakeUpHash: 'abcdef1234567890',
+          memoryRefs: ['mem-1'],
+          lastEvent: null,
+          raw: {},
+        };
+
+        const url = demoArtifactUrl('proj-1', demo, gif);
+        assert.equal(url, '/api/projects/proj-1/demos/demo_abc123/demo.gif');
+
+        const nested = { ...gif, ref: '.orchestrator/demos/demo_abc123/playwright-report/index.html' };
+        const nestedUrl = demoArtifactUrl('proj-1', demo, nested);
+        assert.equal(nestedUrl, '/api/projects/proj-1/demos/demo_abc123/playwright-report/index.html');
+
+        const bare = { ...gif, ref: '' };
+        assert.equal(demoArtifactUrl('proj-1', demo, bare), '');
+
+        const html = storyDemoCard(demo, 'proj-1');
+        assert.ok(html.includes('data-role="demo-card"'));
+        assert.ok(html.includes('data-demo-id="demo_abc123"'));
+        assert.ok(html.includes('data-demo-status="presented"'));
+        assert.ok(html.includes('data-role="demo-thumb"'));
+        assert.ok(html.includes('/api/projects/proj-1/demos/demo_abc123/demo.gif'));
+        assert.ok(html.includes('Maps should open on mobile'));
+        assert.ok(html.includes('Ready'));
+
+        const failing = { ...demo, status: 'failed', captureError: 'boom: selector missing', artifacts: [] };
+        const failHtml = storyDemoCard(failing, 'proj-1');
+        assert.ok(failHtml.includes('data-demo-status="failed"'));
+        assert.ok(failHtml.includes('boom: selector missing'));
+        assert.ok(!failHtml.includes('data-role="demo-thumb"'));
+        """,
+        include_three=True,
+    )

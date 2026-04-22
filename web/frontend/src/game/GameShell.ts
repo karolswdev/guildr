@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { AssetManager } from "./assets/AssetManager.js";
 import { EventEngine } from "./EventEngine.js";
 import { SceneManager, type SpatialViewLevel } from "./SceneManager.js";
-import type { EngineSnapshot, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
+import type { DemoArtifact, DemoPlan, DemoStatus, DemoViewport, EngineSnapshot, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
 
 type GameShellOptions = {
   projectId: string;
@@ -793,6 +793,18 @@ export class GameShell {
         ${sheetSection("Consumed", consumed, "No consumed inputs are attached to this object yet.")}
         ${sheetSection("Produced", produced, "No produced artifacts are known for this object yet.")}
         ${sheetSection("Story", [...digestRows, ...discussionRows], "No story or discussion rows are attached yet.")}
+        ${(() => {
+          const demos = snapshot.demos.filter((demo) => demo.atomId === atomId);
+          if (demos.length === 0) {
+            return "";
+          }
+          return `
+            <div data-role="object-demo-rail" style="display: grid; gap: 7px;">
+              <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Demo proof</div>
+              ${demos.slice(-2).reverse().map((demo) => storyDemoCard(demo, this.options.projectId)).join("")}
+            </div>
+          `;
+        })()}
         <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px;">
           <button data-action-command="shape" style="${objectCommandStyle("#41C7C7")}">Shape</button>
           <button data-action-command="interject" style="${objectCommandStyle("#E8EAF0")}">Nudge</button>
@@ -836,6 +848,18 @@ export class GameShell {
           </div>
         </div>
         ${storyAtoms.length > 0 ? sheetRefs("Touched objects", storyAtoms.map((atomId) => storyStepTitle(this.options.workflow, atomId))) : ""}
+        ${(() => {
+          const demos = snapshot.demos.slice(-3).reverse();
+          if (demos.length === 0) {
+            return "";
+          }
+          return `
+            <div data-role="story-demo-rail" style="display: grid; gap: 8px;">
+              <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Demo ceremonies</div>
+              ${demos.map((demo) => storyDemoCard(demo, this.options.projectId)).join("")}
+            </div>
+          `;
+        })()}
         ${digests.length > 0 ? `
           <div data-role="story-card-rail" style="display: grid; gap: 8px;">
             <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">DWA Story Satellites</div>
@@ -1303,6 +1327,132 @@ function storyDigestCard(digest: NarrativeDigest): string {
       ${sheetSection("Highlights", highlights, "No sourced highlights yet.")}
       ${digest.risks.length > 0 ? sheetSection("Risks", digest.risks.slice(0, 2), "No risks.") : ""}
       ${sheetRefs("Sources", refs)}
+    </div>
+  `;
+}
+
+const DEMO_STATUS_COLORS: Record<DemoStatus, string> = {
+  planned: "#8C92A8",
+  capturing: "#E09B2A",
+  captured: "#41C7C7",
+  presented: "#D9B84D",
+  failed: "#D96A6A",
+  skipped: "#6A748C",
+};
+
+const DEMO_STATUS_LABELS: Record<DemoStatus, string> = {
+  planned: "Planned",
+  capturing: "Capturing",
+  captured: "Captured",
+  presented: "Ready",
+  failed: "Failed",
+  skipped: "Skipped",
+};
+
+export function demoArtifactUrl(projectId: string, demo: DemoPlan, artifact: DemoArtifact): string {
+  if (!projectId || !demo.demoId || !artifact.ref) {
+    return "";
+  }
+  const prefix = `.orchestrator/demos/${demo.demoId}/`;
+  const suffix = artifact.ref.startsWith(prefix) ? artifact.ref.slice(prefix.length) : artifact.ref;
+  const segments = suffix.split("/").filter(Boolean).map((part) => encodeURIComponent(part));
+  if (segments.length === 0) {
+    return "";
+  }
+  return `/api/projects/${encodeURIComponent(projectId)}/demos/${encodeURIComponent(demo.demoId)}/${segments.join("/")}`;
+}
+
+function viewportLabel(viewport: DemoViewport | null): string {
+  if (!viewport) {
+    return "";
+  }
+  const name = viewport.name ?? "";
+  const dims = viewport.width && viewport.height ? `${viewport.width}×${viewport.height}` : "";
+  return [name, dims].filter(Boolean).join(" · ");
+}
+
+function demoStatusChip(status: DemoStatus): string {
+  const color = DEMO_STATUS_COLORS[status] ?? "#8C92A8";
+  const label = DEMO_STATUS_LABELS[status] ?? status;
+  return `<span style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 99px; background: ${color}22; color: ${color}; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">${escapeHtml(label)}</span>`;
+}
+
+function demoThumbnail(projectId: string, demo: DemoPlan): string {
+  const preview = demo.artifacts.find((artifact) => artifact.kind === "gif")
+    ?? demo.artifacts.find((artifact) => artifact.kind === "screenshot")
+    ?? demo.artifacts.find((artifact) => artifact.ref.endsWith(".gif") || artifact.ref.endsWith(".png"));
+  if (!preview) {
+    return "";
+  }
+  const url = demoArtifactUrl(projectId, demo, preview);
+  if (!url) {
+    return "";
+  }
+  return `
+    <a data-role="demo-thumb-link" href="${escapeHtml(url)}" target="_blank" rel="noopener" style="display: block; border-radius: 8px; overflow: hidden; border: 1px solid rgba(65,199,199,0.24); background: #12141C;">
+      <img data-role="demo-thumb" src="${escapeHtml(url)}" alt="Demo preview" loading="lazy" style="display: block; width: 100%; max-height: 180px; object-fit: contain; background: #0B0D14;">
+    </a>
+  `;
+}
+
+function demoArtifactRow(projectId: string, demo: DemoPlan, artifact: DemoArtifact): string {
+  const url = demoArtifactUrl(projectId, demo, artifact);
+  const label = `${artifact.kind} · ${artifact.ref.split("/").pop() ?? artifact.ref}`;
+  const chip = `<span style="${refChipStyle()}">${escapeHtml(label)}</span>`;
+  if (!url) {
+    return chip;
+  }
+  return `<a data-role="demo-artifact-link" href="${escapeHtml(url)}" target="_blank" rel="noopener" style="text-decoration: none;">${chip}</a>`;
+}
+
+export function storyDemoCard(demo: DemoPlan, projectId: string): string {
+  const status = demoStatusChip(demo.status);
+  const viewport = viewportLabel(demo.viewport);
+  const meta = [demo.adapter, demo.route, viewport].filter(Boolean).join(" · ");
+  const artifactChips = demo.artifacts.slice(0, 6).map((artifact) => demoArtifactRow(projectId, demo, artifact)).join("");
+  const sourceChips = demo.sourceRefs.slice(0, 5).map((ref) => `<span style="${refChipStyle()}">${escapeHtml(ref)}</span>`).join("");
+  const memoryChips = demo.memoryRefs.slice(0, 3).map((ref) => `<span style="${refChipStyle()}">memory: ${escapeHtml(ref)}</span>`).join("");
+  const failureNote = demo.status === "failed" && demo.captureError
+    ? `<div style="font-size: 11px; color: #D96A6A; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(demo.captureError)}</div>`
+    : "";
+  const reason = demo.reason ? `<div style="font-size: 12px; color: #D9D2B2; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(demo.reason)}</div>` : "";
+  const testStatus = demo.testStatus
+    ? `<span style="${refChipStyle()}">test: ${escapeHtml(demo.testStatus)}</span>`
+    : "";
+  const wakeHash = demo.wakeUpHash
+    ? `<span style="${refChipStyle()}">wake: ${escapeHtml(demo.wakeUpHash.slice(0, 12))}</span>`
+    : "";
+  const summary = demo.summaryRef
+    ? `<a data-role="demo-summary-link" href="${escapeHtml(demoArtifactUrl(projectId, demo, { ref: demo.summaryRef, kind: "summary", sha256: "", bytes: 0, testStatus: null, viewport: null, eventId: null }))}" target="_blank" rel="noopener" style="text-decoration: none;"><span style="${refChipStyle()}">summary</span></a>`
+    : "";
+
+  return `
+    <div data-role="demo-card" data-demo-id="${escapeHtml(demo.demoId)}" data-demo-status="${escapeHtml(demo.status)}" style="display: grid; gap: 7px; padding: 10px; border: 1px solid rgba(65,199,199,0.24); border-radius: 8px; background: rgba(65,199,199,0.07);">
+      <div style="display: flex; align-items: start; justify-content: space-between; gap: 8px;">
+        <div style="min-width: 0;">
+          <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Demo · ${escapeHtml(demo.adapter || "demo")}</div>
+          <div style="font-size: 13px; color: #E8EAF0; font-weight: 900; margin-top: 3px; overflow-wrap: anywhere;">${escapeHtml(demo.specPath || demo.demoId)}</div>
+          ${meta ? `<div style="font-size: 11px; color: #8C92A8; margin-top: 3px; overflow-wrap: anywhere;">${escapeHtml(meta)}</div>` : ""}
+        </div>
+        ${status}
+      </div>
+      ${demoThumbnail(projectId, demo)}
+      ${reason}
+      ${failureNote}
+      ${artifactChips ? `
+        <div style="display: grid; gap: 5px;">
+          <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Artifacts</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">${artifactChips}${summary}</div>
+        </div>
+      ` : ""}
+      ${sourceChips || memoryChips || testStatus || wakeHash ? `
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          ${testStatus}
+          ${wakeHash}
+          ${memoryChips}
+          ${sourceChips}
+        </div>
+      ` : ""}
     </div>
   `;
 }
