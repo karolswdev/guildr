@@ -57,6 +57,10 @@ ATOM_COMPLETED: Final = "atom_completed"
 
 DEMO_PLANNED: Final = "demo_planned"
 DEMO_SKIPPED: Final = "demo_skipped"
+DEMO_CAPTURE_STARTED: Final = "demo_capture_started"
+DEMO_ARTIFACT_CREATED: Final = "demo_artifact_created"
+DEMO_CAPTURE_FAILED: Final = "demo_capture_failed"
+DEMO_PRESENTED: Final = "demo_presented"
 
 EVENT_TYPES: frozenset[str] = frozenset({
     RUN_STARTED,
@@ -100,6 +104,10 @@ EVENT_TYPES: frozenset[str] = frozenset({
     ATOM_COMPLETED,
     DEMO_PLANNED,
     DEMO_SKIPPED,
+    DEMO_CAPTURE_STARTED,
+    DEMO_ARTIFACT_CREATED,
+    DEMO_CAPTURE_FAILED,
+    DEMO_PRESENTED,
 })
 
 

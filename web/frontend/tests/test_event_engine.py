@@ -521,6 +521,151 @@ def test_demo_events_fold(tmp_path: Path) -> None:
     )
 
 
+def test_demo_capture_lifecycle_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: 'evt-plan',
+            type: 'demo_planned',
+            demo_id: 'demo_a10',
+            adapter: 'playwright_web',
+            confidence: 'explicit_playwright',
+            task_id: 'task-1',
+            atom_id: 'implementation',
+            spec_path: 'web/frontend/tests/demo/game-map.spec.ts',
+            route: '/game',
+            viewports: ['mobile'],
+            capture_policy: ['gif', 'webm', 'trace', 'screenshot'],
+            source_refs: ['event:evt-phase'],
+          },
+          {
+            event_id: 'evt-capture',
+            type: 'demo_capture_started',
+            demo_id: 'demo_a10',
+            adapter: 'playwright_web',
+            viewport: { name: 'mobile', width: 393, height: 852 },
+            source_refs: ['event:evt-plan'],
+          },
+          {
+            event_id: 'evt-art-1',
+            type: 'demo_artifact_created',
+            demo_id: 'demo_a10',
+            adapter: 'playwright_web',
+            kind: 'gif',
+            artifact_ref: '.orchestrator/demos/demo_a10/demo.gif',
+            artifact_sha256: 'deadbeef',
+            artifact_bytes: 12345,
+            test_status: 'passed',
+            viewport: { name: 'mobile', width: 393, height: 852 },
+            source_refs: ['event:evt-capture'],
+            artifact_refs: ['.orchestrator/demos/demo_a10/demo.gif'],
+          },
+          {
+            event_id: 'evt-art-2',
+            type: 'demo_artifact_created',
+            demo_id: 'demo_a10',
+            adapter: 'playwright_web',
+            kind: 'trace',
+            artifact_ref: '.orchestrator/demos/demo_a10/trace.zip',
+            artifact_sha256: 'cafef00d',
+            artifact_bytes: 8192,
+            test_status: 'passed',
+            source_refs: ['event:evt-capture'],
+            artifact_refs: ['.orchestrator/demos/demo_a10/trace.zip'],
+          },
+          {
+            event_id: 'evt-present',
+            type: 'demo_presented',
+            demo_id: 'demo_a10',
+            adapter: 'playwright_web',
+            test_status: 'passed',
+            summary_ref: '.orchestrator/demos/demo_a10/summary.md',
+            artifact_refs: [
+              '.orchestrator/demos/demo_a10/demo.gif',
+              '.orchestrator/demos/demo_a10/trace.zip',
+            ],
+            source_refs: ['event:evt-capture'],
+          },
+        ]);
+        let snapshot = engine.snapshot();
+        assert.equal(snapshot.demos.length, 1);
+        const demo = snapshot.demos[0];
+        assert.equal(demo.status, 'presented');
+        assert.equal(demo.testStatus, 'passed');
+        assert.equal(demo.summaryRef, '.orchestrator/demos/demo_a10/summary.md');
+        assert.deepEqual(demo.viewport, { name: 'mobile', width: 393, height: 852 });
+        assert.equal(demo.artifacts.length, 2);
+        assert.equal(demo.artifacts[0].sha256, 'deadbeef');
+        assert.equal(demo.artifacts[1].kind, 'trace');
+        assert.deepEqual(demo.artifactRefs, [
+          '.orchestrator/demos/demo_a10/demo.gif',
+          '.orchestrator/demos/demo_a10/trace.zip',
+        ]);
+
+        engine.scrubTo(1);
+        snapshot = engine.snapshot();
+        assert.equal(snapshot.demos[0].status, 'capturing');
+        assert.equal(snapshot.demos[0].artifacts.length, 0);
+
+        engine.scrubTo(2);
+        snapshot = engine.snapshot();
+        assert.equal(snapshot.demos[0].status, 'captured');
+        assert.equal(snapshot.demos[0].artifacts.length, 1);
+        assert.equal(snapshot.demos[0].testStatus, 'passed');
+
+        engine.resumeLive();
+        snapshot = engine.snapshot();
+        assert.equal(snapshot.demos[0].status, 'presented');
+        """,
+    )
+
+
+def test_demo_capture_failed_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: 'evt-plan',
+            type: 'demo_planned',
+            demo_id: 'demo_fail',
+            adapter: 'playwright_web',
+            confidence: 'explicit_playwright',
+            spec_path: 'spec.ts',
+          },
+          {
+            event_id: 'evt-capture',
+            type: 'demo_capture_started',
+            demo_id: 'demo_fail',
+            adapter: 'playwright_web',
+          },
+          {
+            event_id: 'evt-fail',
+            type: 'demo_capture_failed',
+            demo_id: 'demo_fail',
+            adapter: 'playwright_web',
+            error: 'playwright spec timed out',
+            artifact_refs: ['.orchestrator/demos/demo_fail/trace.zip'],
+          },
+        ]);
+        const snapshot = engine.snapshot();
+        const demo = snapshot.demos[0];
+        assert.equal(demo.status, 'failed');
+        assert.equal(demo.captureError, 'playwright spec timed out');
+        assert.equal(demo.testStatus, 'failed');
+        assert.deepEqual(demo.artifactRefs, ['.orchestrator/demos/demo_fail/trace.zip']);
+        """,
+    )
+
+
 def test_narrative_and_discussion_provenance_fold(tmp_path: Path) -> None:
     run_engine_script(
         tmp_path,

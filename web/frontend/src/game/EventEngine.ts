@@ -5,7 +5,10 @@ import type {
   CostBucket,
   CostSnapshot,
   CostSource,
+  DemoArtifact,
   DemoPlan,
+  DemoStatus,
+  DemoViewport,
   DiscussionEntry,
   DiscussionHighlight,
   EngineSnapshot,
@@ -356,7 +359,15 @@ export class EventEngine {
       this.applyDiscussionHighlight(event);
     }
     if (type === "demo_planned" || type === "demo_skipped") {
-      this.applyDemoEvent(event, type === "demo_planned" ? "planned" : "skipped");
+      this.applyDemoPlanEvent(event, type === "demo_planned" ? "planned" : "skipped");
+    }
+    if (
+      type === "demo_capture_started" ||
+      type === "demo_artifact_created" ||
+      type === "demo_capture_failed" ||
+      type === "demo_presented"
+    ) {
+      this.applyDemoCaptureEvent(event, type);
     }
     if (type === "operator_intent") {
       this.applyOperatorIntent(event);
@@ -635,7 +646,7 @@ export class EventEngine {
     }
   }
 
-  private applyDemoEvent(event: RunEvent, status: "planned" | "skipped"): void {
+  private applyDemoPlanEvent(event: RunEvent, status: "planned" | "skipped"): void {
     const plan = objectValue(event.plan);
     const demoId = key(event.demo_id ?? plan.demo_id, "");
     if (!demoId) {
@@ -655,6 +666,11 @@ export class EventEngine {
       route: key(event.route ?? plan.route, ""),
       viewports: arrayOfStrings(event.viewports ?? plan.viewports),
       capturePolicy: arrayOfStrings(event.capture_policy ?? plan.capture_policy),
+      viewport: null,
+      artifacts: [],
+      testStatus: null,
+      captureError: null,
+      summaryRef: null,
       sourceRefs: arrayOfStrings(event.source_refs),
       artifactRefs: arrayOfStrings(event.artifact_refs),
       wakeUpHash: stringOrNull(event.wake_up_hash),
@@ -662,6 +678,126 @@ export class EventEngine {
       lastEvent: event,
       raw: { ...plan },
     };
+    const index = this.demos.findIndex((item) => item.demoId === demoId);
+    if (index >= 0) {
+      const existing = this.demos[index];
+      next.viewport = existing.viewport;
+      next.artifacts = existing.artifacts.slice();
+      next.testStatus = existing.testStatus;
+      next.captureError = existing.captureError;
+      next.summaryRef = existing.summaryRef;
+      next.artifactRefs = mergeRefs(existing.artifactRefs, next.artifactRefs);
+      this.demos[index] = next;
+    } else {
+      this.demos.push(next);
+    }
+  }
+
+  private applyDemoCaptureEvent(
+    event: RunEvent,
+    type:
+      | "demo_capture_started"
+      | "demo_artifact_created"
+      | "demo_capture_failed"
+      | "demo_presented",
+  ): void {
+    const demoId = key(event.demo_id, "");
+    if (!demoId) {
+      return;
+    }
+    const existing = this.demos.find((item) => item.demoId === demoId);
+    const base: DemoPlan = existing ?? {
+      demoId,
+      status: "planned",
+      adapter: key(event.adapter, "playwright_web"),
+      confidence: "not_demoable",
+      reason: "",
+      taskId: stringOrNull(event.task_id),
+      atomId: stringOrNull(event.atom_id),
+      startCommand: key(event.start_command, ""),
+      testCommand: key(event.test_command, ""),
+      specPath: key(event.spec_path, ""),
+      route: key(event.route, ""),
+      viewports: [],
+      capturePolicy: [],
+      viewport: null,
+      artifacts: [],
+      testStatus: null,
+      captureError: null,
+      summaryRef: null,
+      sourceRefs: [],
+      artifactRefs: [],
+      wakeUpHash: null,
+      memoryRefs: [],
+      lastEvent: null,
+      raw: {},
+    };
+
+    const eventViewport = demoViewport(event.viewport);
+    const updatedViewport = eventViewport ?? base.viewport;
+    const mergedSourceRefs = mergeRefs(base.sourceRefs, arrayOfStrings(event.source_refs));
+    const mergedArtifactRefs = mergeRefs(base.artifactRefs, arrayOfStrings(event.artifact_refs));
+    const mergedMemoryRefs = mergeRefs(base.memoryRefs, arrayOfStrings(event.memory_refs));
+    const wakeUpHash = stringOrNull(event.wake_up_hash) ?? base.wakeUpHash;
+
+    let status: DemoStatus = base.status;
+    let artifacts: DemoArtifact[] = base.artifacts;
+    let testStatus = base.testStatus;
+    let captureError = base.captureError;
+    let summaryRef = base.summaryRef;
+
+    if (type === "demo_capture_started") {
+      status = "capturing";
+    } else if (type === "demo_artifact_created") {
+      status = base.status === "presented" ? base.status : "captured";
+      const ref = key(event.artifact_ref, "");
+      if (ref) {
+        const artifact: DemoArtifact = {
+          ref,
+          kind: key(event.kind, ""),
+          sha256: key(event.artifact_sha256, ""),
+          bytes: numberOrZero(event.artifact_bytes),
+          testStatus: stringOrNull(event.test_status),
+          viewport: eventViewport,
+          eventId: stringOrNull(event.event_id),
+        };
+        artifacts = replaceOrAppendArtifact(artifacts, artifact);
+      }
+      if (stringOrNull(event.test_status)) {
+        testStatus = stringOrNull(event.test_status);
+      }
+    } else if (type === "demo_capture_failed") {
+      status = "failed";
+      captureError = key(event.error, base.captureError ?? "");
+      testStatus = stringOrNull(event.test_status) ?? "failed";
+    } else if (type === "demo_presented") {
+      status = "presented";
+      testStatus = stringOrNull(event.test_status) ?? testStatus;
+      summaryRef = stringOrNull(event.summary_ref) ?? summaryRef;
+    }
+
+    const next: DemoPlan = {
+      ...base,
+      status,
+      viewport: updatedViewport,
+      artifacts,
+      testStatus,
+      captureError,
+      summaryRef,
+      sourceRefs: mergedSourceRefs,
+      artifactRefs: mergedArtifactRefs,
+      memoryRefs: mergedMemoryRefs,
+      wakeUpHash,
+      taskId: base.taskId ?? stringOrNull(event.task_id),
+      atomId: base.atomId ?? stringOrNull(event.atom_id),
+      adapter: base.adapter || key(event.adapter, "playwright_web"),
+      specPath: base.specPath || key(event.spec_path, ""),
+      route: base.route || key(event.route, ""),
+      startCommand: base.startCommand || key(event.start_command, ""),
+      testCommand: base.testCommand || key(event.test_command, ""),
+      lastEvent: event,
+    };
+
     const index = this.demos.findIndex((item) => item.demoId === demoId);
     if (index >= 0) {
       this.demos[index] = next;
@@ -948,12 +1084,44 @@ function cloneDemoPlan(plan: DemoPlan): DemoPlan {
     ...plan,
     viewports: [...plan.viewports],
     capturePolicy: [...plan.capturePolicy],
+    viewport: plan.viewport ? { ...plan.viewport } : null,
+    artifacts: plan.artifacts.map((artifact) => ({
+      ...artifact,
+      viewport: artifact.viewport ? { ...artifact.viewport } : null,
+    })),
     sourceRefs: [...plan.sourceRefs],
     artifactRefs: [...plan.artifactRefs],
     memoryRefs: [...plan.memoryRefs],
     lastEvent: plan.lastEvent ? { ...plan.lastEvent } : null,
     raw: { ...plan.raw },
   };
+}
+
+function demoViewport(value: unknown): DemoViewport | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const name = stringOrNull(record.name);
+  const width = numberOrNull(record.width);
+  const height = numberOrNull(record.height);
+  if (name === null && width === null && height === null) {
+    return null;
+  }
+  return { name, width, height };
+}
+
+function replaceOrAppendArtifact(artifacts: DemoArtifact[], next: DemoArtifact): DemoArtifact[] {
+  const match = (artifact: DemoArtifact): boolean =>
+    (artifact.ref !== "" && artifact.ref === next.ref) ||
+    (artifact.eventId !== null && artifact.eventId === next.eventId);
+  const index = artifacts.findIndex(match);
+  if (index >= 0) {
+    const updated = artifacts.slice();
+    updated[index] = next;
+    return updated;
+  }
+  return [...artifacts, next];
 }
 
 function cloneIntentMap(source: Record<string, OperatorIntentState>): Record<string, OperatorIntentState> {

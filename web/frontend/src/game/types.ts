@@ -177,9 +177,33 @@ export type LoopSnapshot = {
   lastLoopEvent: RunEvent | null;
 };
 
+export type DemoViewport = {
+  name: string | null;
+  width: number | null;
+  height: number | null;
+};
+
+export type DemoArtifact = {
+  ref: string;
+  kind: string;
+  sha256: string;
+  bytes: number;
+  testStatus: string | null;
+  viewport: DemoViewport | null;
+  eventId: string | null;
+};
+
+export type DemoStatus =
+  | "planned"
+  | "skipped"
+  | "capturing"
+  | "captured"
+  | "failed"
+  | "presented";
+
 export type DemoPlan = {
   demoId: string;
-  status: "planned" | "skipped";
+  status: DemoStatus;
   adapter: string;
   confidence: string;
   reason: string;
@@ -191,6 +215,11 @@ export type DemoPlan = {
   route: string;
   viewports: string[];
   capturePolicy: string[];
+  viewport: DemoViewport | null;
+  artifacts: DemoArtifact[];
+  testStatus: string | null;
+  captureError: string | null;
+  summaryRef: string | null;
   sourceRefs: string[];
   artifactRefs: string[];
   wakeUpHash: string | null;
