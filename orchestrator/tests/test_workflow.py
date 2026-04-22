@@ -5,12 +5,22 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from orchestrator.lib.workflow import load_workflow, save_workflow, valid_start_steps
 from orchestrator.lib.state import State
 from orchestrator.roles.guru_escalation import GuruEscalation
 from orchestrator.roles.memory_refresh import MemoryRefresh
 from orchestrator.roles.micro_task_breaker import MicroTaskBreaker
 from orchestrator.roles.persona_forum import PersonaForum
+
+
+class CaptureEvents:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def emit(self, event_type: str, **fields) -> None:
+        self.events.append({"type": event_type, **fields})
 
 
 def test_default_workflow_contains_persona_microtask_and_guru_steps(tmp_path: Path) -> None:
@@ -27,18 +37,77 @@ def test_memory_refresh_returns_wakeup_artifact(tmp_path: Path) -> None:
     state = State(tmp_path)
     memory_dir = tmp_path / ".orchestrator" / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
-    with patch("orchestrator.roles.memory_refresh.sync_project_memory", return_value={"wake_up": "L0"}):
+    (memory_dir / "wake-up.md").write_text("L0", encoding="utf-8")
+    with patch(
+        "orchestrator.roles.memory_refresh.sync_project_memory",
+        return_value={
+            "project_id": tmp_path.name,
+            "available": True,
+            "initialized": True,
+            "wing": tmp_path.name,
+            "wake_up": "L0",
+            "wake_up_hash": "hash123",
+            "wake_up_bytes": 2,
+            "memory_refs": [".orchestrator/memory/wake-up.md"],
+        },
+    ):
         result = MemoryRefresh(state).execute()
 
     assert result == ".orchestrator/memory/wake-up.md"
     assert (tmp_path / ".orchestrator" / "control" / "context.compact.md").exists()
 
 
+def test_memory_refresh_emits_provenance_event(tmp_path: Path) -> None:
+    state = State(tmp_path)
+    state.events = CaptureEvents()
+    memory_dir = tmp_path / ".orchestrator" / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    (memory_dir / "wake-up.md").write_text("L0", encoding="utf-8")
+
+    with patch(
+        "orchestrator.roles.memory_refresh.sync_project_memory",
+        return_value={
+            "project_id": "project-1",
+            "available": True,
+            "initialized": True,
+            "wing": "project-1",
+            "wake_up": "L0",
+            "wake_up_hash": "hash123",
+            "wake_up_bytes": 2,
+            "memory_refs": [".orchestrator/memory/wake-up.md"],
+        },
+    ):
+        MemoryRefresh(state).execute()
+
+    assert state.events is not None
+    event = state.events.events[-1]
+    assert event["type"] == "memory_refreshed"
+    assert event["wake_up_hash"] == "hash123"
+    assert event["memory_refs"] == [".orchestrator/memory/wake-up.md"]
+    assert ".orchestrator/memory/wake-up.md" in event["artifact_refs"]
+    assert event["compact_context"]["path"] == ".orchestrator/control/context.compact.md"
+
+
+def test_memory_refresh_emits_memory_error_before_reraising(tmp_path: Path) -> None:
+    state = State(tmp_path)
+    state.events = CaptureEvents()
+
+    with patch("orchestrator.roles.memory_refresh.sync_project_memory", side_effect=RuntimeError("no palace")):
+        with pytest.raises(RuntimeError):
+            MemoryRefresh(state).execute()
+
+    assert state.events is not None
+    event = state.events.events[-1]
+    assert event["type"] == "memory_error"
+    assert event["step"] == "memory_refresh"
+    assert "no palace" in event["error"]
+
+
 def test_persona_forum_writes_roster_and_forum_artifacts(tmp_path: Path) -> None:
     state = State(tmp_path)
     state.write_file("qwendea.md", "# Project\n\nBuild a game with tactical combat.\n")
 
-    forum = PersonaForum(None, state)
+    forum = PersonaForum(state)
     result = forum.execute()
 
     assert result == "PERSONA_FORUM.md"

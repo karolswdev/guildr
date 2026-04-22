@@ -1,13 +1,20 @@
-"""Persona forum role for founding-team style PRD discussion."""
+"""Persona forum role for founding-team style PRD discussion.
+
+Post-H6 this role is fully deterministic: it picks a persona roster
+(operator-supplied or keyword-derived from the brief) and emits a
+templated forum markdown. The pre-H6 path that called an LLM through
+the sync pool was removed when the pool machinery was sunset —
+``PERSONA_FORUM.md`` is a pre-phase scaffold, not a model-generated
+artifact.
+"""
 
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import dataclass
 from typing import Any
 
-from orchestrator.lib.control import append_operator_context, write_compact_context
+from orchestrator.lib.control import write_compact_context
 from orchestrator.lib.state import State
 from orchestrator.lib.workflow import update_step_config
 
@@ -16,7 +23,6 @@ from orchestrator.lib.workflow import update_step_config
 class PersonaForum:
     """Creates a persona roster and discussion artifact before architecture."""
 
-    llm: Any | None
     state: State
     step_config: dict[str, Any] | None = None
     _phase_logger: Any = None
@@ -27,9 +33,11 @@ class PersonaForum:
         brief = self.state.read_file("qwendea.md")
         personas = self._personas(brief)
         self._persist_personas(personas)
-        self.state.write_file("FOUNDING_TEAM.json", json.dumps({"personas": personas}, indent=2) + "\n")
+        self.state.write_file(
+            "FOUNDING_TEAM.json", json.dumps({"personas": personas}, indent=2) + "\n"
+        )
 
-        forum_text = self._forum_markdown(brief, personas)
+        forum_text = self._fallback_forum(brief, personas)
         self.state.write_file("PERSONA_FORUM.md", forum_text)
         write_compact_context(self.state.project_dir, max_chars=18000)
         return "PERSONA_FORUM.md"
@@ -42,16 +50,15 @@ class PersonaForum:
             for item in raw:
                 if not isinstance(item, dict):
                     continue
-                normalized = self._normalize_persona(item, default_turn_order=len(personas) + 1)
+                normalized = self._normalize_persona(
+                    item, default_turn_order=len(personas) + 1
+                )
                 name = normalized.get("name", "")
                 if not name:
                     continue
                 personas.append(normalized)
         if personas:
             return personas
-        synthesized = self._synthesize_personas(brief)
-        if synthesized:
-            return synthesized
         return self._default_personas(brief)
 
     @staticmethod
@@ -155,171 +162,12 @@ class PersonaForum:
             for index, item in enumerate(raw_personas, start=1)
         ]
 
-    def _synthesize_personas(self, brief: str) -> list[dict[str, Any]]:
-        config = self.step_config or {}
-        if config.get("auto_generate") is False:
-            return []
-        if self.llm is None:
-            return []
-        prompt = append_operator_context(
-            self.state.project_dir,
-            self._phase,
-            (
-                "Project brief:\n\n"
-                f"{brief.strip()}\n\n"
-                "Generate 4 to 6 founding-team personas as JSON. Each persona must contain "
-                "`name`, `perspective`, `mandate`, `turn_order`, and `veto_scope`. "
-                "Make them domain-specific and useful for PRD debate and decomposition. "
-                "Return only JSON in the form {\"personas\": [...]}."
-            ),
-        )
-        try:
-            start = time.monotonic()
-            response = self.llm.chat(
-                [
-                    {"role": "system", "content": "Return only valid JSON."},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=4096,
-            )
-            from orchestrator.lib.usage import emit_llm_usage
-            emit_llm_usage(
-                self.state,
-                self.llm,
-                response,
-                role=self._role,
-                step=self._phase,
-                runtime_ms=(time.monotonic() - start) * 1000,
-            )
-        except Exception as exc:
-            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
-            elapsed_ms = (time.monotonic() - start) * 1000 if "start" in locals() else 0.0
-            emit_llm_usage(
-                self.state,
-                self.llm,
-                None,
-                role=self._role,
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                status="error",
-                error=exc,
-            )
-            emit_provider_error(
-                self.state,
-                provider_kind=type(self.llm).__name__,
-                provider_name=type(self.llm).__name__,
-                model="",
-                role=self._role,
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                error=exc,
-            )
-            return []
-        content = getattr(response, "content", "") or ""
-        parsed = self._parse_personas_json(content)
-        if not parsed:
-            return []
-        return parsed
-
-    @classmethod
-    def _parse_personas_json(cls, raw: str) -> list[dict[str, Any]]:
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            return []
-        items = data.get("personas") if isinstance(data, dict) else None
-        if not isinstance(items, list):
-            return []
-        personas: list[dict[str, Any]] = []
-        for index, item in enumerate(items, start=1):
-            if not isinstance(item, dict):
-                continue
-            normalized = cls._normalize_persona(item, default_turn_order=index)
-            if normalized["name"]:
-                personas.append(normalized)
-        return personas
-
     def _persist_personas(self, personas: list[dict[str, Any]]) -> None:
         update_step_config(
             self.state.project_dir,
             "persona_forum",
             {"personas": personas},
         )
-
-    def _forum_markdown(self, brief: str, personas: list[dict[str, Any]]) -> str:
-        prompt = self._prompt(brief, personas)
-        if self.llm is None:
-            return self._fallback_forum(brief, personas)
-        try:
-            start = time.monotonic()
-            response = self.llm.chat(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are moderating a founding-team product forum. "
-                            "Return markdown with sections: Founding Team, Roundtable, "
-                            "Convergence, Open Questions, and Architecture Pressure."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=8192,
-            )
-            from orchestrator.lib.usage import emit_llm_usage
-            emit_llm_usage(
-                self.state,
-                self.llm,
-                response,
-                role=self._role,
-                step=self._phase,
-                runtime_ms=(time.monotonic() - start) * 1000,
-            )
-        except Exception as exc:
-            from orchestrator.lib.usage import emit_llm_usage, emit_provider_error
-            elapsed_ms = (time.monotonic() - start) * 1000 if "start" in locals() else 0.0
-            emit_llm_usage(
-                self.state,
-                self.llm,
-                None,
-                role=self._role,
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                status="error",
-                error=exc,
-            )
-            emit_provider_error(
-                self.state,
-                provider_kind=type(self.llm).__name__,
-                provider_name=type(self.llm).__name__,
-                model="",
-                role=self._role,
-                step=self._phase,
-                runtime_ms=elapsed_ms,
-                error=exc,
-            )
-            return self._fallback_forum(brief, personas)
-        content = getattr(response, "content", "") or ""
-        if not content.strip():
-            return self._fallback_forum(brief, personas)
-        return content.strip() + "\n"
-
-    def _prompt(self, brief: str, personas: list[dict[str, Any]]) -> str:
-        roster = "\n".join(
-            f"- {item['turn_order']}. {item['name']} ({item['perspective']}): "
-            f"{item['mandate']} [veto: {item['veto_scope']}]"
-            for item in personas
-        )
-        prompt = (
-            "Project brief:\n\n"
-            f"{brief.strip()}\n\n"
-            "Founding team roster:\n"
-            f"{roster}\n\n"
-            "Simulate a tight forum where these personas debate the PRD, name tradeoffs, "
-            "and converge on implementation-shaping guidance. Make the output actionable "
-            "for architecture and low-context execution."
-        )
-        return append_operator_context(self.state.project_dir, self._phase, prompt)
 
     @staticmethod
     def _fallback_forum(brief: str, personas: list[dict[str, Any]]) -> str:

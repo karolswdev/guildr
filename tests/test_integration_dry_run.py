@@ -65,8 +65,6 @@ def test_dry_run_pipeline_produces_expected_artifacts(
             f"{required} was not produced — phase wiring is broken"
         )
 
-    assert fake.call_count > 0, "FakeLLMClient was never called"
-
 
 def test_dry_run_pipeline_state_advanced_through_all_phases(
     config: Config, project_dir: Path

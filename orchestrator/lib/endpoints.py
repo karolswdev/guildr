@@ -272,28 +272,3 @@ def load_endpoints_from_yaml(
     return load_endpoints(data, env=env)
 
 
-def build_pool(cfg: EndpointsConfig) -> Any:
-    """Materialize an ``UpstreamPool`` from a parsed ``EndpointsConfig``.
-
-    One ``LLMClient`` per endpoint (the client carries the endpoint's
-    default model; per-role model overrides are applied by the pool at
-    call time). Import of ``UpstreamPool`` is lazy to keep
-    ``endpoints.py`` import-cheap for the config-only tests.
-    """
-    from orchestrator.lib.llm import LLMClient
-    from orchestrator.lib.pool import Endpoint, UpstreamPool
-
-    endpoints = []
-    for spec in cfg.endpoints:
-        client_kwargs: dict[str, Any] = {
-            "model": spec.model,
-        }
-        if spec.api_key is not None:
-            client_kwargs["api_key"] = spec.api_key
-        if spec.headers:
-            client_kwargs["default_headers"] = spec.headers
-        if spec.extra_body is not None:
-            client_kwargs["extra_body"] = spec.extra_body
-        client = LLMClient(base_url=spec.base_url, **client_kwargs)
-        endpoints.append(Endpoint(label=spec.name, client=client))
-    return UpstreamPool(endpoints=endpoints, routing=dict(cfg.routing))

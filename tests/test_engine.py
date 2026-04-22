@@ -71,14 +71,6 @@ def mock_git_ops(tmp_project: Path) -> MagicMock:
     return ops
 
 
-@pytest.fixture
-def mock_pool() -> MagicMock:
-    """Mock UpstreamPool."""
-    pool = MagicMock()
-    pool.chat = MagicMock()
-    return pool
-
-
 class CaptureEvents:
     def __init__(self) -> None:
         self.events: list[dict] = []
@@ -95,7 +87,7 @@ class CaptureEvents:
 class TestRunOrder:
     """Test that Orchestrator.run() calls phases in the correct order."""
 
-    def test_run_calls_phases_in_order(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_run_calls_phases_in_order(self, config, qwendea, mock_git_ops):
         """run() calls phases in the correct SDLC order."""
         # Provide a sprint-plan.md so architect validator passes
         (config.project_dir / "sprint-plan.md").write_text(
@@ -148,7 +140,7 @@ class TestRunOrder:
 
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
 
@@ -179,7 +171,7 @@ class TestRunOrder:
             "deployment",
         ]
 
-    def test_run_calls_ensure_git_repo(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_run_calls_ensure_git_repo(self, config, qwendea, mock_git_ops):
         """run() calls _ensure_git_repo first."""
         (config.project_dir / "sprint-plan.md").write_text(
             "# Sprint Plan\n\n"
@@ -199,7 +191,7 @@ class TestRunOrder:
 
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         orchestrator._gate = MagicMock()
@@ -219,7 +211,7 @@ class TestRunOrder:
         mock_git_ops.ensure_repo.assert_called_once()
 
 
-    def test_run_calls_ensure_qwendea(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_run_calls_ensure_qwendea(self, config, qwendea, mock_git_ops):
         """run() calls _ensure_qwendea after git repo setup."""
         (config.project_dir / "sprint-plan.md").write_text(
             "# Sprint Plan\n\n"
@@ -239,7 +231,7 @@ class TestRunOrder:
 
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         orchestrator._gate = MagicMock()
@@ -313,7 +305,7 @@ class TestLoopEvents:
 class TestRunPhaseRetries:
     """Test that _run_phase retries on validator failure."""
 
-    def test_retries_on_validator_failure(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_retries_on_validator_failure(self, config, qwendea, mock_git_ops):
         """_run_phase retries when validator returns False."""
         (config.project_dir / "sprint-plan.md").write_text(
             "# Sprint Plan\n\n"
@@ -330,7 +322,7 @@ class TestRunPhaseRetries:
 
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
 
@@ -363,11 +355,11 @@ class TestRunPhaseRetries:
 
         assert call_count == 3
 
-    def test_retries_exhausted_raises_phase_failure(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_retries_exhausted_raises_phase_failure(self, config, qwendea, mock_git_ops):
         """PhaseFailure raised after exhausting retries."""
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
 
@@ -389,11 +381,11 @@ class TestRunPhaseRetries:
 class TestExceptionPropagation:
     """Test that exceptions propagate as PhaseFailure after exhausting retries."""
 
-    def test_role_exception_wrapped_in_phase_failure(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_role_exception_wrapped_in_phase_failure(self, config, qwendea, mock_git_ops):
         """Exception in role propagates as PhaseFailure after max retries."""
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
 
@@ -417,11 +409,11 @@ class TestExceptionPropagation:
         with pytest.raises(PhaseFailure, match="architect"):
             orchestrator._run_phase("architect", role_raises)
 
-    def test_exception_preserves_cause(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_exception_preserves_cause(self, config, qwendea, mock_git_ops):
         """PhaseFailure preserves the original exception as __cause__."""
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
 
@@ -457,7 +449,7 @@ class TestExceptionPropagation:
 class TestStatePersistence:
     """Test that state is persisted after every phase transition."""
 
-    def test_state_saved_on_phase_start(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_state_saved_on_phase_start(self, config, qwendea, mock_git_ops):
         """State.current_phase is saved when _run_phase starts."""
         (config.project_dir / "sprint-plan.md").write_text(
             "# Sprint Plan\n\n"
@@ -474,7 +466,7 @@ class TestStatePersistence:
 
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
 
@@ -487,7 +479,7 @@ class TestStatePersistence:
         data = json.loads(state_file.read_text())
         assert data["current_phase"] == "architect"
 
-    def test_state_saved_on_phase_done(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_state_saved_on_phase_done(self, config, qwendea, mock_git_ops):
         """State.save() is called when phase passes validation."""
         (config.project_dir / "sprint-plan.md").write_text(
             "# Sprint Plan\n\n"
@@ -504,7 +496,7 @@ class TestStatePersistence:
 
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
 
@@ -515,12 +507,12 @@ class TestStatePersistence:
         data = json.loads(state_file.read_text())
         assert data["retries"]["architect"] == 1
 
-    def test_state_persists_between_retries(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_state_persists_between_retries(self, config, qwendea, mock_git_ops):
         """State is re-saved on each retry attempt."""
         # Start with no sprint-plan so validator fails first 2 attempts
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
 
@@ -564,20 +556,20 @@ class TestStatePersistence:
 class TestEnsureQwendea:
     """Test _ensure_qwendea behavior."""
 
-    def test_passes_when_qwendea_exists(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_passes_when_qwendea_exists(self, config, qwendea, mock_git_ops):
         """No exception when qwendea.md exists."""
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         orchestrator._ensure_qwendea()  # should not raise
 
-    def test_raises_when_qwendea_missing(self, config, mock_git_ops, mock_pool):
+    def test_raises_when_qwendea_missing(self, config, mock_git_ops):
         """Raises FileNotFoundError when qwendea.md is missing."""
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         with pytest.raises(FileNotFoundError, match="qwendea.md not found"):
@@ -592,45 +584,45 @@ class TestEnsureQwendea:
 class TestValidate:
     """Test _validate method."""
 
-    def test_architect_validator_passes(self, config, qwendea, mock_git_ops, mock_pool, sprint_plan):
+    def test_architect_validator_passes(self, config, qwendea, mock_git_ops, sprint_plan):
         """validate_architect returns True when sprint-plan.md exists with Evidence Required."""
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("architect") is True
 
-    def test_architect_validator_fails_missing_file(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_architect_validator_fails_missing_file(self, config, qwendea, mock_git_ops):
         """validate_architect returns False when sprint-plan.md is missing."""
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("architect") is False
 
-    def test_architect_validator_fails_no_evidence_required(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_architect_validator_fails_no_evidence_required(self, config, qwendea, mock_git_ops):
         """validate_architect returns False when sprint-plan.md lacks Evidence Required."""
         plan = config.project_dir / "sprint-plan.md"
         plan.write_text("# Sprint Plan\n\nNo evidence sections here.", encoding="utf-8")
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("architect") is False
 
-    def test_unknown_phase_returns_true(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_unknown_phase_returns_true(self, config, qwendea, mock_git_ops):
         """Unknown phase names return True (no validator defined)."""
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("deployment") is True
 
-    def test_implementation_validator_passes(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_implementation_validator_passes(self, config, qwendea, mock_git_ops):
         """validate_implementation returns True when all declared files exist."""
         plan = config.project_dir / "sprint-plan.md"
         plan.write_text(
@@ -648,12 +640,12 @@ class TestValidate:
         (config.project_dir / "a.py").write_text("# code\n", encoding="utf-8")
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("implementation") is True
 
-    def test_implementation_validator_fails_missing_declared_file(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_implementation_validator_fails_missing_declared_file(self, config, qwendea, mock_git_ops):
         """validate_implementation returns False when declared files are missing."""
         plan = config.project_dir / "sprint-plan.md"
         plan.write_text(
@@ -670,77 +662,77 @@ class TestValidate:
         )
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("implementation") is False
 
-    def test_testing_validator_passes(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_testing_validator_passes(self, config, qwendea, mock_git_ops):
         """validate_testing returns True when TEST_REPORT.md has no failures."""
         (config.project_dir / "TEST_REPORT.md").write_text("All tests passed.", encoding="utf-8")
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("testing") is True
 
-    def test_testing_validator_fails_mismatch(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_testing_validator_fails_mismatch(self, config, qwendea, mock_git_ops):
         """validate_testing returns False when TEST_REPORT contains MISMATCH."""
         (config.project_dir / "TEST_REPORT.md").write_text("MISMATCH found in task 2.", encoding="utf-8")
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("testing") is False
 
-    def test_testing_validator_fails_rerun_failed(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_testing_validator_fails_rerun_failed(self, config, qwendea, mock_git_ops):
         """validate_testing returns False when TEST_REPORT contains RERUN_FAILED."""
         (config.project_dir / "TEST_REPORT.md").write_text("RERUN_FAILED in task 3.", encoding="utf-8")
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("testing") is False
 
-    def test_review_validator_passes_approved(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_review_validator_passes_approved(self, config, qwendea, mock_git_ops):
         """validate_review returns True when REVIEW.md verdict is APPROVED."""
         (config.project_dir / "REVIEW.md").write_text("APPROVED", encoding="utf-8")
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("review") is True
 
-    def test_review_validator_passes_with_notes(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_review_validator_passes_with_notes(self, config, qwendea, mock_git_ops):
         """validate_review returns True when REVIEW.md verdict is APPROVED WITH NOTES."""
         (config.project_dir / "REVIEW.md").write_text("APPROVED WITH NOTES", encoding="utf-8")
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("review") is True
 
-    def test_review_validator_fails_critical(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_review_validator_fails_critical(self, config, qwendea, mock_git_ops):
         """validate_review returns False when REVIEW.md contains CRITICAL."""
         (config.project_dir / "REVIEW.md").write_text("CRITICAL: Major issues found", encoding="utf-8")
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("review") is False
 
-    def test_review_validator_fails_changes_requested(self, config, qwendea, mock_git_ops, mock_pool):
+    def test_review_validator_fails_changes_requested(self, config, qwendea, mock_git_ops):
         """validate_review returns False when REVIEW.md contains CHANGES REQUESTED."""
         (config.project_dir / "REVIEW.md").write_text("CHANGES REQUESTED: Fix these issues", encoding="utf-8")
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
+
             git_ops=mock_git_ops,
         )
         assert orchestrator._validate("review") is False

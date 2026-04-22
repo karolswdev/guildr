@@ -97,13 +97,11 @@ def _load_config(args: argparse.Namespace) -> Config:
 def _build_dry_run_llm() -> object:
     """Build a plain fake LLM for dry-run mode.
 
-    After H6.3a–e every SDLC role with a well-defined artifact shape
-    (architect, judge, coder, tester, reviewer, deployer) is driven by
-    an opencode SessionRunner and its own dry-run double. The only
-    roles still reaching ``self._fake_llm`` are persona_forum,
-    memory_refresh, and guru_escalation — none of which validate the
-    fake's content beyond "the call succeeded", so a vanilla
-    ``FakeLLMClient`` is enough.
+    After H6.3a–e every SDLC role runs through an opencode SessionRunner
+    and its own dry-run double. Post pool-sunset the pre-phase roles
+    (persona_forum, memory_refresh, guru_escalation) do not call the LLM
+    at all, so ``fake_llm`` is only kept for legacy dry-run wiring that
+    expects a non-None slot.
     """
     from orchestrator.lib.llm_fake import FakeLLMClient
 
@@ -150,19 +148,6 @@ def _build_opencode_session_runners(
     return runners
 
 
-def _build_real_llm(cfg: Config) -> object:
-    """Construct a single-endpoint sync LLMClient for legacy configs.
-
-    Used when ``config.yaml`` declares only ``llama_server_url`` and no
-    ``endpoints:`` block. Multi-endpoint configs are built via
-    ``orchestrator.lib.endpoints.build_pool`` and passed to
-    ``Orchestrator(pool=...)`` instead.
-    """
-    from orchestrator.lib.llm import LLMClient
-
-    return LLMClient(base_url=cfg.llama_server_url)
-
-
 def cmd_run(args: argparse.Namespace) -> int:
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -184,15 +169,17 @@ def cmd_run(args: argparse.Namespace) -> int:
         orch_kwargs["fake_llm"] = _build_dry_run_llm()
         mode = "dry-run"
     elif endpoints_cfg is not None:
-        from orchestrator.lib.endpoints import build_pool
-        orch_kwargs["pool"] = build_pool(endpoints_cfg)
         orch_kwargs["session_runners"] = _build_opencode_session_runners(
             endpoints_cfg, cfg.project_dir
         )
-        mode = f"live/pool[{','.join(e.name for e in endpoints_cfg.endpoints)}]"
+        mode = f"live/opencode[{','.join(e.name for e in endpoints_cfg.endpoints)}]"
     else:
-        orch_kwargs["fake_llm"] = _build_real_llm(cfg)
-        mode = "live/single-endpoint"
+        log.error(
+            "Live runs require a config file with an 'endpoints:' block "
+            "(opencode-backed routing). The legacy single-endpoint LLMClient "
+            "path was removed with the pool-machinery sunset."
+        )
+        return 2
 
     log.info(
         "Starting orchestrator: project=%s mode=%s gates=%s",

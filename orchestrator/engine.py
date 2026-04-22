@@ -34,7 +34,6 @@ class Orchestrator:
     def __init__(
         self,
         config: Config,
-        pool: object | None = None,
         gate_registry: object | None = None,
         events: object | None = None,
         git_ops: object | None = None,
@@ -46,15 +45,14 @@ class Orchestrator:
         self.config = config
         self.state = State(config.project_dir)
         self.state.load()
-        self._pool = pool
         self._gate_registry = gate_registry
         self._events = events
         self._git_ops = git_ops
         self._fake_llm = fake_llm
         # Roles migrated to the opencode runtime (H6.3a+) resolve their
-        # runner here instead of via self._llm_for(). Dry-run and the
-        # H5.3 integration test inject fakes; production wiring builds
-        # one ``OpencodeSession`` per opencode-driven role.
+        # runner here. Dry-run and the H5.3-style integration tests inject
+        # fakes; production wiring builds one ``OpencodeSession`` per
+        # opencode-driven role.
         self._session_runners: dict[str, Any] = dict(session_runners or {})
         self.state.events = events
 
@@ -137,22 +135,6 @@ class Orchestrator:
             self._session_runners[role] = runner
             return runner
         return None
-
-    def _llm_for(self, role: str) -> Any:
-        """Return the LLM-shaped object a role should call.
-
-        - ``fake_llm`` wins when set (test / dry-run path).
-        - Otherwise wrap the async ``UpstreamPool`` in a per-role
-          ``SyncPoolClient`` so the role's sync ``self.llm.chat(...)`` call
-          reaches the pool without a coroutine leak (H5).
-        - ``None`` when neither is configured — caller raises ``PhaseFailure``.
-        """
-        if self._fake_llm is not None:
-            return self._fake_llm
-        if self._pool is None:
-            return None
-        from orchestrator.lib.sync_pool import SyncPoolClient
-        return SyncPoolClient(self._pool, role, project_dir=self.state.project_dir)
 
     # -- public API ----------------------------------------------------------
 
@@ -536,9 +518,7 @@ class Orchestrator:
     ) -> None:
         from orchestrator.roles.persona_forum import PersonaForum
 
-        llm = self._llm_for("persona_forum")
         forum = PersonaForum(
-            llm,
             self.state,
             step_config=(step or {}).get("config") if step else None,
             _phase_logger=phase_logger,
@@ -614,22 +594,6 @@ class Orchestrator:
 
         deployer = Deployer(runner, self.state, phase_logger=phase_logger)
         deployer.execute("REVIEW.md")
-
-    # -- pool access ---------------------------------------------------------
-
-    @property
-    def pool(self) -> Any | None:
-        """Access the upstream pool (set after init if created externally)."""
-        return self._pool
-
-    @pool.setter
-    def pool(self, value: Any) -> None:
-        """Set the upstream pool."""
-        self._pool = value
-        if self._pool is not None:
-            set_orchestrator = getattr(self._pool, "set_orchestrator", None)
-            if set_orchestrator is not None:
-                set_orchestrator(self)
 
     @property
     def fake_llm(self) -> Any | None:

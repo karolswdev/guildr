@@ -126,7 +126,6 @@ async def synthesize_personas(project_id: str) -> dict[str, Any]:
     if persona_step is None:
         raise HTTPException(status_code=400, detail="persona_forum step not found in workflow")
     forum = PersonaForum(
-        llm=None,
         state=State(project.project_dir),
         step_config=persona_step.get("config", {}),
     )

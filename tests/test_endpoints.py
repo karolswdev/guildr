@@ -10,7 +10,6 @@ from orchestrator.lib.endpoints import (
     EndpointsConfig,
     EndpointsConfigError,
     RouteEntry,
-    build_pool,
     load_endpoints,
     load_endpoints_from_yaml,
 )
@@ -155,40 +154,3 @@ routing:
     assert cfg.routing["coder"][1].model == "qwen-alt"
 
 
-def test_build_pool_constructs_endpoints_with_headers_and_extra_body(monkeypatch) -> None:
-    created: list[dict] = []
-
-    class _FakeOpenAI:
-        def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
-            created.append(kwargs)
-            self.chat = type("C", (), {"completions": type("X", (), {"create": lambda *a, **k: None})()})()
-
-    monkeypatch.setattr("orchestrator.lib.llm.OpenAI", _FakeOpenAI)
-
-    data = {
-        "endpoints": [
-            {
-                "name": "remote",
-                "base_url": "https://x",
-                "model": "m",
-                "headers": {"X-Title": "guildr"},
-                "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
-                "api_key_env": "K",
-            },
-            {"name": "local", "base_url": "http://127.0.0.1:8080", "model": "local-m"},
-        ],
-        "routing": {"coder": ["remote", "local"]},
-    }
-    cfg = load_endpoints(data, env={"K": "sk-1"})
-    assert cfg is not None
-    pool = build_pool(cfg)
-
-    remote_kwargs = created[0]
-    assert remote_kwargs["api_key"] == "sk-1"
-    assert remote_kwargs["default_headers"] == {"X-Title": "guildr"}
-    assert remote_kwargs["base_url"] == "https://x/v1"
-
-    local_kwargs = created[1]
-    assert "default_headers" not in local_kwargs
-
-    assert list(pool._by_label.keys()) == ["remote", "local"]

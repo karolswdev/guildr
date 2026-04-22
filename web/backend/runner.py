@@ -90,36 +90,6 @@ def get_run_registry() -> RunRegistry:
     return _registry
 
 
-def _build_llm(dry_run: bool, llama_url: str) -> object:
-    """Return a sync LLM client compatible with the engine's fake_llm slot.
-
-    Dry-run uses the same content-aware fake the CLI uses so the PWA
-    demo and the integration tests follow identical code paths.
-    """
-    if dry_run:
-        from orchestrator.cli.run import _build_dry_run_llm
-        return _build_dry_run_llm()
-    from orchestrator.lib.llm import LLMClient
-    return LLMClient(base_url=llama_url)
-
-
-def _build_pool_from_env() -> object | None:
-    """If ``ORCHESTRATOR_CONFIG`` points to a YAML with an ``endpoints:``
-    block, build and return an ``UpstreamPool``. Else ``None``.
-
-    Lets the PWA live path opt into multi-endpoint routing without
-    changing the single-``LLAMA_URL`` demo contract.
-    """
-    path_str = os.environ.get("ORCHESTRATOR_CONFIG")
-    if not path_str:
-        return None
-    from orchestrator.lib.endpoints import build_pool, load_endpoints_from_yaml
-    cfg = load_endpoints_from_yaml(Path(path_str))
-    if cfg is None:
-        return None
-    return build_pool(cfg)
-
-
 def _build_endpoints_cfg_from_env() -> object | None:
     """Return the parsed ``EndpointsConfig`` if ``ORCHESTRATOR_CONFIG`` is set.
 
@@ -201,13 +171,12 @@ def _run_orchestrator(
         }
         if endpoints_cfg is not None:
             from orchestrator.cli.run import _build_opencode_session_runners
-            from orchestrator.lib.endpoints import build_pool
-            orch_kwargs["pool"] = build_pool(endpoints_cfg)  # type: ignore[arg-type]
             orch_kwargs["session_runners"] = _build_opencode_session_runners(
                 endpoints_cfg, project_dir
             )
         else:
-            orch_kwargs["fake_llm"] = _build_llm(dry_run, llama_url)
+            from orchestrator.cli.run import _build_dry_run_llm
+            orch_kwargs["fake_llm"] = _build_dry_run_llm()
         orch = Orchestrator(**orch_kwargs)
         bus.emit("run_started", project_id=project_id, dry_run=dry_run, start_at=start_at)
         orch.run(start_at=start_at)

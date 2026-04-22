@@ -169,11 +169,8 @@ class TestDryRunIntegration:
         mock_git_ops = MagicMock()
         mock_git_ops.ensure_repo = MagicMock()
 
-        mock_pool = MagicMock()
-
         orchestrator = Orchestrator(
             config=config,
-            pool=mock_pool,
             fake_llm=fake_llm,
             git_ops=mock_git_ops,
         )
