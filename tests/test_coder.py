@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
+from orchestrator.lib.intents import create_queued_intent, intents_path
 from orchestrator.lib.opencode import (
     OpencodeMessage,
     OpencodeResult,
@@ -108,6 +110,14 @@ class _FakeRunner:
         return self.results.pop(0)
 
 
+class _Events:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    def emit(self, event_type: str, **fields) -> None:
+        self.events.append((event_type, dict(fields)))
+
+
 @pytest.fixture
 def state(tmp_path: Path) -> State:
     return State(tmp_path)
@@ -181,6 +191,33 @@ class TestExecute:
         first = runner.prompts[0]
         assert "Use FastAPI" in first  # architecture decision threaded in
         assert "Task 1: Setup" in first  # task body threaded in
+
+    def test_prompt_intent_is_applied_once(
+        self, coder: Coder, runner: _FakeRunner, state: State
+    ) -> None:
+        state.events = _Events()
+        state.write_file("sprint-plan.md", SAMPLE_SPRINT_PLAN)
+        create_queued_intent(
+            state.project_dir,
+            kind="interject",
+            atom_id="implementation",
+            payload={"instruction": "Prefer pathlib for file edits."},
+            client_intent_id="client-1",
+            intent_event_id="event-1",
+        )
+        runner.results = [_result(), _result()]
+
+        coder.execute("sprint-plan.md")
+
+        assert "Prefer pathlib for file edits." in runner.prompts[0]
+        assert "Prefer pathlib for file edits." not in runner.prompts[1]
+        assert state.events.events[0][0] == "operator_intent_applied"
+        assert state.events.events[0][1]["client_intent_id"] == "client-1"
+        rows = [
+            json.loads(line)
+            for line in intents_path(state.project_dir).read_text(encoding="utf-8").splitlines()
+        ]
+        assert rows[0]["status"] == "applied"
 
     def test_task_packet_preferred_over_inline_slice(
         self, coder: Coder, runner: _FakeRunner, state: State

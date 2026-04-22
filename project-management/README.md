@@ -32,6 +32,25 @@ Read these before starting any phase:
 
 Read phase-specific files only when a phase requests them.
 
+## SRS Mini-Phase Pack
+
+The canonical decomposition of `docs/srs-council-engine.md` and the PWA
+narrative replay design lives in `srs-mini-phases/`. It is a parallel,
+lower-context execution track to the visual-map Phase 0-8 below — use it when
+you are extending the Council Engine itself (event ledger, narrative,
+intents, memory, cost, hooks, replay) rather than visual-map polish.
+
+Start there:
+
+- `srs-mini-phases/README.md` — master index, dependency graph, invariants
+- `srs-mini-phases/EXECUTION_CHECKLIST.md` — pre/during/post rules
+- `srs-mini-phases/QUALITY_GATES.md` — cross-phase invariants
+- `srs-mini-phases/TRACEABILITY.md` — SRS section ↔ mini-phase map
+- `srs-mini-phases/M01…M12-*.md` — twelve executable mini-phases
+
+The mini-phase pack does not replace the Phase 0-8 visual-map track; both
+tracks must remain honest for the release gate (M12 / Phase 8) to pass.
+
 ## Phase Order
 
 | Phase | File | Goal | Status |

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
@@ -9,6 +10,8 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
+
+from orchestrator.lib.scrub import scrub_text
 
 
 def memory_dir(project_dir: Path) -> Path:
@@ -31,6 +34,17 @@ def search_path(project_dir: Path) -> Path:
 
 def metadata_path(project_dir: Path) -> Path:
     return memory_dir(project_dir) / "metadata.json"
+
+
+def wakeup_hash(project_dir: Path) -> str | None:
+    path = wakeup_path(project_dir)
+    if not path.exists():
+        return None
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    return hashlib.sha256(data).hexdigest()
 
 
 def project_initialized(project_dir: Path) -> bool:
@@ -74,6 +88,7 @@ def memory_status(project_id: str | None, project_dir: Path) -> dict[str, Any]:
     wakeup = wakeup_path(project_dir)
     status_file = status_path(project_dir)
     metadata = _read_json(metadata_path(project_dir))
+    hash_value = wakeup_hash(project_dir)
     return {
         "project_id": project_id or project_dir.name,
         "available": command is not None,
@@ -83,7 +98,25 @@ def memory_status(project_id: str | None, project_dir: Path) -> dict[str, Any]:
         "cached_wakeup": wakeup.read_text(encoding="utf-8") if wakeup.exists() else "",
         "cached_status": status_file.read_text(encoding="utf-8") if status_file.exists() else "",
         "last_search": search_path(project_dir).read_text(encoding="utf-8") if search_path(project_dir).exists() else "",
+        "wake_up_hash": hash_value,
+        "wake_up_bytes": wakeup.stat().st_size if wakeup.exists() else 0,
+        "memory_refs": [".orchestrator/memory/wake-up.md"] if wakeup.exists() else [],
         "metadata": metadata,
+    }
+
+
+def memory_provenance(project_id: str | None, project_dir: Path) -> dict[str, Any]:
+    """Return the compact memory packet other projections should cite."""
+    status = memory_status(project_id, project_dir)
+    return {
+        "project_id": status["project_id"],
+        "available": status["available"],
+        "initialized": status["initialized"],
+        "wing": status["wing"],
+        "wake_up_hash": status["wake_up_hash"],
+        "wake_up_bytes": status["wake_up_bytes"],
+        "memory_refs": status["memory_refs"],
+        "artifact_refs": status["memory_refs"],
     }
 
 
@@ -109,6 +142,7 @@ def sync_project_memory(project_id: str | None, project_dir: Path) -> dict[str, 
                 "wing": wing,
                 "init_ran": bool(init_output),
                 "command": command,
+                "wake_up_hash": wakeup_hash(project_dir),
             },
             indent=2,
         )
@@ -134,6 +168,7 @@ def refresh_wakeup(project_id: str | None, project_dir: Path) -> dict[str, Any]:
     wakeup_path(project_dir).write_text(wakeup_output, encoding="utf-8")
     metadata = _read_json(metadata_path(project_dir))
     metadata["wing"] = wing
+    metadata["wake_up_hash"] = wakeup_hash(project_dir)
     metadata_path(project_dir).write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     return {
         **memory_status(project_id, project_dir),
@@ -152,17 +187,20 @@ def search_memory(
     command = resolve_command()
     if command is None:
         raise RuntimeError("MemPalace is not available. Install it or configure GUILDR_MEMPALACE_CMD.")
-    args = ["search", query, "--wing", project_wing(project_id, project_dir), "--results", str(results)]
-    if room:
-        args.extend(["--room", room])
+    clean_query = scrub_text(query)
+    clean_room = scrub_text(room) if room else None
+    args = ["search", clean_query, "--wing", project_wing(project_id, project_dir), "--results", str(results)]
+    if clean_room:
+        args.extend(["--room", clean_room])
     output = _run(command, args, cwd=project_dir)
-    search_path(project_dir).write_text(output, encoding="utf-8")
+    clean_output = scrub_text(output)
+    search_path(project_dir).write_text(clean_output, encoding="utf-8")
     return {
         **memory_status(project_id, project_dir),
-        "query": query,
-        "room": room,
+        "query": clean_query,
+        "room": clean_room,
         "results": results,
-        "output": output,
+        "output": clean_output,
     }
 
 

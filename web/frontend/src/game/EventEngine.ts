@@ -9,6 +9,8 @@ import type {
   LoopSnapshot,
   LoopStage,
   MemPalaceStatus,
+  NextStepPacket,
+  OperatorIntentState,
   RunEvent,
   WorkflowStep,
 } from "./types.js";
@@ -27,6 +29,10 @@ export class EventEngine {
   private cost: CostSnapshot = emptyCostSnapshot();
   private loops: LoopSnapshot = emptyLoopSnapshot();
   private memPalaceStatus: MemPalaceStatus | null = null;
+  private nextStepPacket: NextStepPacket | null = null;
+  private pendingIntents: Record<string, OperatorIntentState> = {};
+  private appliedIntents: Record<string, OperatorIntentState> = {};
+  private ignoredIntents: Record<string, OperatorIntentState> = {};
   private replayIndex = -1;
   private snapshotListeners = new Set<SnapshotListener>();
   private eventListeners = new Set<EventListener>();
@@ -109,6 +115,10 @@ export class EventEngine {
     this.cost = emptyCostSnapshot();
     this.loops = emptyLoopSnapshot();
     this.memPalaceStatus = null;
+    this.nextStepPacket = null;
+    this.pendingIntents = {};
+    this.appliedIntents = {};
+    this.ignoredIntents = {};
     this.replayIndex = -1;
     for (const event of events) {
       const eventId = typeof event.event_id === "string" ? event.event_id : "";
@@ -135,6 +145,10 @@ export class EventEngine {
     this.cost = emptyCostSnapshot();
     this.loops = emptyLoopSnapshot();
     this.memPalaceStatus = null;
+    this.nextStepPacket = null;
+    this.pendingIntents = {};
+    this.appliedIntents = {};
+    this.ignoredIntents = {};
     for (let i = 0; i <= clamped; i += 1) {
       this.applyFold(this.history[i]);
     }
@@ -157,6 +171,12 @@ export class EventEngine {
       scrubIndex: this.replayIndex,
       isLive: this.replayIndex < 0,
       memPalaceStatus: this.memPalaceStatus ? { ...this.memPalaceStatus } : null,
+      nextStepPacket: this.nextStepPacket
+        ? attachPendingIntents(cloneNextStepPacket(this.nextStepPacket), this.pendingIntents)
+        : null,
+      pendingIntents: cloneIntentMap(this.pendingIntents),
+      appliedIntents: cloneIntentMap(this.appliedIntents),
+      ignoredIntents: cloneIntentMap(this.ignoredIntents),
       historyLength: this.history.length,
       replayIndex: this.replayIndex,
       live: this.replayIndex < 0,
@@ -185,6 +205,10 @@ export class EventEngine {
     this.cost = emptyCostSnapshot();
     this.loops = emptyLoopSnapshot();
     this.memPalaceStatus = null;
+    this.nextStepPacket = null;
+    this.pendingIntents = {};
+    this.appliedIntents = {};
+    this.ignoredIntents = {};
     for (const event of this.history) {
       this.applyFold(event);
     }
@@ -220,6 +244,10 @@ export class EventEngine {
       this.cost = emptyCostSnapshot();
       this.loops = emptyLoopSnapshot();
       this.memPalaceStatus = null;
+      this.nextStepPacket = null;
+      this.pendingIntents = {};
+      this.appliedIntents = {};
+      this.ignoredIntents = {};
       return;
     }
     if (type === "phase_start") {
@@ -278,8 +306,20 @@ export class EventEngine {
       this.applyLoopEvent(event, type);
       return;
     }
-    if (type === "memory_status" || type === "memory_refreshed") {
+    if (type === "memory_status" || type === "memory_refreshed" || type === "memory_search_completed") {
       this.applyMemoryEvent(event);
+    }
+    if (type === "next_step_packet_created") {
+      this.applyNextStepPacket(event);
+    }
+    if (type === "operator_intent") {
+      this.applyOperatorIntent(event);
+    }
+    if (type === "operator_intent_applied") {
+      this.applyOperatorIntentTerminal(event, "applied");
+    }
+    if (type === "operator_intent_ignored") {
+      this.applyOperatorIntentTerminal(event, "ignored");
     }
   }
 
@@ -426,7 +466,99 @@ export class EventEngine {
       wing: typeof event.wing === "string" ? event.wing : null,
       cached_wakeup: typeof event.cached_wakeup === "string" ? event.cached_wakeup : null,
       last_search: typeof event.last_search === "string" ? event.last_search : null,
+      wakeUpHash: typeof event.wake_up_hash === "string" ? event.wake_up_hash : null,
+      wakeUpBytes: numberOrNull(event.wake_up_bytes) ?? 0,
+      memoryRefs: arrayOfStrings(event.memory_refs),
+      artifactRefs: arrayOfStrings(event.artifact_refs),
     };
+  }
+
+  private applyNextStepPacket(event: RunEvent): void {
+    const packet = objectValue(event.packet);
+    const packetId = key(packet.packet_id ?? event.packet_id, "");
+    const step = key(packet.step ?? event.step, "");
+    if (!packetId || !step) {
+      return;
+    }
+    this.nextStepPacket = {
+      packetId,
+      step,
+      title: key(packet.title ?? event.title, step),
+      role: key(packet.role ?? event.role, step),
+      objective: key(packet.objective, ""),
+      whyNow: key(packet.why_now, ""),
+      inputs: Array.isArray(packet.inputs)
+        ? packet.inputs.filter((item): item is Record<string, unknown> => (
+          Boolean(item) && typeof item === "object" && !Array.isArray(item)
+        ))
+        : [],
+      queuedIntents: Array.isArray(packet.queued_intents)
+        ? packet.queued_intents.filter((item): item is Record<string, unknown> => (
+          Boolean(item) && typeof item === "object" && !Array.isArray(item)
+        ))
+        : [],
+      contextPreview: arrayOfStrings(packet.context_preview),
+      interventionOptions: arrayOfStrings(packet.intervention_options),
+      sourceRefs: arrayOfStrings(packet.source_refs ?? event.source_refs),
+      memoryRefs: arrayOfStrings(event.memory_refs),
+      raw: { ...packet },
+    };
+  }
+
+  private applyOperatorIntent(event: RunEvent): void {
+    const clientIntentId = intentClientId(event);
+    if (!clientIntentId) {
+      return;
+    }
+    this.pendingIntents[clientIntentId] = {
+      clientIntentId,
+      intentEventId: stringOrNull(event.intent_event_id) ?? stringOrNull(event.event_id),
+      kind: key(event.kind, "intent"),
+      atomId: stringOrNull(event.atom_id),
+      payload: objectValue(event.payload),
+      status: "queued",
+      appliedTo: null,
+      reason: null,
+      step: stringOrNull(event.step),
+      artifactRefs: arrayOfStrings(event.artifact_refs),
+      sourceRefs: arrayOfStrings(event.source_refs),
+      lastEvent: event,
+    };
+    delete this.appliedIntents[clientIntentId];
+    delete this.ignoredIntents[clientIntentId];
+  }
+
+  private applyOperatorIntentTerminal(event: RunEvent, status: "applied" | "ignored"): void {
+    const clientIntentId = intentClientId(event);
+    if (!clientIntentId) {
+      return;
+    }
+    const current =
+      this.pendingIntents[clientIntentId] ??
+      this.appliedIntents[clientIntentId] ??
+      this.ignoredIntents[clientIntentId];
+    const next: OperatorIntentState = {
+      clientIntentId,
+      intentEventId: stringOrNull(event.intent_event_id) ?? current?.intentEventId ?? stringOrNull(event.event_id),
+      kind: key(event.kind, current?.kind ?? "intent"),
+      atomId: stringOrNull(event.atom_id) ?? current?.atomId ?? null,
+      payload: current?.payload ? { ...current.payload } : objectValue(event.payload),
+      status,
+      appliedTo: status === "applied" ? stringOrNull(event.applied_to) : current?.appliedTo ?? null,
+      reason: status === "ignored" ? stringOrNull(event.reason) : current?.reason ?? null,
+      step: stringOrNull(event.step) ?? current?.step ?? null,
+      artifactRefs: mergeRefs(current?.artifactRefs ?? [], arrayOfStrings(event.artifact_refs)),
+      sourceRefs: mergeRefs(current?.sourceRefs ?? [], arrayOfStrings(event.source_refs)),
+      lastEvent: event,
+    };
+    delete this.pendingIntents[clientIntentId];
+    if (status === "applied") {
+      this.appliedIntents[clientIntentId] = next;
+      delete this.ignoredIntents[clientIntentId];
+    } else {
+      this.ignoredIntents[clientIntentId] = next;
+      delete this.appliedIntents[clientIntentId];
+    }
   }
 
   private recountLoopStages(): void {
@@ -595,6 +727,63 @@ function cloneLoopSnapshot(snapshot: LoopSnapshot): LoopSnapshot {
   };
 }
 
+function cloneNextStepPacket(packet: NextStepPacket): NextStepPacket {
+  return {
+    ...packet,
+    inputs: packet.inputs.map((input) => ({ ...input })),
+    queuedIntents: packet.queuedIntents.map((intent) => ({ ...intent })),
+    contextPreview: [...packet.contextPreview],
+    interventionOptions: [...packet.interventionOptions],
+    sourceRefs: [...packet.sourceRefs],
+    memoryRefs: [...packet.memoryRefs],
+    raw: { ...packet.raw },
+  };
+}
+
+function cloneIntentMap(source: Record<string, OperatorIntentState>): Record<string, OperatorIntentState> {
+  return Object.fromEntries(Object.entries(source).map(([id, intent]) => [id, cloneIntent(intent)]));
+}
+
+function cloneIntent(intent: OperatorIntentState): OperatorIntentState {
+  return {
+    ...intent,
+    payload: { ...intent.payload },
+    artifactRefs: [...intent.artifactRefs],
+    sourceRefs: [...intent.sourceRefs],
+    lastEvent: intent.lastEvent ? { ...intent.lastEvent } : null,
+  };
+}
+
+function attachPendingIntents(
+  packet: NextStepPacket,
+  pendingIntents: Record<string, OperatorIntentState>,
+): NextStepPacket {
+  const seen = new Set(
+    packet.queuedIntents
+      .map((intent) => key(intent.client_intent_id, ""))
+      .filter((clientIntentId) => clientIntentId.length > 0),
+  );
+  for (const intent of Object.values(pendingIntents)) {
+    if (intent.atomId !== null && intent.atomId !== packet.step) {
+      continue;
+    }
+    if (seen.has(intent.clientIntentId)) {
+      continue;
+    }
+    packet.queuedIntents.push({
+      client_intent_id: intent.clientIntentId,
+      intent_event_id: intent.intentEventId,
+      kind: intent.kind,
+      atom_id: intent.atomId,
+      payload: { ...intent.payload },
+      status: intent.status,
+      source_refs: [...intent.sourceRefs],
+    });
+    seen.add(intent.clientIntentId);
+  }
+  return packet;
+}
+
 function cloneBuckets(source: Record<string, CostBucket>): Record<string, CostBucket> {
   return Object.fromEntries(Object.entries(source).map(([id, value]) => [id, { ...value }]));
 }
@@ -645,6 +834,19 @@ function numberOrZero(value: unknown): number {
 
 function key(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function intentClientId(event: RunEvent): string {
+  return (
+    stringOrNull(event.client_intent_id) ??
+    stringOrNull(event.intent_event_id) ??
+    stringOrNull(event.event_id) ??
+    ""
+  );
 }
 
 function timeMs(value: unknown): number | null {

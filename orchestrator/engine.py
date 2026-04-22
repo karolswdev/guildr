@@ -11,6 +11,7 @@ from orchestrator.lib.config import Config
 from orchestrator.lib.logger import setup_phase_logger
 from orchestrator.lib.loop_refs import refs_for_phase
 from orchestrator.lib.loops import emit_loop_event, loop_stage_for_step
+from orchestrator.lib.intents import ignore_queued_intents_for_passed_step
 from orchestrator.lib.next_step import build_next_step_packet
 from orchestrator.lib.state import State
 from orchestrator.lib.workflow import enabled_steps
@@ -218,6 +219,7 @@ class Orchestrator:
                 )
                 self.state.retries[name] = attempt + 1
                 self.state.save()
+                self._emit_ignored_intents_for_passed_step(name)
                 self._emit_next_step_packet(completed_step=name)
                 return
 
@@ -287,6 +289,7 @@ class Orchestrator:
                 self.state.gates_approved[handler] = True
                 self.state.save()
                 self._events_obj.emit("gate_decided", gate=handler, decision="approved")
+                self._emit_ignored_intents_for_passed_step(handler)
                 self._emit_next_step_packet(completed_step=handler)
                 return
             self._gate(handler)
@@ -375,6 +378,7 @@ class Orchestrator:
             raise PhaseFailure(
                 f"Gate '{name}' rejected: {reason}"
             )
+        self._emit_ignored_intents_for_passed_step(name)
         self._emit_next_step_packet(completed_step=name)
 
     # -- setup helpers -------------------------------------------------------
@@ -449,6 +453,14 @@ class Orchestrator:
                 if source.startswith("artifact:")
             ],
         )
+
+    def _emit_ignored_intents_for_passed_step(self, step: str) -> None:
+        for event in ignore_queued_intents_for_passed_step(self.state.project_dir, step):
+            self._events_obj.emit(
+                "operator_intent_ignored",
+                project_id=self.state.project_dir.name,
+                **event,
+            )
 
     @staticmethod
     def _log_phase_event(

@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.lib.event_schema import new_event_id
+from orchestrator.lib.memory_palace import wakeup_hash
 from orchestrator.lib.opencode import OpencodeMessage, OpencodeResult
 from orchestrator.lib.raw_io import write_round_trip
 from orchestrator.lib.usage_writer import write_usage
@@ -82,6 +83,7 @@ def emit_session_audit(
     a reviewer needs them.
     """
     project_dir = _project_dir_of(state)
+    memory_hash = wakeup_hash(project_dir) if project_dir is not None else None
     request_ids: list[str] = []
 
     for idx, msg in enumerate(result.messages):
@@ -122,6 +124,7 @@ def emit_session_audit(
             session_id=result.session_id,
             message_index=idx,
             session_exit_code=result.exit_code,
+            wake_up_hash=memory_hash,
         )
 
     return request_ids
@@ -139,6 +142,7 @@ def _emit_usage(
     session_id: str,
     message_index: int,
     session_exit_code: int,
+    wake_up_hash: str | None,
 ) -> None:
     """Build + persist one usage row for a single assistant message."""
     cost_usd = msg.cost if msg.cost > 0 else None
@@ -172,6 +176,10 @@ def _emit_usage(
             "opencode": {
                 "session_id": session_id,
                 "message_index": message_index,
+            },
+            "memory": {
+                "wake_up_hash": wake_up_hash,
+                "memory_refs": [".orchestrator/memory/wake-up.md"] if wake_up_hash else [],
             },
         },
         "cost_usd": cost_usd,

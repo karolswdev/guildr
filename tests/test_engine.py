@@ -9,6 +9,7 @@ import pytest
 
 from orchestrator.engine import Orchestrator, PhaseFailure
 from orchestrator.lib.config import Config
+from orchestrator.lib.intents import create_queued_intent
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +315,30 @@ class TestLoopEvents:
         ]
         assert packet_events[0]["packet_id"].startswith("next_")
         assert packet_events[0]["source_refs"]
+
+    def test_phase_completion_ignores_stale_targeted_intent(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = CaptureEvents()
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events)
+        orchestrator._validate = MagicMock(return_value=True)
+        create_queued_intent(
+            config.project_dir,
+            kind="interject",
+            atom_id="memory_refresh",
+            payload={"instruction": "Too late"},
+            client_intent_id="client-1",
+            intent_event_id="event-1",
+        )
+
+        orchestrator._run_phase("memory_refresh", lambda: None)
+
+        ignored = [event for event in events.events if event["type"] == "operator_intent_ignored"]
+        assert ignored
+        assert ignored[0]["client_intent_id"] == "client-1"
+        assert ignored[0]["reason"] == "target_step_passed"
 
 
 # ---------------------------------------------------------------------------

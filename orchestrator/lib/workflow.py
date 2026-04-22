@@ -221,7 +221,32 @@ def _merge_missing_default_steps(steps: list[dict[str, Any]]) -> list[dict[str, 
                 break
         merged.insert(insert_at, default_step)
         ids.add(default_step["id"])
-    return merged
+    return _move_preplanning_steps_to_front(merged)
+
+
+def _move_preplanning_steps_to_front(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep memory and persona setup before any planning step after migration."""
+    preplanning_ids = ("memory_refresh", "persona_forum")
+    planning_ids = {"architect", "architect_plan"}
+    first_planning = next(
+        (index for index, step in enumerate(steps) if step["id"] in planning_ids),
+        None,
+    )
+    if first_planning is None:
+        return steps
+
+    preplanning = [step for step in steps if step["id"] in preplanning_ids]
+    if not preplanning:
+        return steps
+    remaining = [step for step in steps if step["id"] not in preplanning_ids]
+    insert_at = next(
+        (index for index, step in enumerate(remaining) if step["id"] in planning_ids),
+        len(remaining),
+    )
+    ordered_preplanning = [
+        step for wanted_id in preplanning_ids for step in preplanning if step["id"] == wanted_id
+    ]
+    return remaining[:insert_at] + ordered_preplanning + remaining[insert_at:]
 
 
 def load_workflow(project_dir: Path) -> list[dict[str, Any]]:

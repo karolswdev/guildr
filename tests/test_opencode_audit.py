@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -157,6 +158,9 @@ def test_raw_io_carries_prompt_and_tokens(state: SimpleNamespace) -> None:
 
 
 def test_usage_carries_session_metadata(state: SimpleNamespace) -> None:
+    memory_dir = state.project_dir / ".orchestrator" / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    (memory_dir / "wake-up.md").write_text("wake up", encoding="utf-8")
     result = _result([
         _message(text="t", cost=0.0025, provider="gpt5-provider", model="gpt-5"),
     ])
@@ -176,6 +180,10 @@ def test_usage_carries_session_metadata(state: SimpleNamespace) -> None:
     assert usage["cost"]["source"] == "provider_reported"
     assert usage["runtime"]["opencode"] == {
         "session_id": "ses_test", "message_index": 0,
+    }
+    assert usage["runtime"]["memory"] == {
+        "wake_up_hash": hashlib.sha256(b"wake up").hexdigest(),
+        "memory_refs": [".orchestrator/memory/wake-up.md"],
     }
 
 

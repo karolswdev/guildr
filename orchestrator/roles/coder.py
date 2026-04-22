@@ -141,7 +141,12 @@ class Coder:
         return (_PROMPT_DIR / role / f"{name}.txt").read_text(encoding="utf-8")
 
     def _augment_prompt(self, prompt: str) -> str:
-        return append_operator_context(self.state.project_dir, self._phase, prompt)
+        return append_operator_context(
+            self.state.project_dir,
+            self._phase,
+            prompt,
+            events=getattr(self.state, "events", None),
+        )
 
     @staticmethod
     def _extract_architecture(plan_text: str) -> str:

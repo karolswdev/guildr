@@ -69,6 +69,9 @@ type MemoryResponse = {
   cached_wakeup: string;
   cached_status: string;
   last_search: string;
+  wake_up_hash?: string | null;
+  wake_up_bytes?: number;
+  memory_refs?: string[];
   metadata: JsonRecord;
   wake_up?: string;
   output?: string;
@@ -814,6 +817,7 @@ export function renderProgress(container: Element, navigate: (route: string) => 
       quickStateTile("Wing", memoryState?.wing || projectId),
       quickStateTile("Init", initialized ? "ready" : "not yet"),
       quickStateTile("Command", memoryState?.command || "not found"),
+      quickStateTile("Wake-up", memoryState?.wake_up_hash ? memoryState.wake_up_hash.slice(0, 12) : "none"),
       quickStateTile("Search cache", memoryState?.last_search ? "present" : "empty"),
     ].join("");
 

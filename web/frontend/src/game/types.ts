@@ -66,6 +66,43 @@ export type MemPalaceStatus = {
   wing: string | null;
   cached_wakeup: string | null;
   last_search: string | null;
+  wakeUpHash: string | null;
+  wakeUpBytes: number;
+  memoryRefs: string[];
+  artifactRefs: string[];
+};
+
+export type NextStepPacket = {
+  packetId: string;
+  step: string;
+  title: string;
+  role: string;
+  objective: string;
+  whyNow: string;
+  inputs: Record<string, unknown>[];
+  queuedIntents: Record<string, unknown>[];
+  contextPreview: string[];
+  interventionOptions: string[];
+  sourceRefs: string[];
+  memoryRefs: string[];
+  raw: Record<string, unknown>;
+};
+
+export type OperatorIntentStatus = "queued" | "applied" | "ignored";
+
+export type OperatorIntentState = {
+  clientIntentId: string;
+  intentEventId: string | null;
+  kind: string;
+  atomId: string | null;
+  payload: Record<string, unknown>;
+  status: OperatorIntentStatus;
+  appliedTo: string | null;
+  reason: string | null;
+  step: string | null;
+  artifactRefs: string[];
+  sourceRefs: string[];
+  lastEvent: RunEvent | null;
 };
 
 export type AtomLoopStatus = {
@@ -96,6 +133,10 @@ export type EngineSnapshot = {
   scrubIndex: number;
   isLive: boolean;
   memPalaceStatus: MemPalaceStatus | null;
+  nextStepPacket: NextStepPacket | null;
+  pendingIntents: Record<string, OperatorIntentState>;
+  appliedIntents: Record<string, OperatorIntentState>;
+  ignoredIntents: Record<string, OperatorIntentState>;
   historyLength: number;
   replayIndex: number;
   live: boolean;

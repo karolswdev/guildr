@@ -207,7 +207,12 @@ class Architect:
             f"Produce a sprint-plan.md following the structure specification."
         )
         user_prompt = self._append_forum_context(user_prompt)
-        user_prompt = append_operator_context(self.state.project_dir, self._phase, user_prompt)
+        user_prompt = append_operator_context(
+            self.state.project_dir,
+            self._phase,
+            user_prompt,
+            events=getattr(self.state, "events", None),
+        )
         prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
         return self._run_architect_session(prompt)
 
@@ -218,7 +223,12 @@ class Architect:
         current_plan_text = f"Here is your previous sprint-plan.md:\n\n```\n{prior}\n```"
         failures_text = refine_template.format(failures=failures, current_plan=current_plan_text)
         failures_text = self._append_forum_context(failures_text)
-        failures_text = append_operator_context(self.state.project_dir, self._phase, failures_text)
+        failures_text = append_operator_context(
+            self.state.project_dir,
+            self._phase,
+            failures_text,
+            events=getattr(self.state, "events", None),
+        )
         prompt = f"{system_prompt}\n\n---\n\n{failures_text}"
         return self._run_architect_session(prompt)
 
@@ -260,7 +270,12 @@ class Architect:
             f"```\n{plan}\n```"
         )
         user_prompt = self._append_forum_context(user_prompt)
-        user_prompt = append_operator_context(self.state.project_dir, self._phase, user_prompt)
+        user_prompt = append_operator_context(
+            self.state.project_dir,
+            self._phase,
+            user_prompt,
+            events=getattr(self.state, "events", None),
+        )
         base_prompt = f"{judge_prompt}\n\n---\n\n{user_prompt}"
 
         # Attempt 1: strict parse on a fresh session.

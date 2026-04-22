@@ -152,3 +152,191 @@ def test_replay_receives_live_history_without_moving_scrub(tmp_path: Path) -> No
         assert.equal(engine.snapshot().atoms.architect.state, 'error');
         """,
     )
+
+
+def test_next_step_packet_replay_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: '1',
+            type: 'next_step_packet_created',
+            packet_id: 'next_1',
+            step: 'memory_refresh',
+            memory_refs: ['.orchestrator/memory/wake-up.md'],
+            packet: {
+              packet_id: 'next_1',
+              step: 'memory_refresh',
+              title: 'Memory',
+              role: 'memory_refresh',
+              objective: 'Refresh memory.',
+              why_now: 'It is first.',
+              inputs: [{ kind: 'memory', ref: '.orchestrator/memory/wake-up.md' }],
+              queued_intents: [{ client_intent_id: 'intent-1', kind: 'interject' }],
+              context_preview: ['Memory wake-up hash: abc'],
+              intervention_options: ['interject'],
+              source_refs: ['workflow:memory_refresh', 'memory:.orchestrator/memory/wake-up.md'],
+            },
+          },
+          {
+            event_id: '2',
+            type: 'next_step_packet_created',
+            packet_id: 'next_2',
+            step: 'persona_forum',
+            packet: {
+              packet_id: 'next_2',
+              step: 'persona_forum',
+              title: 'Team',
+              role: 'persona_forum',
+              objective: 'Shape team.',
+              why_now: 'Memory completed.',
+              inputs: [],
+              context_preview: [],
+              intervention_options: ['intercept'],
+              source_refs: ['workflow:persona_forum'],
+            },
+          },
+        ]);
+        assert.equal(engine.snapshot().nextStepPacket.step, 'persona_forum');
+        engine.scrubTo(0);
+        const packet = engine.snapshot().nextStepPacket;
+        assert.equal(packet.step, 'memory_refresh');
+        assert.deepEqual(packet.memoryRefs, ['.orchestrator/memory/wake-up.md']);
+        assert.equal(packet.queuedIntents[0].client_intent_id, 'intent-1');
+        assert.equal(packet.contextPreview[0], 'Memory wake-up hash: abc');
+        """,
+    )
+
+
+def test_operator_intent_lifecycle_replay_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: 'evt-intent-1',
+            type: 'operator_intent',
+            client_intent_id: 'intent-1',
+            kind: 'interject',
+            atom_id: 'implementation',
+            payload: { instruction: 'Use the lifecycle fold.' },
+            source_refs: ['event:evt-intent-1'],
+          },
+          {
+            event_id: 'evt-applied-1',
+            type: 'operator_intent_applied',
+            client_intent_id: 'intent-1',
+            intent_event_id: 'evt-intent-1',
+            kind: 'interject',
+            atom_id: 'implementation',
+            step: 'implementation',
+            applied_to: 'prompt_context',
+            artifact_refs: ['prompt:implementation'],
+            source_refs: ['intent:intent-1'],
+          },
+          {
+            event_id: 'evt-intent-2',
+            type: 'operator_intent',
+            client_intent_id: 'intent-2',
+            kind: 'note',
+            atom_id: 'testing',
+            payload: { instruction: 'Leave this as a note.' },
+          },
+          {
+            event_id: 'evt-ignored-2',
+            type: 'operator_intent_ignored',
+            client_intent_id: 'intent-2',
+            intent_event_id: 'evt-intent-2',
+            kind: 'note',
+            atom_id: 'testing',
+            step: 'testing',
+            reason: 'unsupported_kind',
+            source_refs: ['intent:intent-2'],
+          },
+        ]);
+        let snapshot = engine.snapshot();
+        assert.deepEqual(Object.keys(snapshot.pendingIntents), []);
+        assert.equal(snapshot.appliedIntents['intent-1'].appliedTo, 'prompt_context');
+        assert.equal(snapshot.appliedIntents['intent-1'].artifactRefs[0], 'prompt:implementation');
+        assert.equal(snapshot.ignoredIntents['intent-2'].reason, 'unsupported_kind');
+
+        engine.scrubTo(0);
+        snapshot = engine.snapshot();
+        assert.equal(snapshot.pendingIntents['intent-1'].status, 'queued');
+        assert.deepEqual(Object.keys(snapshot.appliedIntents), []);
+        assert.deepEqual(Object.keys(snapshot.ignoredIntents), []);
+
+        engine.scrubTo(1);
+        snapshot = engine.snapshot();
+        assert.deepEqual(Object.keys(snapshot.pendingIntents), []);
+        assert.equal(snapshot.appliedIntents['intent-1'].status, 'applied');
+        """,
+    )
+
+
+def test_pending_intent_attaches_to_current_next_step_packet(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: 'packet-1',
+            type: 'next_step_packet_created',
+            packet: {
+              packet_id: 'next_1',
+              step: 'implementation',
+              title: 'Build',
+              role: 'coder',
+              objective: 'Build the slice.',
+              why_now: 'It is next.',
+              inputs: [],
+              queued_intents: [{ client_intent_id: 'intent-existing', kind: 'interject' }],
+              context_preview: [],
+              intervention_options: ['interject'],
+              source_refs: ['workflow:implementation'],
+            },
+          },
+          {
+            event_id: 'intent-event',
+            type: 'operator_intent',
+            client_intent_id: 'intent-live',
+            kind: 'interject',
+            atom_id: 'implementation',
+            payload: { instruction: 'Include lifecycle state.' },
+          },
+          {
+            event_id: 'intent-global',
+            type: 'operator_intent',
+            client_intent_id: 'intent-global',
+            kind: 'intercept',
+            atom_id: null,
+            payload: { instruction: 'Global steering.' },
+          },
+          {
+            event_id: 'intent-other',
+            type: 'operator_intent',
+            client_intent_id: 'intent-other',
+            kind: 'interject',
+            atom_id: 'testing',
+            payload: { instruction: 'Not for this step.' },
+          },
+        ]);
+        const queued = engine.snapshot().nextStepPacket.queuedIntents.map((intent) => intent.client_intent_id);
+        assert.deepEqual(queued, ['intent-existing', 'intent-live', 'intent-global']);
+        engine.scrubTo(0);
+        assert.deepEqual(
+          engine.snapshot().nextStepPacket.queuedIntents.map((intent) => intent.client_intent_id),
+          ['intent-existing'],
+        );
+        """,
+    )

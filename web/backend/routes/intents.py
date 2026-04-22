@@ -7,6 +7,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from orchestrator.lib.event_schema import new_event_id
+from orchestrator.lib.intents import create_queued_intent
 from orchestrator.lib.scrub import is_secret_key, scrub_payload
 from web.backend.routes.projects import get_store
 from web.backend.routes.stream import get_event_store
@@ -31,14 +33,23 @@ async def create_operator_intent(project_id: str, body: OperatorIntentRequest) -
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    intent_event_id = new_event_id()
+    row = create_queued_intent(
+        project.project_dir,
+        kind=body.kind,
+        atom_id=body.atom_id,
+        payload=body.payload,
+        client_intent_id=body.client_intent_id,
+        intent_event_id=intent_event_id,
+    )
     event_fields = {
+        "event_id": intent_event_id,
         "project_id": project_id,
         "kind": body.kind,
         "atom_id": body.atom_id,
-        "payload": scrub_payload(body.payload),
+        "payload": row["payload"],
+        "client_intent_id": row["client_intent_id"],
     }
-    if body.client_intent_id:
-        event_fields["client_intent_id"] = body.client_intent_id
 
     get_event_store().get_or_create(project_id).emit("operator_intent", **event_fields)
     return {
@@ -46,6 +57,6 @@ async def create_operator_intent(project_id: str, body: OperatorIntentRequest) -
         "accepted": True,
         "kind": body.kind,
         "atom_id": body.atom_id,
+        "client_intent_id": row["client_intent_id"],
     }
-
 

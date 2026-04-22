@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import json
 from unittest.mock import patch
 
 import pytest
@@ -31,7 +32,7 @@ def app(fresh_store: ProjectStore) -> FastAPI:
 
 
 @pytest.mark.asyncio
-async def test_operator_intent_route_persists_scrubbed_event(app: FastAPI) -> None:
+async def test_operator_intent_route_persists_scrubbed_event(app: FastAPI, fresh_store: ProjectStore) -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         create_resp = await client.post("/api/projects", json={"name": "Intent Project"})
@@ -54,6 +55,7 @@ async def test_operator_intent_route_persists_scrubbed_event(app: FastAPI) -> No
     payload = response.json()
     assert payload["accepted"] is True
     assert payload["kind"] == "intercept"
+    assert payload["client_intent_id"].startswith("intent_")
 
     event_text = event_log_path(project_id).read_text(encoding="utf-8")
     assert "operator_intent" in event_text
@@ -62,3 +64,16 @@ async def test_operator_intent_route_persists_scrubbed_event(app: FastAPI) -> No
     assert "sk-live-value" not in event_text
     assert "Bearer secret" not in event_text
     assert "[redacted]" in event_text
+
+    project = fresh_store.get(project_id)
+    assert project is not None
+    rows = [
+        json.loads(line)
+        for line in (project.project_dir / ".orchestrator" / "control" / "intents.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert len(rows) == 1
+    assert rows[0]["client_intent_id"] == payload["client_intent_id"]
+    assert rows[0]["intent_event_id"] in event_text
+    assert rows[0]["status"] == "queued"

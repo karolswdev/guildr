@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from orchestrator.lib.intents import consume_prompt_intents
 from orchestrator.lib.memory_palace import wakeup_path
 
 PHASES = (
@@ -210,9 +211,27 @@ def build_operator_context(
     return context
 
 
-def append_operator_context(project_dir: Path, phase: str, prompt: str) -> str:
+def append_operator_context(
+    project_dir: Path,
+    phase: str,
+    prompt: str,
+    *,
+    events: Any | None = None,
+) -> str:
     """Append durable operator context to a prompt if present."""
-    context = build_operator_context(project_dir, phase)
+    clean_phase = validate_phase(phase)
+    intent_lines: list[str] = []
+    applied_events: list[dict[str, Any]] = []
+    if events is not None:
+        intent_lines, applied_events = consume_prompt_intents(project_dir, clean_phase)
+    context = build_operator_context(project_dir, clean_phase)
+    if intent_lines:
+        context = (
+            f"{context.rstrip()}\n\n" if context else ""
+        ) + "## Operator Intent\n" + "\n".join(intent_lines)
+    if events is not None and hasattr(events, "emit"):
+        for event in applied_events:
+            events.emit("operator_intent_applied", project_id=project_dir.name, **event)
     if not context:
         return prompt
     return (
