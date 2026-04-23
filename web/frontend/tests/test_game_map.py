@@ -243,6 +243,17 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "memoryStatusCard" in text
     assert "memory-sync-control" in text
     assert "/memory/sync" in text
+    assert "cost-sheet" in text
+    assert "cost-control" in text
+    assert "openCostSheet" in text
+    assert "renderCostSheet" in text
+    assert "costSummaryCard" in text
+    assert "cost-provider-rail" in text
+    assert "cost-model-rail" in text
+    assert "cost-role-rail" in text
+    assert "cost-phase-rail" in text
+    assert "cost-atom-rail" in text
+    assert "cost-source-rail" in text
     assert "founding-team-brief" in text
     assert "founderCard" in text
     assert "object-lens-sheet" in text
@@ -303,6 +314,85 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "object-preview-rail" in text
     assert "preview-card" in text
     assert "preview-excerpt" in text
+
+
+def test_cost_summary_card_helper(tmp_path: Path) -> None:
+    run_script(
+        tmp_path,
+        GAME_SHELL_TS,
+        """
+        import assert from 'node:assert/strict';
+
+        globalThis.document = {
+          createElement: () => {
+            const node = { textContent: '', get innerHTML() { return String(this.textContent).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } };
+            return node;
+          },
+        };
+
+        const { costSummaryCard } = await import('__BUNDLE__');
+
+        const bucket = (effectiveUsd, inputTokens, outputTokens, unknownCostCount = 0) => ({
+          effectiveUsd,
+          providerReportedUsd: effectiveUsd,
+          estimatedUsd: 0,
+          unknownCostCount,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens: 25,
+          cacheWriteTokens: 10,
+          reasoningTokens: 15,
+        });
+        const cost = {
+          effectiveUsd: 1.2345,
+          providerReportedUsd: 1.2,
+          estimatedUsd: 0.0345,
+          unknownCostCount: 1,
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 100,
+          cacheWriteTokens: 20,
+          reasoningTokens: 30,
+          byProvider: { 'openrouter': bucket(0.85, 800, 300), 'local<llama>': bucket(0.05, 100, 50, 1) },
+          byModel: { 'gpt-5.4-mini': bucket(0.85, 800, 300) },
+          byRole: { coder: bucket(0.75, 700, 280) },
+          byPhase: { implementation: bucket(0.75, 700, 280) },
+          byAtom: { 'task<1>': bucket(0.75, 700, 280) },
+          sourceCounts: { provider_reported: 2, rate_card_estimate: 0, local_estimate: 1, unknown: 1 },
+          runBudgetUsd: 10,
+          phaseBudgetUsd: 2,
+          remainingRunBudgetUsd: 8.5,
+          remainingPhaseBudgetUsd: 1.25,
+          runHalted: false,
+          warnings: ['phase'],
+          exceeded: [],
+          openBudgetGateIds: ['budget_phase'],
+        };
+
+        const html = costSummaryCard(cost);
+        assert.ok(html.includes('data-role="cost-summary-card"'));
+        assert.ok(html.includes('data-role="cost-provider-rail"'));
+        assert.ok(html.includes('data-role="cost-model-rail"'));
+        assert.ok(html.includes('data-role="cost-role-rail"'));
+        assert.ok(html.includes('data-role="cost-phase-rail"'));
+        assert.ok(html.includes('data-role="cost-atom-rail"'));
+        assert.ok(html.includes('data-role="cost-source-rail"'));
+        assert.ok(html.includes('$1.23'));
+        assert.ok(html.includes('$8.50 left'));
+        assert.ok(html.includes('1,650 total'));
+        assert.ok(html.includes('openrouter'));
+        assert.ok(html.includes('gpt-5.4-mini'));
+        assert.ok(html.includes('coder'));
+        assert.ok(html.includes('implementation'));
+        assert.ok(html.includes('budget_phase'));
+        assert.ok(html.includes('unknown: 1'));
+        assert.ok(html.includes('local&lt;llama&gt;'));
+        assert.ok(html.includes('task&lt;1&gt;'));
+        assert.ok(!html.includes('local<llama>'));
+        assert.ok(!html.includes('task<1>'));
+        """,
+        include_three=True,
+    )
 
 
 def test_demo_artifact_url_and_card_helpers(tmp_path: Path) -> None:

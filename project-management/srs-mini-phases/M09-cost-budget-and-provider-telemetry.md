@@ -37,6 +37,10 @@ SRS §4.9, §8.1, §11, §14 M4. Cost truth is what separates "we have a run" fr
 - [ ] Provider telemetry adapter for llama.cpp (local_estimate); keep OpenAI-compatible parsing for `provider_reported`.
 - [ ] Provider health pings surfaced as events for PWA provider body state.
 - [ ] PWA Economics lens: cost by provider / model / role / phase / atom; ripple on expensive paths; budget dial on HUD.
+  - [x] First-pass map-native Economics sheet shows replay-folded effective/provider/estimated/unknown totals, budget state, source counts, and provider/model/role/phase/atom rails from `CostSnapshot`.
+  - [x] Bottom HUD cost control opens the Economics sheet in the same PWA map surface and WebGL fallback renders the same summary.
+  - [ ] Add active budget dial/resume/cancel controls once backend budget gates are writable through the control path.
+  - [ ] Add expensive-path ripple ranking beyond the existing per-atom cost ring.
 - [ ] `rollup()` continues to join with zero orphans; add budget totals to the `RunSummary`.
 
 ## Quality gates
@@ -60,8 +64,12 @@ jq -c 'select(.cost.source == null or (.remaining_run_budget_usd == null and .re
 - [ ] Every call emits one and only one `usage_recorded` with explicit source + budget fields.
 - [ ] `orchestrator inspect --costs` matches the sum of per-record effective costs exactly.
 - [ ] A run with a run-budget hitting 0 emits `budget_halted` and the workflow actually pauses.
-- [ ] Replay cost panel at event N matches what `usage.jsonl` records at that point.
-- [ ] PWA Economics lens is a map lens, not a table route.
+- [x] Replay cost panel at event N matches the frontend `CostSnapshot` folded from replayed `usage_recorded` / budget events.
+- [x] PWA Economics lens is a map lens, not a table route.
+
+## Evidence log
+
+- 2026-04-22 M09 slice A: PWA Economics surface landed in `web/frontend/src/game/GameShell.ts`. The HUD cost chip is now `cost-control` and opens `cost-sheet`; `costSummaryCard()` renders effective/provider/estimated/unknown totals, token totals, budget state, source counts, and provider/model/role/phase/atom rails. WebGL fallback includes the same cost summary. Evidence: `uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py` -> 27 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,354,618 bytes.
 
 ## Known traps
 

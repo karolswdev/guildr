@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { AssetManager } from "./assets/AssetManager.js";
 import { EventEngine } from "./EventEngine.js";
 import { SceneManager, type SpatialViewLevel } from "./SceneManager.js";
-import type { ArtifactPreview, DemoArtifact, DemoPlan, DemoStatus, DemoViewport, DiscussionEntry, DiscussionHighlight, EngineSnapshot, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
+import type { ArtifactPreview, CostBucket, CostSnapshot, DemoArtifact, DemoPlan, DemoStatus, DemoViewport, DiscussionEntry, DiscussionHighlight, EngineSnapshot, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
 
 type GameShellOptions = {
   projectId: string;
@@ -50,6 +50,7 @@ export class GameShell {
   private readonly nextStepSheet = document.createElement("div");
   private readonly goalCoreSheet = document.createElement("div");
   private readonly memorySheet = document.createElement("div");
+  private readonly costSheet = document.createElement("div");
   private readonly objectLensSheet = document.createElement("div");
   private readonly storyLensSheet = document.createElement("div");
   private readonly narratorBox = document.createElement("div");
@@ -251,6 +252,26 @@ export class GameShell {
       "pointer-events: auto",
     ].join("; ");
 
+    this.costSheet.dataset.role = "cost-sheet";
+    this.costSheet.style.cssText = [
+      "position: absolute",
+      "left: 50%",
+      "bottom: calc(max(78px, env(safe-area-inset-bottom) + 78px))",
+      "z-index: 4",
+      "display: none",
+      "width: min(760px, calc(100vw - 24px))",
+      "max-height: min(54vh, calc(100vh - 148px))",
+      "overflow: auto",
+      "transform: translateX(-50%)",
+      "padding: 11px",
+      "border: 1px solid rgba(217,184,77,0.34)",
+      "border-radius: 8px",
+      "background: linear-gradient(180deg, rgba(24,22,14,0.92), rgba(9,9,13,0.96))",
+      "box-shadow: 0 -18px 42px rgba(0,0,0,0.44), inset 0 1px 0 rgba(255,255,255,0.06)",
+      "backdrop-filter: blur(16px)",
+      "pointer-events: auto",
+    ].join("; ");
+
     this.objectLensSheet.dataset.role = "object-lens-sheet";
     this.objectLensSheet.style.cssText = [
       "position: absolute",
@@ -334,6 +355,7 @@ export class GameShell {
     this.root.appendChild(this.nextStepSheet);
     this.root.appendChild(this.goalCoreSheet);
     this.root.appendChild(this.memorySheet);
+    this.root.appendChild(this.costSheet);
     this.root.appendChild(this.objectLensSheet);
     this.root.appendChild(this.storyLensSheet);
     this.root.appendChild(this.narratorBox);
@@ -444,6 +466,9 @@ export class GameShell {
     if (this.memorySheet.style.display !== "none") {
       this.renderMemorySheet(snapshot);
     }
+    if (this.costSheet.style.display !== "none") {
+      this.renderCostSheet(snapshot);
+    }
     if (this.objectLensSheet.style.display !== "none") {
       this.renderObjectLens(snapshot);
     }
@@ -480,13 +505,14 @@ export class GameShell {
       <button data-view-level="surface" aria-label="Object surface view" style="${viewChipStyle(this.viewLevel === "surface")}">Object</button>
       <button data-view-level="story" data-role="story-lens-control" aria-label="Story view" style="${viewChipStyle(this.viewLevel === "story")}">Story: ${storyCount}</button>
       <button data-action="open-timeline" style="${hudChipStyle("#D9B84D")}">${done}/${total}</button>
-      <button data-action="cost" style="${hudChipStyle("#D9B84D")}">${formatUsd(snapshot.cost.effectiveUsd)}${escapeHtml(remaining)}${unknown}</button>
+      <button data-action="open-cost" data-role="cost-control" style="${hudChipStyle("#D9B84D")}">${formatUsd(snapshot.cost.effectiveUsd)}${escapeHtml(remaining)}${unknown}</button>
       <div data-role="loop-dots" style="display: flex; gap: 4px; align-items: center; padding: 0 6px;">${loopDots(snapshot)}</div>
     `;
     (this.bottomHud.querySelector('[data-action="focus-active"]') as HTMLButtonElement).addEventListener("click", () => this.focusActiveAtom());
     (this.bottomHud.querySelector('[data-action="open-goal-core"]') as HTMLButtonElement).addEventListener("click", () => this.openGoalCoreSheet());
     (this.bottomHud.querySelector('[data-action="open-memory-core"]') as HTMLButtonElement).addEventListener("click", () => this.openMemorySheet());
     (this.bottomHud.querySelector('[data-action="open-next-step"]') as HTMLButtonElement).addEventListener("click", () => this.openNextStepSheet());
+    (this.bottomHud.querySelector('[data-action="open-cost"]') as HTMLButtonElement).addEventListener("click", () => this.openCostSheet());
     (this.bottomHud.querySelector('[data-action="open-timeline"]') as HTMLButtonElement).addEventListener("click", () => this.showTimeline(3000));
     this.bottomHud.querySelectorAll<HTMLButtonElement>("[data-view-level]").forEach((button) => {
       button.addEventListener("click", () => this.setViewLevel(button.dataset.viewLevel as SpatialViewLevel));
@@ -513,6 +539,7 @@ export class GameShell {
       this.nextStepSheet.style.display !== "none" ||
       this.goalCoreSheet.style.display !== "none" ||
       this.memorySheet.style.display !== "none" ||
+      this.costSheet.style.display !== "none" ||
       this.objectLensSheet.style.display !== "none" ||
       this.storyLensSheet.style.display !== "none" ||
       this.composeDock.style.display !== "none" ||
@@ -600,6 +627,7 @@ export class GameShell {
     this.nextStepSheet.style.display = "none";
     this.goalCoreSheet.style.display = "none";
     this.memorySheet.style.display = "none";
+    this.costSheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
     this.composeDock.style.display = "none";
     this.actionRing.style.display = "none";
@@ -635,6 +663,7 @@ export class GameShell {
     this.nextStepSheet.style.display = "none";
     this.goalCoreSheet.style.display = "none";
     this.memorySheet.style.display = "none";
+    this.costSheet.style.display = "none";
     this.actionRing.style.display = "none";
     this.objectLensSheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
@@ -651,6 +680,7 @@ export class GameShell {
     this.composeDock.style.display = "none";
     this.goalCoreSheet.style.display = "none";
     this.memorySheet.style.display = "none";
+    this.costSheet.style.display = "none";
     this.objectLensSheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
     this.bottomHud.style.display = "flex";
@@ -672,6 +702,7 @@ export class GameShell {
     this.composeDock.style.display = "none";
     this.nextStepSheet.style.display = "none";
     this.memorySheet.style.display = "none";
+    this.costSheet.style.display = "none";
     this.objectLensSheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
     this.bottomHud.style.display = "flex";
@@ -739,6 +770,7 @@ export class GameShell {
     this.composeDock.style.display = "none";
     this.nextStepSheet.style.display = "none";
     this.goalCoreSheet.style.display = "none";
+    this.costSheet.style.display = "none";
     this.objectLensSheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
     this.bottomHud.style.display = "flex";
@@ -787,6 +819,47 @@ export class GameShell {
         button.textContent = "Sync";
       }
     }
+  }
+
+  private openCostSheet(): void {
+    this.actionRing.style.display = "none";
+    this.composeDock.style.display = "none";
+    this.nextStepSheet.style.display = "none";
+    this.goalCoreSheet.style.display = "none";
+    this.memorySheet.style.display = "none";
+    this.objectLensSheet.style.display = "none";
+    this.storyLensSheet.style.display = "none";
+    this.bottomHud.style.display = "flex";
+    this.costSheet.style.display = "block";
+    if (this.lastSnapshot) {
+      this.renderCostSheet(this.lastSnapshot);
+    }
+  }
+
+  private renderCostSheet(snapshot: EngineSnapshot): void {
+    const mode = snapshot.live ? "Live" : `Replay ${snapshot.replayIndex + 1}/${snapshot.historyLength}`;
+    const providerCount = Object.keys(snapshot.cost.byProvider).length;
+    const modelCount = Object.keys(snapshot.cost.byModel).length;
+    this.costSheet.innerHTML = `
+      <div style="display: grid; gap: 11px;">
+        <div style="display: flex; align-items: start; justify-content: space-between; gap: 10px;">
+          <div style="min-width: 0;">
+            <div style="font-size: 10px; color: #D9B84D; text-transform: uppercase; font-weight: 900;">Economics · ${escapeHtml(mode)}</div>
+            <div style="font-size: 17px; font-weight: 900; line-height: 1.2; margin-top: 3px; overflow-wrap: anywhere;">Cost telemetry</div>
+            <div style="font-size: 11px; color: #8C92A8; margin-top: 4px;">${providerCount} providers · ${modelCount} models · ${snapshot.cost.openBudgetGateIds.length} open gates</div>
+          </div>
+          <div style="display: inline-flex; gap: 6px; flex: 0 0 auto;">
+            <button data-action="cost-open-timeline" style="${ghostButtonStyle()}">Timeline</button>
+            <button data-action="cost-close" style="${ghostButtonStyle()}">Close</button>
+          </div>
+        </div>
+        ${costSummaryCard(snapshot.cost)}
+      </div>
+    `;
+    (this.costSheet.querySelector('[data-action="cost-close"]') as HTMLButtonElement | null)?.addEventListener("click", () => {
+      this.costSheet.style.display = "none";
+    });
+    (this.costSheet.querySelector('[data-action="cost-open-timeline"]') as HTMLButtonElement | null)?.addEventListener("click", () => this.showTimeline(5000));
   }
 
   private renderNextStepSheet(snapshot: EngineSnapshot): void {
@@ -1144,6 +1217,7 @@ export class GameShell {
       this.nextStepSheet.style.display = "none";
       this.goalCoreSheet.style.display = "none";
       this.memorySheet.style.display = "none";
+      this.costSheet.style.display = "none";
       this.actionRing.style.display = "none";
       this.storyLensSheet.style.display = "none";
       this.objectLensSheet.style.display = "block";
@@ -1152,6 +1226,7 @@ export class GameShell {
       this.nextStepSheet.style.display = "none";
       this.goalCoreSheet.style.display = "none";
       this.memorySheet.style.display = "none";
+      this.costSheet.style.display = "none";
       this.actionRing.style.display = "none";
       this.objectLensSheet.style.display = "none";
       this.storyLensSheet.style.display = "block";
@@ -1159,6 +1234,7 @@ export class GameShell {
     } else {
       this.goalCoreSheet.style.display = "none";
       this.memorySheet.style.display = "none";
+      this.costSheet.style.display = "none";
       this.objectLensSheet.style.display = "none";
       this.storyLensSheet.style.display = "none";
     }
@@ -1193,6 +1269,7 @@ export class GameShell {
     this.nextStepSheet.style.display = "none";
     this.goalCoreSheet.style.display = "none";
     this.memorySheet.style.display = "none";
+    this.costSheet.style.display = "none";
     this.objectLensSheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
     this.bottomHud.style.display = "none";
@@ -1256,6 +1333,9 @@ function fallbackHtml(workflow: WorkflowStep[], snapshot: EngineSnapshot, projec
       <div data-role="memory-core-sheet" style="padding: 12px; border: 1px solid #254A50; border-radius: 8px; background: #101923;">
         ${memoryStatusCard(snapshot)}
       </div>
+      <div data-role="cost-sheet" style="padding: 12px; border: 1px solid #7A5C23; border-radius: 8px; background: #14120C;">
+        ${costSummaryCard(snapshot.cost)}
+      </div>
       ${snapshot.latestDigest ? `
         <div data-role="narrative-digest" style="padding: 12px; border: 1px solid #2A3042; border-radius: 8px; background: #141822;">
           <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Recent story</div>
@@ -1286,6 +1366,87 @@ function fallbackHtml(workflow: WorkflowStep[], snapshot: EngineSnapshot, projec
       }).join("")}
     </div>
   `;
+}
+
+export function costSummaryCard(cost: CostSnapshot): string {
+  const tokenTotal = tokenCount(cost);
+  const budgetRows = [
+    cost.runBudgetUsd !== null
+      ? `Run budget ${formatUsd(cost.runBudgetUsd)}${cost.remainingRunBudgetUsd !== null ? ` · ${formatUsd(cost.remainingRunBudgetUsd)} left` : ""}`
+      : "Run budget unset",
+    cost.phaseBudgetUsd !== null
+      ? `Phase budget ${formatUsd(cost.phaseBudgetUsd)}${cost.remainingPhaseBudgetUsd !== null ? ` · ${formatUsd(cost.remainingPhaseBudgetUsd)} left` : ""}`
+      : "Phase budget unset",
+    cost.runHalted ? "Run halted by budget gate" : "Run not halted",
+    ...cost.openBudgetGateIds.map((gateId) => `gate open: ${gateId}`),
+    ...cost.warnings.map((level) => `warning: ${level}`),
+    ...cost.exceeded.map((level) => `exceeded: ${level}`),
+  ];
+
+  return `
+    <div data-role="cost-summary-card" style="display: grid; gap: 10px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(142px, 1fr)); gap: 7px;">
+        ${sheetField("Effective", formatUsd(cost.effectiveUsd))}
+        ${sheetField("Provider", formatUsd(cost.providerReportedUsd))}
+        ${sheetField("Estimated", formatUsd(cost.estimatedUsd))}
+        ${sheetField("Unknown", String(cost.unknownCostCount))}
+        ${sheetField("Tokens", `${formatInteger(tokenTotal)} total`)}
+      </div>
+      ${sheetSection("Budget state", budgetRows, "No budget state has been recorded yet.")}
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px;">
+        ${costBucketRail("Provider", cost.byProvider, "cost-provider-rail")}
+        ${costBucketRail("Model", cost.byModel, "cost-model-rail")}
+        ${costBucketRail("Role", cost.byRole, "cost-role-rail")}
+        ${costBucketRail("Phase", cost.byPhase, "cost-phase-rail")}
+        ${costBucketRail("Atom", cost.byAtom, "cost-atom-rail")}
+        ${costSourceRail(cost)}
+      </div>
+    </div>
+  `;
+}
+
+function costBucketRail(label: string, buckets: Record<string, CostBucket>, role: string): string {
+  const rows = Object.entries(buckets)
+    .sort(([, a], [, b]) => (b.effectiveUsd - a.effectiveUsd) || (tokenCount(b) - tokenCount(a)))
+    .slice(0, 5);
+  const body = rows.length > 0
+    ? rows.map(([name, bucket]) => costBucketRow(name, bucket)).join("")
+    : `<div style="${sheetEmptyStyle()}">No ${label.toLowerCase()} cost rows yet.</div>`;
+  return `
+    <div data-role="${role}" style="display: grid; gap: 6px;">
+      <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">${escapeHtml(label)}</div>
+      <div style="display: grid; gap: 5px;">${body}</div>
+    </div>
+  `;
+}
+
+function costBucketRow(name: string, bucket: CostBucket): string {
+  const unknown = bucket.unknownCostCount > 0 ? ` · ${bucket.unknownCostCount} unknown` : "";
+  const detail = `${formatUsd(bucket.effectiveUsd)} · ${formatInteger(tokenCount(bucket))} tokens${unknown}`;
+  return `<div style="${sheetLineStyle()}"><strong style="color: #E8EAF0;">${escapeHtml(name)}</strong><br>${escapeHtml(detail)}</div>`;
+}
+
+function costSourceRail(cost: CostSnapshot): string {
+  const rows = Object.entries(cost.sourceCounts)
+    .filter(([, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a);
+  const body = rows.length > 0
+    ? rows.map(([source, count]) => `<span style="${refChipStyle()}">${escapeHtml(source)}: ${formatInteger(count)}</span>`).join("")
+    : `<span style="${emptyChipStyle()}">No usage sources recorded.</span>`;
+  return `
+    <div data-role="cost-source-rail" style="${sheetPanelStyle()}">
+      <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 6px;">Sources</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">${body}</div>
+    </div>
+  `;
+}
+
+function tokenCount(bucket: CostBucket): number {
+  return bucket.inputTokens + bucket.outputTokens + bucket.cacheReadTokens + bucket.cacheWriteTokens + bucket.reasoningTokens;
+}
+
+function formatInteger(value: number): string {
+  return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 export function memoryStatusCard(snapshot: EngineSnapshot): string {
