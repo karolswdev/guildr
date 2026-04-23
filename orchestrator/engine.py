@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import logging
 import inspect
+import re
 from pathlib import Path
 from typing import Any, Callable
 
 from orchestrator.lib.artifact_preview import emit_phase_artifact_previews
 from orchestrator.lib.budget import BudgetHalted
 from orchestrator.lib.config import Config
+from orchestrator.lib.demo import emit_demo_plan
+from orchestrator.lib.demo_runner import DemoRunner
 from orchestrator.lib.functional import (
     build_demo_compatibility_gate,
     build_functional_acceptance_gate,
@@ -38,6 +41,9 @@ RUNTIME_MINI_SPRINT_PHASES: dict[str, str] = {
     "testing": "test",
     "review": "review",
 }
+RUNTIME_DEMO_PORT = 4173
+_PLAYWRIGHT_SPEC_RE = re.compile(r"([A-Za-z0-9_./-]+\.(?:spec|test)\.(?:[cm]?[jt]sx?))")
+_ROUTE_RE = re.compile(r"(?<![A-Za-z0-9_./-])(/(?:[A-Za-z0-9_.-]+/?)+)")
 
 
 class PhaseFailure(Exception):
@@ -63,6 +69,7 @@ class Orchestrator:
         dry_run: bool = False,
         session_runners: dict[str, Any] | None = None,
         endpoints: Any | None = None,
+        demo_runner_factory: Callable[[Any, Path], Any] | None = None,
     ) -> None:
         # All dependent modules are imported lazily so the engine skeleton
         # can be committed independently of Tasks 2-6.
@@ -82,6 +89,7 @@ class Orchestrator:
         # opencode-driven role.
         self._session_runners: dict[str, Any] = dict(session_runners or {})
         self._endpoints = endpoints
+        self._demo_runner_factory = demo_runner_factory
         self.state.events = events
         self.state.gate_registry = gate_registry
 
@@ -259,6 +267,10 @@ class Orchestrator:
                     name,
                     phase_done_event if isinstance(phase_done_event, dict) else None,
                 )
+                if name == "testing":
+                    self._schedule_runtime_demo_ceremony(
+                        phase_done_event if isinstance(phase_done_event, dict) else None
+                    )
                 if name == "review":
                     self._emit_runtime_functional_acceptance(
                         phase_done_event if isinstance(phase_done_event, dict) else None
@@ -371,12 +383,18 @@ class Orchestrator:
         if phase_done_event and phase_done_event.get("event_id"):
             source_refs.append(f"event:{phase_done_event['event_id']}")
 
+        demo_hints = self._infer_runtime_demo_hints(
+            acceptance_criteria=acceptance_criteria,
+            evidence_required=evidence_required,
+            changed_files=changed_files,
+        )
         demo = self._runtime_demo_state()
         demo_gate = build_demo_compatibility_gate(
             acceptance_criteria=acceptance_criteria,
             evidence_required=evidence_required,
             repo_has_playwright=self._repo_has_playwright(),
             changed_files=changed_files,
+            **demo_hints,
         )
         if demo["status"] is not None:
             demo_gate["demo_requested"] = True
@@ -434,6 +452,49 @@ class Orchestrator:
             source_refs=source_refs,
         )
 
+    def _schedule_runtime_demo_ceremony(self, phase_done_event: dict[str, Any] | None) -> None:
+        """Plan and optionally execute a runtime demo ceremony after testing."""
+        context = self._runtime_mini_sprint_context(phase_done_event)
+        if context is None:
+            return
+        demo_gate = context["demo_gate"]
+        if demo_gate.get("demo_requested") is not True:
+            return
+        if demo_gate.get("demo_compatibility") != "eligible":
+            return
+        if self._runtime_demo_events():
+            return
+        plan = demo_gate.get("demo_plan")
+        if not isinstance(plan, dict):
+            return
+        trigger_event_id = phase_done_event.get("event_id") if phase_done_event else None
+        if not isinstance(trigger_event_id, str) or not trigger_event_id:
+            return
+        source_refs = list(dict.fromkeys([*context["source_refs"], "workflow:testing"]))
+        plan_event = emit_demo_plan(
+            self._events_obj,
+            self.state.project_dir,
+            plan,
+            trigger_event_id=trigger_event_id,
+            task_id=RUNTIME_MINI_SPRINT_ID,
+            atom_id="testing",
+            project_id=str(self.state.project_dir.name),
+            source_refs=source_refs,
+        )
+        if plan_event.get("type") != "demo_planned":
+            return
+        test_command = str(plan_event.get("test_command") or "").strip()
+        if not test_command:
+            return
+        demo_runner = self._make_demo_runner()
+        demo_runner.run(
+            plan_event,
+            artifact_source_dir=self._runtime_demo_artifact_source_dir(),
+            base_url=self._runtime_demo_base_url(str(plan_event.get("route") or "")),
+            project_id=str(self.state.project_dir.name),
+            source_refs=[f"event:{plan_event['event_id']}"],
+        )
+
     def _emit_runtime_functional_acceptance(self, phase_done_event: dict[str, Any] | None) -> None:
         """Emit runtime functional acceptance after review evidence exists."""
         context = self._runtime_mini_sprint_context(phase_done_event)
@@ -488,7 +549,7 @@ class Orchestrator:
     def _runtime_demo_state(self) -> dict[str, Any]:
         status: str | None = None
         artifact_refs: list[str] = []
-        for event in self._recent_events():
+        for event in self._runtime_demo_events():
             event_type = event.get("type")
             if event_type == "demo_presented":
                 status = "presented"
@@ -506,6 +567,112 @@ class Orchestrator:
             elif event_type == "demo_skipped":
                 status = status or "skipped"
         return {"status": status, "artifact_refs": list(dict.fromkeys(artifact_refs))}
+
+    def _runtime_demo_events(self) -> list[dict[str, Any]]:
+        return [
+            event for event in self._recent_events()
+            if str(event.get("type") or "").startswith("demo_")
+            and event.get("task_id") == RUNTIME_MINI_SPRINT_ID
+        ]
+
+    def _infer_runtime_demo_hints(
+        self,
+        *,
+        acceptance_criteria: list[str],
+        evidence_required: list[str],
+        changed_files: list[str],
+    ) -> dict[str, Any]:
+        lines = [*acceptance_criteria, *evidence_required]
+        spec_path = self._infer_playwright_spec_path(lines)
+        test_command = self._infer_playwright_test_command(lines, spec_path=spec_path)
+        route = self._infer_demo_route(lines, changed_files)
+        return {
+            "start_command": self._infer_demo_start_command(changed_files, test_command=test_command),
+            "test_command": test_command,
+            "spec_path": spec_path,
+            "route": route,
+            "viewports": self._infer_demo_viewports(lines),
+        }
+
+    def _infer_playwright_spec_path(self, lines: list[str]) -> str:
+        for line in lines:
+            if not isinstance(line, str):
+                continue
+            match = _PLAYWRIGHT_SPEC_RE.search(line)
+            if match:
+                return match.group(1)
+        return ""
+
+    def _infer_playwright_test_command(self, lines: list[str], *, spec_path: str) -> str:
+        for line in lines:
+            if not isinstance(line, str):
+                continue
+            snippets = re.findall(r"`([^`]+)`", line)
+            for snippet in snippets:
+                cleaned = snippet.strip()
+                lowered = cleaned.lower()
+                if "playwright" in lowered and "test" in lowered:
+                    return cleaned
+            cleaned_line = line.strip().lstrip("-").strip().rstrip(".")
+            lowered_line = cleaned_line.lower()
+            if lowered_line.startswith("run "):
+                cleaned_line = cleaned_line[4:].strip()
+                lowered_line = cleaned_line.lower()
+            if "playwright" in lowered_line and "test" in lowered_line:
+                return cleaned_line
+        if spec_path:
+            return f"npx playwright test {spec_path}"
+        return ""
+
+    def _infer_demo_route(self, lines: list[str], changed_files: list[str]) -> str:
+        for line in lines:
+            if not isinstance(line, str):
+                continue
+            match = _ROUTE_RE.search(line)
+            if match:
+                return match.group(1).rstrip(".,);:")
+        if any(path.startswith("web/frontend/") for path in changed_files):
+            return "/"
+        return ""
+
+    def _infer_demo_viewports(self, lines: list[str]) -> list[str]:
+        combined = "\n".join(line for line in lines if isinstance(line, str)).lower()
+        viewports: list[str] = []
+        if any(token in combined for token in ("mobile", "iphone", "android")):
+            viewports.append("mobile")
+        if "desktop" in combined:
+            viewports.append("desktop")
+        return viewports
+
+    def _infer_demo_start_command(self, changed_files: list[str], *, test_command: str) -> str:
+        if not test_command:
+            return ""
+        if not any(path.startswith("web/frontend/") for path in changed_files):
+            return ""
+        frontend_root = self.state.project_dir / "web" / "frontend"
+        if not (frontend_root / "index.html").exists():
+            return ""
+        return f"python3 -m http.server {RUNTIME_DEMO_PORT} --directory web/frontend"
+
+    def _make_demo_runner(self) -> Any:
+        if self._demo_runner_factory is not None:
+            return self._demo_runner_factory(self._events_obj, self.state.project_dir)
+        return DemoRunner(self._events_obj, self.state.project_dir)
+
+    def _runtime_demo_artifact_source_dir(self) -> Path:
+        for rel_path in ("test-results", "pw-output", "playwright-report"):
+            candidate = self.state.project_dir / rel_path
+            if candidate.exists() and candidate.is_dir():
+                return candidate
+        fallback = self.state.project_dir / "test-results"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+
+    def _runtime_demo_base_url(self, route: str) -> str | None:
+        route_clean = route.strip() or "/"
+        if not route_clean.startswith("/"):
+            route_clean = f"/{route_clean}"
+        return f"http://127.0.0.1:{RUNTIME_DEMO_PORT}{route_clean}"
 
     def _repo_has_playwright(self) -> bool:
         return any(

@@ -393,6 +393,92 @@ class TestLoopEvents:
         assert len([event for event in events.events if event["type"] == "mini_sprint_planned"]) == 1
         assert [event["passed"] for event in events.events if event["type"] == "functional_acceptance_evaluated"] == [True]
 
+    def test_testing_phase_schedules_runtime_demo_ceremony_when_demo_is_runnable(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = ReturningCaptureEvents()
+        (config.project_dir / "sprint-plan.md").write_text(
+            "# Sprint Plan\n\n"
+            "## Tasks\n\n"
+            "### Task 1: PWA proof\n"
+            "- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `web/frontend/src/game/GameShell.ts`\n\n"
+            "**Acceptance Criteria:**\n- [ ] PWA map opens on mobile at /game.\n\n"
+            "**Evidence Required:**\n- Run `npx playwright test web/frontend/tests/demo/game-map.spec.ts` and capture demo.gif.\n\n"
+            "**Evidence Log:**\n- [ ] Done\n\n",
+            encoding="utf-8",
+        )
+        (config.project_dir / "TEST_REPORT.md").write_text("All tests passed.", encoding="utf-8")
+        (config.project_dir / "playwright.config.ts").write_text("export default {};\n", encoding="utf-8")
+        frontend_dir = config.project_dir / "web" / "frontend"
+        frontend_dir.mkdir(parents=True)
+        (frontend_dir / "index.html").write_text("<!doctype html><title>demo</title>\n", encoding="utf-8")
+        runner_calls: list[dict[str, object]] = []
+
+        class FakeDemoRunner:
+            def __init__(self, bus) -> None:
+                self.bus = bus
+
+            def run(
+                self,
+                plan_event: dict[str, object],
+                *,
+                artifact_source_dir: Path,
+                base_url: str | None = None,
+                project_id: str | None = None,
+                source_refs: list[str] | None = None,
+            ) -> dict[str, object]:
+                runner_calls.append({
+                    "plan_event": plan_event,
+                    "artifact_source_dir": artifact_source_dir,
+                    "base_url": base_url,
+                    "project_id": project_id,
+                    "source_refs": list(source_refs or []),
+                })
+                capture = self.bus.emit(
+                    "demo_capture_started",
+                    project_id=project_id,
+                    demo_id=plan_event["demo_id"],
+                    task_id=plan_event["task_id"],
+                    atom_id=plan_event["atom_id"],
+                    adapter=plan_event["adapter"],
+                    source_refs=list(source_refs or []),
+                    artifact_refs=[],
+                )
+                return self.bus.emit(
+                    "demo_presented",
+                    project_id=project_id,
+                    demo_id=plan_event["demo_id"],
+                    task_id=plan_event["task_id"],
+                    atom_id=plan_event["atom_id"],
+                    adapter=plan_event["adapter"],
+                    test_status="passed",
+                    artifact_refs=["demo.gif"],
+                    source_refs=[f"event:{capture['event_id']}"],
+                )
+
+        orchestrator = Orchestrator(
+            config=config,
+            git_ops=mock_git_ops,
+            events=events,
+            demo_runner_factory=lambda bus, project_dir: FakeDemoRunner(bus),
+        )
+
+        orchestrator._run_phase("testing", lambda: None)
+
+        planned = [event for event in events.events if event["type"] == "demo_planned"]
+        presented = [event for event in events.events if event["type"] == "demo_presented"]
+        assert len(planned) == 1
+        assert planned[0]["task_id"] == "ms_runtime_acceptance"
+        assert planned[0]["test_command"] == "npx playwright test web/frontend/tests/demo/game-map.spec.ts"
+        assert planned[0]["route"] == "/game"
+        assert planned[0]["viewports"] == ["mobile"]
+        assert len(presented) == 1
+        assert len(runner_calls) == 1
+        assert runner_calls[0]["artifact_source_dir"] == config.project_dir / "test-results"
+        assert runner_calls[0]["base_url"] == "http://127.0.0.1:4173/game"
+
     def test_review_phase_blocks_acceptance_when_required_demo_missing(
         self,
         config: Config,
@@ -420,6 +506,43 @@ class TestLoopEvents:
         assert "Missing evidence: Run Playwright and capture demo.gif." in accepted[-1]["blocking_findings"]
         assert "Demo requested but no captured or presented demo evidence is attached." in accepted[-1]["blocking_findings"]
         assert accepted[-1]["recommended_actions"] == ["repair_loop", "hero_review", "operator_override"]
+
+    def test_review_phase_surfaces_failed_runtime_demo_capture(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = ReturningCaptureEvents()
+        (config.project_dir / "sprint-plan.md").write_text(
+            "# Sprint Plan\n\n"
+            "## Tasks\n\n"
+            "### Task 1: PWA proof\n"
+            "- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `web/frontend/src/game/GameShell.ts`\n\n"
+            "**Acceptance Criteria:**\n- [ ] PWA map shows the demo card.\n\n"
+            "**Evidence Required:**\n- Run Playwright and capture demo.gif.\n\n"
+            "**Evidence Log:**\n- [ ] Done\n\n",
+            encoding="utf-8",
+        )
+        (config.project_dir / "TEST_REPORT.md").write_text("All tests passed.", encoding="utf-8")
+        (config.project_dir / "REVIEW.md").write_text("APPROVED", encoding="utf-8")
+        events.emit(
+            "demo_capture_failed",
+            project_id=config.project_dir.name,
+            demo_id="demo_runtime",
+            task_id="ms_runtime_acceptance",
+            atom_id="testing",
+            adapter="playwright_web",
+            error="selector timeout",
+            artifact_refs=[],
+            source_refs=["event:testing"],
+        )
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events)
+
+        orchestrator._run_phase("review", lambda: None)
+
+        accepted = [event for event in events.events if event["type"] == "functional_acceptance_evaluated"]
+        assert accepted[-1]["passed"] is False
+        assert "Demo capture failed; rerun the demo ceremony or repair the visual path." in accepted[-1]["blocking_findings"]
 
     def test_phase_boundaries_emit_memory_diff_when_wakeup_changes(
         self,

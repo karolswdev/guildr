@@ -147,7 +147,7 @@ def test_functional_acceptance_gate_blocks_on_missing_evidence_and_failed_step()
     ]
     assert "Functional step failed: testing" in gate["blocking_findings"]
     assert "Missing evidence: demo.gif" in gate["blocking_findings"]
-    assert "Demo requested but no captured or presented demo evidence is attached." in gate["blocking_findings"]
+    assert "Demo capture failed; rerun the demo ceremony or repair the visual path." in gate["blocking_findings"]
     assert gate["recommended_actions"] == ["repair_loop", "hero_review", "operator_override"]
     assert gate["review_artifact_ref"] == "REVIEW.md"
     assert gate["source_refs"] == ["event:review"]

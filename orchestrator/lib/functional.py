@@ -166,8 +166,11 @@ def build_functional_acceptance_gate(
     for finding in _clean_strings(review_findings):
         blockers.append(finding)
 
-    if demo_requested and demo_status not in {"captured", "presented"} and not demo_artifact_refs:
-        blockers.append("Demo requested but no captured or presented demo evidence is attached.")
+    if demo_requested:
+        if demo_status == "failed":
+            blockers.append("Demo capture failed; rerun the demo ceremony or repair the visual path.")
+        elif demo_status not in {"captured", "presented"} and not demo_artifact_refs:
+            blockers.append("Demo requested but no captured or presented demo evidence is attached.")
 
     normalized_criteria = _normalize_criteria_results(criteria_results, criteria, evidence, blockers)
     for result in normalized_criteria:

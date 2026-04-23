@@ -551,6 +551,39 @@ Delivered 2026-04-23:
 - Acceptance remains review-bound and uses the streamed step state plus
   evidence/demo/review refs for the final verdict.
 
+### Slice F10 — Runtime Demo Ceremony Scheduling
+
+- Schedule a runtime demo ceremony after testing when the mini-sprint requests
+  demo proof and compatibility is `eligible`.
+- Reuse the demo plan/capture/presented lifecycle instead of inventing a
+  parallel runtime-only ceremony.
+- Keep demo state scoped to the runtime mini-sprint so unrelated demo events do
+  not leak into acceptance.
+- Distinguish "proof still pending" from "demo capture failed" at acceptance.
+
+Evidence:
+
+```bash
+uv run pytest -q tests/test_functional_orchestration.py tests/test_engine.py tests/test_event_schema.py
+uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py
+./web/frontend/build.sh
+git diff --check -- orchestrator/engine.py orchestrator/lib/functional.py tests/test_engine.py tests/test_functional_orchestration.py project-management/STATUS.md project-management/M10-functional-orchestration-surface.md
+```
+
+Delivered 2026-04-23:
+
+- Runtime testing now emits `demo_planned` automatically for eligible
+  mini-sprints using sprint-plan acceptance/evidence plus conservative inferred
+  hints for Playwright command, spec path, route, viewport, and local static
+  server startup when the frontend surface is local.
+- When the plan includes a runnable `test_command`, the engine invokes the
+  existing `DemoRunner`, so demo capture lifecycle events can land before
+  review-time functional acceptance.
+- Runtime demo state is now filtered to the runtime mini-sprint task id instead
+  of scanning every demo event in the project.
+- Functional acceptance now calls out failed demo capture explicitly, rather
+  than collapsing that case into generic missing-proof language.
+
 ## Quality Gates
 
 - Event integrity: every new functional event is registered in backend and
@@ -589,6 +622,6 @@ Delivered 2026-04-23:
 
 ## Immediate Next Step
 
-Run Slice F10: add demo ceremony runtime scheduling into the functional lane,
-so eligible mini-sprints can emit demo plan/capture/presented events between
-test/review/acceptance rather than only showing compatibility metadata.
+Run Slice F11: upgrade the operator-facing Mini-Sprint Lane so runtime build,
+test, demo, review, and acceptance appear as first-class map atoms/bands rather
+than only inside the Next-Step summary sheet.

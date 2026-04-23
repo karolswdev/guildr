@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-04-22
+Last updated: 2026-04-23
 
 ## Honest Current State
 
@@ -106,7 +106,7 @@ running checklist for product-grade follow/review/intervene work.
 | **M07 Artifact Preview Depth** | Complete | Claude | Demo-ceremony half via A-10 slices 1/2/2b/3 (demo events + storage + `DemoRunner` + bounded `/api/projects/{id}/demos/...` route + Story/Object Lens demo cards). Artifact-preview half landed via M07 slices 1–4: `artifact_preview_created` emitter with sha256, bounded excerpts (8 KiB text head / 2 KiB code tail / binary placeholder), secret scrubbing, A-9 provenance; engine + narrator hooks emit previews for every canonical artifact (sprint-plan, TEST_REPORT, REVIEW, DEPLOY, narrative digest `.md`); PWA folds previews into `snapshot.previews`, renders `artifactPreviewCard` in Story + Object Lens rails anchored by `producingAtomId`; `PHASE_SOURCE_REFS` threads upstream lineage through every event. |
 | **M08 Memory Spine** | Mostly done | Codex | MemPalace sync/search/provenance packets exist, are attached to next-step context, visible in the PWA memory body/sheet, diffed after phase boundaries via `memory_diff`, shown on Story Lens claim cards, backed by a deterministic role-wing contract plus explicit CLI cost-accounting note, and exposed by default to selected opencode roles via scoped MCP config. Needs live provider proof once usage is observable. |
 | **M09 Cost/Budget Telemetry** | Partial | Codex/Claude | Usage rows, rollups, replay-folded cost buckets, atom cost rings, a map-native PWA Economics sheet, permissive high advisory defaults, PWA budget-gate decisions, and runtime hard-cap enforcement now exist. Needs rate-card snapshots, provider health, and full call-site proof. |
-| **M10 Functional Surface + Hookability** | Planned | Codex | `M10-functional-orchestration-surface.md` now defines operator-facing functional workflows: Command Core, Next Move, Mini-Sprint Lane, Council/Hero, demo evidence, and acceptance gates. Existing hookability file still owns programmable hook/advisor boundaries. |
+| **M10 Functional Surface + Hookability** | In progress | Codex | F2-F10 are landed: Next Move functional readiness, mini-sprint event spine, Next-Step functional sheet, Hero invite intent UI, demo compatibility gate, functional acceptance gate, runtime acceptance wiring, streamed runtime lane progress, and runtime demo ceremony scheduling. Existing hookability file still owns programmable hook/advisor boundaries. |
 | **M11 Replay Resilience** | Partial | Codex | Event replay works; needs corruption/rebuild/fallback hardening and replay/export handling for recorded demo artifacts. |
 | **M12 Release Hardening** | Not started | Unassigned | Requires live attended run, mobile polish, accessibility pass, and packaging checks. |
 
@@ -150,8 +150,23 @@ Primary planning file: `project-management/M10-functional-orchestration-surface.
 6. **F6 — Demo compatibility gate.** Detect demo eligibility and show requested
    demo state through existing demo ceremony events.
 
-7. **F7 — Functional acceptance gate.** Emit and render explicit pass/fail
-   criteria and blocking findings after test/review/demo evidence.
+7. **F7 — Functional acceptance gate.** Landed 2026-04-23. Emit and render
+   explicit pass/fail criteria and blocking findings after test/review/demo
+   evidence.
+
+8. **F8 — Runtime acceptance wiring.** Landed 2026-04-23. Runtime review now
+   emits functional acceptance from sprint-plan criteria, step results, review
+   findings, and demo state.
+
+9. **F9 — Streaming runtime mini-sprint lane.** Landed 2026-04-23. Runtime
+   emits plan/build/test/review lane progress as phases complete instead of
+   synthesizing the full lane only at review time.
+
+10. **F10 — Runtime demo ceremony scheduling.** Landed 2026-04-23. Eligible
+    runtime mini-sprints now emit `demo_planned` automatically after testing
+    and invoke the existing demo runner when a concrete Playwright command is
+    available; acceptance now distinguishes pending demo proof from failed
+    capture.
 
 **M09 follow-up still queued:** provider health and local telemetry remain the
 next infrastructure slice once the functional surface needs provider state.
@@ -278,6 +293,7 @@ Append new evidence here instead of burying it in chat.
 | 2026-04-23 | M09 slice C2 — rate-card snapshot validation | Central LLM/advisor usage and opencode audit now validate referenced rate-card snapshots before event emission and JSONL persistence. Existing refs get `rate_card_checked=true`; missing or unsafe estimated refs get `rate_card_missing=true`, `source=unknown`, and `confidence=none`, and the PWA folds/renders missing versions in the Economics sheet. Evidence: `uv run pytest -q tests/test_rate_card_snapshot.py tests/test_opencode_audit.py tests/test_budget.py tests/test_usage_writer.py tests/test_usage_summary.py` → 29 passed; `uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` → 27 passed; `./web/frontend/build.sh` → `dist/app.js` 1,361,560 bytes; `git diff --check` → clean |
 | 2026-04-23 | M10 slice F2 — Next Move functional readiness | Added first functional orchestration fields to `NextStepPacket`: acceptance criteria, evidence required, demo requested, and demo compatibility. `EventEngine` folds them from authoritative `next_step_packet_created` events, and `GameShell` renders them in a `functional-readiness` block in the existing map-native Next-Step sheet. Evidence: `uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` → 27 passed; `./web/frontend/build.sh` → `dist/app.js` 1,363,053 bytes; scoped `git diff --check` → clean |
 | 2026-04-23 | M10 slice F3 — mini-sprint event skeleton | Registered `mini_sprint_planned`, `mini_sprint_step_completed`, and `functional_acceptance_evaluated` in backend/frontend event registries. Added `orchestrator.lib.functional` helpers for deterministic mini-sprint plan, step, and acceptance events. `EventEngine` now folds `snapshot.functional.currentMiniSprint`, `snapshot.functional.acceptance`, and `snapshot.functional.evidenceRefs` for replay. Evidence: `uv run pytest -q tests/test_event_schema.py tests/test_functional_orchestration.py` → 6 passed; `uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` → 28 passed; `./web/frontend/build.sh` → `dist/app.js` 1,368,724 bytes; scoped `git diff --check` → clean |
+| 2026-04-23 | M10 slice F10 — runtime demo ceremony scheduling | Runtime testing now emits `demo_planned` automatically for eligible mini-sprints using sprint-plan acceptance/evidence plus conservative inferred Playwright hints. When a concrete `test_command` is present, the engine invokes the existing `DemoRunner` before review-time acceptance. Runtime demo state is now scoped to `ms_runtime_acceptance`, and functional acceptance surfaces explicit demo-capture failure instead of treating that case as generic missing proof. Evidence: `uv run pytest -q tests/test_functional_orchestration.py tests/test_engine.py tests/test_event_schema.py` → 49 passed; `uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` → 31 passed; `./web/frontend/build.sh` → `dist/app.js` 1,382,888 bytes |
 | 2026-04-23 | M10 slice F4 — Next Move mini-sprint evidence | `GameShell` now renders `functionalMiniSprintPanel(snapshot)` inside the existing Next-Step sheet. The panel shows mini-sprint objective, functional step statuses, evidence refs, acceptance verdict, and blocking findings from replay-folded `snapshot.functional`; helper coverage asserts escaping and blocked-state rendering. Evidence: `uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py` → 29 passed; `./web/frontend/build.sh` → `dist/app.js` 1,370,300 bytes; scoped `git diff --check` → clean |
 | 2026-04-23 | M10 slice F5 — Hero invite intent surface | Added `invite_hero` to the backend operator intent route and wired the PWA Next-Step sheet to open a bounded Hero compose mode. The compose dock captures mission, watch-for, provider/model, term mode, scope, and target step, emitting the durable Hero lifecycle payload expected by `orchestrator.lib.heroes`. `EventEngine` now folds `hero_invited` / `hero_retired` into `snapshot.heroes`, and the Next-Step sheet renders a replay-backed Hero roster panel. Evidence: `uv run pytest -q web/backend/tests/test_intents.py tests/test_heroes_lifecycle.py` → 13 passed; `uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py` → 31 passed; `./web/frontend/build.sh` → `dist/app.js` 1,378,868 bytes; scoped `git diff --check` → clean |
 | 2026-04-23 | M10 slice F6 — demo compatibility gate | Added product-facing demo compatibility on top of the existing Playwright demo detector: `demo_compatibility_from_plan(...)` maps adapter confidence into `eligible` / `ineligible` / `unknown`, `emit_demo_plan(...)` stamps `demo_requested` and `demo_compatibility`, and `build_demo_compatibility_gate(...)` threads detector output into mini-sprint plans. `EventEngine` folds demo gate metadata for both mini-sprints and demo cards; `GameShell` renders `Demo gate` in mini-sprint evidence and requested/compatibility state on demo cards. Evidence: `uv run pytest -q tests/test_demo.py tests/test_functional_orchestration.py tests/test_demo_runner.py` → 22 passed; `uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` → 31 passed; `./web/frontend/build.sh` → `dist/app.js` 1,380,207 bytes; scoped `git diff --check` → clean |
