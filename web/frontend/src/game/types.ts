@@ -162,6 +162,8 @@ export type FunctionalAcceptance = {
   criteriaResults: Record<string, unknown>[];
   blockingFindings: string[];
   reviewArtifactRef: string | null;
+  evidenceRefs: string[];
+  recommendedActions: string[];
   sourceRefs: string[];
   lastEvent: RunEvent | null;
 };

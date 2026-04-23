@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from orchestrator.lib.functional import (
     build_demo_compatibility_gate,
+    build_functional_acceptance_gate,
     build_mini_sprint_plan,
     emit_functional_acceptance_evaluated,
     emit_mini_sprint_planned,
@@ -120,3 +121,59 @@ def test_emit_functional_mini_sprint_events() -> None:
     assert accepted["type"] == "functional_acceptance_evaluated"
     assert accepted["passed"] is True
     assert events.events == [planned, step, accepted]
+
+
+def test_functional_acceptance_gate_blocks_on_missing_evidence_and_failed_step() -> None:
+    gate = build_functional_acceptance_gate(
+        acceptance_criteria=["User can sign in."],
+        evidence_required=["TEST_REPORT.md", "demo.gif"],
+        evidence_refs=["TEST_REPORT.md"],
+        step_results=[{"step_id": "testing", "status": "failed"}],
+        demo_requested=True,
+        demo_status="failed",
+        review_findings=["Mobile viewport proof is missing."],
+        review_artifact_ref="REVIEW.md",
+        source_refs=["event:review"],
+    )
+
+    assert gate["passed"] is False
+    assert gate["criteria_results"] == [
+        {
+            "criterion": "User can sign in.",
+            "passed": False,
+            "evidence_refs": ["TEST_REPORT.md"],
+            "finding": "Blocked by required evidence or review findings.",
+        }
+    ]
+    assert "Functional step failed: testing" in gate["blocking_findings"]
+    assert "Missing evidence: demo.gif" in gate["blocking_findings"]
+    assert "Demo requested but no captured or presented demo evidence is attached." in gate["blocking_findings"]
+    assert gate["recommended_actions"] == ["repair_loop", "hero_review", "operator_override"]
+    assert gate["review_artifact_ref"] == "REVIEW.md"
+    assert gate["source_refs"] == ["event:review"]
+
+
+def test_functional_acceptance_gate_can_emit_full_payload() -> None:
+    events = _Events()
+    gate = build_functional_acceptance_gate(
+        acceptance_criteria=["Story Lens shows evidence."],
+        evidence_required=["TEST_REPORT.md"],
+        evidence_refs=["TEST_REPORT.md", "demo.gif"],
+        demo_requested=True,
+        demo_status="presented",
+        demo_artifact_refs=["demo.gif"],
+        review_artifact_ref="REVIEW.md",
+    )
+
+    event = emit_functional_acceptance_evaluated(
+        events,
+        "run-1",
+        mini_sprint_id="ms_story",
+        acceptance_gate=gate,
+    )
+
+    assert event["type"] == "functional_acceptance_evaluated"
+    assert event["passed"] is True
+    assert event["criteria_results"][0]["passed"] is True
+    assert event["evidence_refs"] == ["TEST_REPORT.md", "demo.gif"]
+    assert event["recommended_actions"] == []

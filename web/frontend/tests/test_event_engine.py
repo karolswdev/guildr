@@ -547,6 +547,8 @@ def test_functional_mini_sprint_replay_fold(tmp_path: Path) -> None:
             passed: true,
             blocking_findings: [],
             review_artifact_ref: 'REVIEW.md',
+            evidence_refs: ['TEST_REPORT.md', 'demo.gif'],
+            recommended_actions: [],
             source_refs: ['artifact:REVIEW.md'],
           },
         ]);
@@ -560,7 +562,9 @@ def test_functional_mini_sprint_replay_fold(tmp_path: Path) -> None:
         assert.deepEqual(functional.currentMiniSprint.acceptanceCriteria, ['User can sign in.']);
         assert.equal(functional.currentMiniSprint.steps[0].stepKind, 'build');
         assert.equal(functional.acceptance.passed, true);
-        assert.deepEqual(functional.evidenceRefs, ['pytest', 'TEST_REPORT.md', 'app.py', 'REVIEW.md']);
+        assert.deepEqual(functional.acceptance.evidenceRefs, ['TEST_REPORT.md', 'demo.gif']);
+        assert.deepEqual(functional.acceptance.recommendedActions, []);
+        assert.deepEqual(functional.evidenceRefs, ['pytest', 'TEST_REPORT.md', 'app.py', 'demo.gif', 'REVIEW.md']);
         engine.scrubTo(0);
         assert.equal(engine.snapshot().functional.currentMiniSprint.steps.length, 0);
         assert.equal(engine.snapshot().functional.acceptance, null);

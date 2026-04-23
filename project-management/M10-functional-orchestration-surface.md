@@ -466,8 +466,28 @@ Delivered 2026-04-23:
 Evidence:
 
 ```bash
-uv run pytest -q tests/test_functional_orchestration.py tests/test_engine.py web/frontend/tests/test_event_engine.py
+uv run pytest -q tests/test_functional_orchestration.py web/backend/tests/test_intents.py
+uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py
+./web/frontend/build.sh
+git diff --check -- orchestrator/lib/functional.py web/backend/routes/intents.py web/backend/tests/test_intents.py tests/test_functional_orchestration.py web/frontend/src/game/types.ts web/frontend/src/game/EventEngine.ts web/frontend/src/game/GameShell.ts web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py
 ```
+
+Delivered 2026-04-23:
+
+- `orchestrator.lib.functional.build_functional_acceptance_gate(...)` turns
+  acceptance criteria, required evidence, step results, review findings, demo
+  status, and demo artifacts into one explicit gate payload.
+- The gate emits per-criterion rows, `passed`, `blocking_findings`,
+  `evidence_refs`, `review_artifact_ref`, and `recommended_actions`.
+- `emit_functional_acceptance_evaluated(...)` can now emit a full gate payload
+  directly, while preserving the older explicit-argument call path.
+- `EventEngine` folds acceptance evidence and recommended action metadata into
+  replay state.
+- `GameShell` renders Repair, Hero, and Override actions when acceptance is
+  blocked. Repair queues a durable `retry` intent; Hero opens the bounded Hero
+  invite compose mode; Override queues a durable `acceptance_override` intent.
+- `web/backend/routes/intents.py` accepts `acceptance_override`, so the PWA
+  action has a persisted operator-intent path.
 
 ## Quality Gates
 
@@ -507,6 +527,7 @@ uv run pytest -q tests/test_functional_orchestration.py tests/test_engine.py web
 
 ## Immediate Next Step
 
-Run Slice F7: turn accumulated mini-sprint evidence, tests, preview/demo refs,
-and review findings into an explicit functional acceptance gate with repair,
-Hero review, or operator override as the blocked-state actions.
+Run Slice F8: wire the functional acceptance gate into the actual orchestration
+runtime after review/demo evidence is available, so real runs emit
+`functional_acceptance_evaluated` automatically instead of requiring tests or
+manual helper calls to synthesize the event.

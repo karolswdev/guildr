@@ -244,6 +244,11 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "functionalMiniSprintPanel" in text
     assert "Functional evidence" in text
     assert "Blocking findings" in text
+    assert "functional-acceptance-actions" in text
+    assert "next-functional-repair" in text
+    assert "next-functional-hero" in text
+    assert "next-functional-override" in text
+    assert "acceptance_override" in text
     assert "hero-roster-panel" in text
     assert "heroInvitePayload" in text
     assert "hero-invite-fields" in text
@@ -566,6 +571,7 @@ def test_functional_mini_sprint_panel_helper(tmp_path: Path) -> None:
               acceptance: {
                 passed: false,
                 blockingFindings: ['Missing mobile proof <375px>'],
+                recommendedActions: ['repair_loop', 'hero_review', 'operator_override'],
               },
             },
           },
@@ -582,6 +588,10 @@ def test_functional_mini_sprint_panel_helper(tmp_path: Path) -> None:
         assert.ok(html.includes('test: failed'));
         assert.ok(html.includes('TEST_REPORT.md'));
         assert.ok(html.includes('Missing mobile proof &lt;375px&gt;'));
+        assert.ok(html.includes('data-role="functional-acceptance-actions"'));
+        assert.ok(html.includes('data-action="next-functional-repair"'));
+        assert.ok(html.includes('data-action="next-functional-hero"'));
+        assert.ok(html.includes('data-action="next-functional-override"'));
         assert.ok(!html.includes('Ship <login>'));
         assert.ok(!html.includes('Missing mobile proof <375px>'));
         """,

@@ -725,6 +725,8 @@ export class EventEngine {
         criteriaResults: arrayOfObjects(event.criteria_results),
         blockingFindings: arrayOfStrings(event.blocking_findings),
         reviewArtifactRef: stringOrNull(event.review_artifact_ref),
+        evidenceRefs: arrayOfStrings(event.evidence_refs),
+        recommendedActions: arrayOfStrings(event.recommended_actions),
         sourceRefs: arrayOfStrings(event.source_refs),
         lastEvent: event,
       };
@@ -1373,6 +1375,8 @@ function cloneFunctionalAcceptance(acceptance: FunctionalAcceptance): Functional
     ...acceptance,
     criteriaResults: acceptance.criteriaResults.map((item) => ({ ...item })),
     blockingFindings: [...acceptance.blockingFindings],
+    evidenceRefs: [...acceptance.evidenceRefs],
+    recommendedActions: [...acceptance.recommendedActions],
     sourceRefs: [...acceptance.sourceRefs],
     lastEvent: acceptance.lastEvent ? { ...acceptance.lastEvent } : null,
   };
@@ -1702,6 +1706,7 @@ function functionalEvidenceRefs(sprint: FunctionalMiniSprint): string[] {
     ...sprint.evidenceRequired,
     ...sprint.steps.flatMap((step) => step.evidenceRefs),
     ...sprint.steps.flatMap((step) => step.artifactRefs),
+    ...(sprint.acceptance?.evidenceRefs ?? []),
     ...(sprint.acceptance?.reviewArtifactRef ? [sprint.acceptance.reviewArtifactRef] : []),
   ];
   return [...new Set(refs.filter(Boolean))].slice(0, 24);

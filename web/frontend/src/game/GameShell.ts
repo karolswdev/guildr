@@ -1163,6 +1163,43 @@ export class GameShell {
         this.openComposeDock(packet.step, "hero");
       }
     });
+    const repair = this.nextStepSheet.querySelector('[data-action="next-functional-repair"]') as HTMLButtonElement | null;
+    repair?.addEventListener("click", () => {
+      if (packet?.step) {
+        void this.queueFunctionalAcceptanceIntent("retry", packet);
+      }
+    });
+    const heroReview = this.nextStepSheet.querySelector('[data-action="next-functional-hero"]') as HTMLButtonElement | null;
+    heroReview?.addEventListener("click", () => {
+      if (packet?.step) {
+        this.openComposeDock(packet.step, "hero");
+      }
+    });
+    const override = this.nextStepSheet.querySelector('[data-action="next-functional-override"]') as HTMLButtonElement | null;
+    override?.addEventListener("click", () => {
+      if (packet?.step) {
+        void this.queueFunctionalAcceptanceIntent("acceptance_override", packet);
+      }
+    });
+  }
+
+  private async queueFunctionalAcceptanceIntent(kind: "retry" | "acceptance_override", packet: NextStepPacket): Promise<void> {
+    const sprint = this.lastSnapshot?.functional.currentMiniSprint ?? null;
+    const blockers = sprint?.acceptance?.blockingFindings ?? [];
+    const actionLabel = kind === "retry" ? "Repair blocked functional acceptance" : "Operator acceptance override";
+    await apiPost(`/api/projects/${this.options.projectId}/intents`, {
+      kind,
+      atom_id: packet.step,
+      client_intent_id: newClientIntentId(),
+      payload: {
+        instruction: actionLabel,
+        source: "functional_acceptance",
+        mini_sprint_id: sprint?.miniSprintId ?? null,
+        blocking_findings: blockers,
+        acceptance_passed: sprint?.acceptance?.passed ?? null,
+      },
+    });
+    this.options.engine.resumeLive();
   }
 
   private renderComposeDock(): void {
@@ -1787,6 +1824,21 @@ export function functionalMiniSprintPanel(snapshot: EngineSnapshot): string {
       ${sheetSection("Functional steps", [stepRows], "No functional step state has landed yet.")}
       ${sheetRefs("Functional evidence", snapshot.functional.evidenceRefs)}
       ${sheetSection("Blocking findings", blockers, "No blocking findings recorded.")}
+      ${functionalAcceptanceActions(acceptance)}
+    </div>
+  `;
+}
+
+function functionalAcceptanceActions(acceptance: { passed: boolean; recommendedActions?: string[] } | null): string {
+  if (!acceptance || acceptance.passed) {
+    return "";
+  }
+  const actions = new Set(acceptance.recommendedActions ?? ["repair_loop", "hero_review", "operator_override"]);
+  return `
+    <div data-role="functional-acceptance-actions" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 7px;">
+      ${actions.has("repair_loop") ? `<button data-action="next-functional-repair" style="${ghostButtonStyle()}">Repair</button>` : ""}
+      ${actions.has("hero_review") ? `<button data-action="next-functional-hero" style="${ghostButtonStyle()}">Hero</button>` : ""}
+      ${actions.has("operator_override") ? `<button data-action="next-functional-override" style="${ghostButtonStyle()}">Override</button>` : ""}
     </div>
   `;
 }

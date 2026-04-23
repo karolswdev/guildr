@@ -186,6 +186,38 @@ async def test_invite_hero_intent_route_refreshes_packet_with_hero_payload(
 
 
 @pytest.mark.asyncio
+async def test_acceptance_override_intent_route_is_durable(app: FastAPI, fresh_store: ProjectStore) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        create_resp = await client.post("/api/projects", json={"name": "Acceptance Override"})
+        project_id = create_resp.json()["id"]
+
+        response = await client.post(
+            f"/api/projects/{project_id}/intents",
+            json={
+                "kind": "acceptance_override",
+                "atom_id": "memory_refresh",
+                "payload": {
+                    "instruction": "Operator accepts the residual risk.",
+                    "mini_sprint_id": "ms_login",
+                    "blocking_findings": ["Missing demo.gif"],
+                },
+                "client_intent_id": "client-override",
+            },
+        )
+
+    assert response.status_code == 200
+    events = [
+        json.loads(line)
+        for line in event_log_path(project_id).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert events[0]["kind"] == "acceptance_override"
+    assert events[1]["packet"]["queued_intents"][0]["kind"] == "acceptance_override"
+    assert events[1]["packet"]["queued_intents"][0]["payload"]["mini_sprint_id"] == "ms_login"
+
+
+@pytest.mark.asyncio
 async def test_note_intent_creates_discussion_entry(app: FastAPI, fresh_store: ProjectStore) -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
