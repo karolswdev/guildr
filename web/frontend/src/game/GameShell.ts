@@ -605,6 +605,12 @@ export class GameShell {
     this.functionalLaneRail.querySelectorAll<HTMLButtonElement>("[data-functional-lane-target]").forEach((button) => {
       button.addEventListener("click", () => this.focusFunctionalLaneTarget(button.dataset.functionalLaneTarget || ""));
     });
+    this.functionalLaneRail.querySelectorAll<HTMLButtonElement>("[data-functional-lane-action]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void this.handleFunctionalLaneAction(button.dataset.functionalLaneAction || "");
+      });
+    });
   }
 
   private renderNarratorFrame(narration: NarrationCue): void {
@@ -802,6 +808,31 @@ export class GameShell {
     this.sceneManager?.focusAtomInView(target, 0.38);
     if (this.lastSnapshot) {
       this.renderObjectLens(this.lastSnapshot);
+    }
+  }
+
+  private async handleFunctionalLaneAction(action: string): Promise<void> {
+    if (!this.lastSnapshot) {
+      return;
+    }
+    if (action === "demo-open") {
+      this.focusFunctionalLaneTarget("demo");
+      return;
+    }
+    const atomId = functionalLaneActionAtomId(this.lastSnapshot, this.options.workflow);
+    if (!atomId) {
+      return;
+    }
+    if (action === "acceptance-hero") {
+      this.openComposeDock(atomId, "hero");
+      return;
+    }
+    if (action === "acceptance-repair") {
+      await this.queueFunctionalAcceptanceIntentForAtom("retry", atomId);
+      return;
+    }
+    if (action === "acceptance-override") {
+      await this.queueFunctionalAcceptanceIntentForAtom("acceptance_override", atomId);
     }
   }
 
@@ -1261,12 +1292,16 @@ export class GameShell {
   }
 
   private async queueFunctionalAcceptanceIntent(kind: "retry" | "acceptance_override", packet: NextStepPacket): Promise<void> {
+    await this.queueFunctionalAcceptanceIntentForAtom(kind, packet.step);
+  }
+
+  private async queueFunctionalAcceptanceIntentForAtom(kind: "retry" | "acceptance_override", atomId: string): Promise<void> {
     const sprint = this.lastSnapshot?.functional.currentMiniSprint ?? null;
     const blockers = sprint?.acceptance?.blockingFindings ?? [];
     const actionLabel = kind === "retry" ? "Repair blocked functional acceptance" : "Operator acceptance override";
     await apiPost(`/api/projects/${this.options.projectId}/intents`, {
       kind,
-      atom_id: packet.step,
+      atom_id: atomId,
       client_intent_id: newClientIntentId(),
       payload: {
         instruction: actionLabel,
@@ -1964,6 +1999,7 @@ type FunctionalLaneItem = {
   state: string;
   detail: string;
   tone: string;
+  actions?: Array<{ action: string; label: string }>;
 };
 
 function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[]): FunctionalLaneItem[] {
@@ -2008,6 +2044,7 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[])
           ? `Gate ${sprint.demoCompatibility || "unknown"}`
           : "No demo ceremony required.",
       tone: demo ? laneToneForStatus(demo.status) : sprint.demoRequested ? "active" : "idle",
+      actions: demo || sprint.demoRequested ? [{ action: "demo-open", label: "Open" }] : [],
     },
     {
       id: "review",
@@ -2026,6 +2063,9 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[])
         ? compactText(acceptance.blockingFindings[0] || acceptance.reviewArtifactRef || laneEvidenceDetail(acceptance.evidenceRefs, []), 72) || "Acceptance recorded."
         : "Waiting for final acceptance gate.",
       tone: acceptance ? (acceptance.passed ? "done" : "error") : "waiting",
+      actions: acceptance && !acceptance.passed
+        ? functionalLaneAcceptanceActions(acceptance)
+        : [],
     },
   ];
 }
@@ -2038,8 +2078,53 @@ function functionalLaneStepCard(item: FunctionalLaneItem): string {
         <span style="${functionalLaneStateStyle(item.tone)}">${escapeHtml(item.state)}</span>
       </span>
       <span style="font-size: 12px; color: #E8EAF0; font-weight: 850; line-height: 1.28; overflow-wrap: anywhere;">${escapeHtml(item.detail)}</span>
+      ${functionalLaneActionButtons(item.actions ?? [])}
     </button>
   `;
+}
+
+function functionalLaneActionButtons(actions: Array<{ action: string; label: string }>): string {
+  if (actions.length === 0) {
+    return "";
+  }
+  return `
+    <span data-role="functional-lane-actions" style="display: flex; flex-wrap: wrap; gap: 6px;">
+      ${actions.map((item) => `<button data-functional-lane-action="${escapeHtml(item.action)}" style="${functionalLaneActionStyle()}">${escapeHtml(item.label)}</button>`).join("")}
+    </span>
+  `;
+}
+
+function functionalLaneAcceptanceActions(acceptance: { recommendedActions?: string[] }): Array<{ action: string; label: string }> {
+  const actions = new Set(acceptance.recommendedActions ?? ["repair_loop", "hero_review", "operator_override"]);
+  const out: Array<{ action: string; label: string }> = [];
+  if (actions.has("repair_loop")) {
+    out.push({ action: "acceptance-repair", label: "Repair" });
+  }
+  if (actions.has("hero_review")) {
+    out.push({ action: "acceptance-hero", label: "Hero" });
+  }
+  if (actions.has("operator_override")) {
+    out.push({ action: "acceptance-override", label: "Override" });
+  }
+  return out;
+}
+
+function functionalLaneActionAtomId(snapshot: EngineSnapshot, workflow: WorkflowStep[]): string {
+  const sprint = snapshot.functional.currentMiniSprint;
+  if (!sprint) {
+    return snapshot.nextStepPacket?.step || "";
+  }
+  const nextStep = snapshot.nextStepPacket?.step || "";
+  if (nextStep) {
+    return nextStep;
+  }
+  const reviewTarget = workflowStepIdByKind(workflow, "review", "review");
+  const reviewStep = sprint.steps.find((step) => step.stepId === reviewTarget || step.stepKind === "review");
+  if (reviewStep?.stepId) {
+    return reviewStep.stepId;
+  }
+  const latestStep = sprint.steps[sprint.steps.length - 1];
+  return latestStep?.stepId || reviewTarget || "";
 }
 
 function workflowStepIdByKind(workflow: WorkflowStep[], preferredId: string, stepKind: string): string {
@@ -2678,6 +2763,19 @@ function functionalLaneStateStyle(tone: string): string {
   };
   const color = palette[tone] ?? palette.idle;
   return `display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px; background: ${color}1F; color: ${color}; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0;`;
+}
+
+function functionalLaneActionStyle(): string {
+  return [
+    "height: 28px",
+    "border: 1px solid rgba(232,234,240,0.14)",
+    "border-radius: 999px",
+    "background: rgba(13,15,20,0.56)",
+    "color: #E8EAF0",
+    "font: 900 10px Inter, system-ui, sans-serif",
+    "padding: 0 9px",
+    "white-space: nowrap",
+  ].join("; ");
 }
 
 function emptyChipStyle(): string {

@@ -617,6 +617,34 @@ Delivered 2026-04-23:
 - WebGL fallback rendering now includes the same functional lane rail, keeping
   the orchestration surface coherent across render modes.
 
+### Slice F12 — Lane-Native Operator Controls
+
+- Add direct intervention controls to blocked lane segments instead of forcing
+  the operator through the Next-Step sheet first.
+- Reuse the existing durable intent path for repair/override/Hero actions so
+  lane controls remain replay-safe.
+- Keep demo controls bounded to evidence navigation, not live reruns.
+
+Evidence:
+
+```bash
+uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py
+./web/frontend/build.sh
+git diff --check -- web/frontend/src/game/GameShell.ts web/frontend/tests/test_game_map.py project-management/STATUS.md project-management/M10-functional-orchestration-surface.md
+```
+
+Delivered 2026-04-23:
+
+- Acceptance lane segments now render direct `Repair`, `Hero`, and `Override`
+  actions when acceptance is blocked.
+- Demo lane segments now render a direct `Open` action that routes into Story
+  Lens proof without requiring the Next-Step sheet.
+- `GameShell` reuses the existing functional-acceptance intent queue path for
+  lane actions, so direct map interventions still emit durable intents instead
+  of bypassing orchestration state.
+- Frontend helper coverage now asserts the lane action controls are rendered in
+  the rail HTML.
+
 ## Quality Gates
 
 - Event integrity: every new functional event is registered in backend and
@@ -655,6 +683,6 @@ Delivered 2026-04-23:
 
 ## Immediate Next Step
 
-Run Slice F12: add lane-native operator controls so blocked acceptance and demo
-states can trigger Repair, Hero, Override, or open-demo actions directly from
-the map lane without opening the Next-Step sheet first.
+Run Slice F13: add lane-native evidence expansion so a lane segment can expand
+inline to show its key refs, demo artifacts, or blocking findings without
+leaving the map shell.

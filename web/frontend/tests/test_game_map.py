@@ -244,6 +244,8 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "functionalMiniSprintPanel" in text
     assert "functional-lane-rail" in text
     assert "functionalLaneRail" in text
+    assert "functional-lane-actions" in text
+    assert "data-functional-lane-action" in text
     assert "Functional evidence" in text
     assert "Blocking findings" in text
     assert "functional-acceptance-actions" in text
@@ -657,6 +659,11 @@ def test_functional_lane_rail_helper(tmp_path: Path) -> None:
         assert.ok(html.includes('data-functional-lane-step="build"'));
         assert.ok(html.includes('data-functional-lane-step="demo"'));
         assert.ok(html.includes('data-functional-lane-step="acceptance"'));
+        assert.ok(html.includes('data-role="functional-lane-actions"'));
+        assert.ok(html.includes('data-functional-lane-action="demo-open"'));
+        assert.ok(html.includes('data-functional-lane-action="acceptance-repair"'));
+        assert.ok(html.includes('data-functional-lane-action="acceptance-hero"'));
+        assert.ok(html.includes('data-functional-lane-action="acceptance-override"'));
         assert.ok(html.includes('Ship login'));
         assert.ok(html.includes('Presented'));
         assert.ok(html.includes('Blocked'));
