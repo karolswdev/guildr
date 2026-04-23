@@ -84,9 +84,9 @@ MEMPALACE_MCP_ALLOWED_ROLES: tuple[str, ...] = (
 
 @dataclass
 class MemoryMcpConfig:
-    """Opt-in MemPalace MCP exposure for selected opencode roles."""
+    """Default MemPalace MCP exposure for selected opencode roles."""
 
-    enabled: bool = False
+    enabled: bool = True
     roles: tuple[str, ...] = MEMPALACE_MCP_ALLOWED_ROLES
     command: tuple[str, ...] = ("python", "-m", "mempalace.mcp_server")
     timeout_ms: int = 5000

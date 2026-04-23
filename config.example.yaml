@@ -57,10 +57,11 @@ expose_public: false
 #   reviewer:
 #     - openrouter
 #
-# Optional MemPalace MCP exposure for selected opencode roles. Disabled by
-# default. Deterministic wake-up prompt injection remains authoritative; this
-# only grants live memory lookup to tool-using roles that can tolerate extra
-# MCP context.
+# MemPalace MCP exposure for selected opencode roles. Enabled by default for
+# coder/tester/reviewer/narrator. Deterministic wake-up prompt injection remains
+# authoritative; MCP grants live memory lookup to tool-using roles that can
+# tolerate extra context. Set `enabled: false` to remove it from generated
+# opencode config.
 #
 # memory_mcp:
 #   enabled: true

@@ -58,7 +58,8 @@ def test_load_parses_endpoints_and_routing() -> None:
     assert architect[0] == RouteEntry(endpoint="remote-sonnet", model=None)
     assert architect[1] == RouteEntry(endpoint="local", model="qwen-local-override")
     assert cfg.routing["coder"] == [RouteEntry(endpoint="local")]
-    assert cfg.memory_mcp.enabled is False
+    assert cfg.memory_mcp.enabled is True
+    assert cfg.memory_mcp.roles == ("coder", "tester", "reviewer", "narrator")
 
 
 def test_missing_required_endpoint_field_raises() -> None:
@@ -156,7 +157,7 @@ routing:
     assert cfg.routing["coder"][1].model == "qwen-alt"
 
 
-def test_memory_mcp_config_is_opt_in_and_scoped_to_tool_roles() -> None:
+def test_memory_mcp_config_overrides_default_safe_roles() -> None:
     data = {
         "endpoints": [{"name": "local", "base_url": "http://x", "model": "m"}],
         "routing": {"coder": ["local"]},
@@ -202,6 +203,19 @@ def test_memory_mcp_env_overrides_yaml() -> None:
     assert cfg.memory_mcp.command == ("uvx", "--from", "mempalace", "python", "-m", "mempalace.mcp_server")
 
 
+def test_memory_mcp_can_be_explicitly_disabled() -> None:
+    data = {
+        "endpoints": [{"name": "local", "base_url": "http://x", "model": "m"}],
+        "routing": {"coder": ["local"]},
+        "memory_mcp": {"enabled": False},
+    }
+
+    cfg = load_endpoints(data, env={})
+
+    assert cfg is not None
+    assert cfg.memory_mcp.enabled is False
+
+
 def test_memory_mcp_rejects_zero_tool_roles() -> None:
     data = {
         "endpoints": [{"name": "local", "base_url": "http://x", "model": "m"}],
@@ -211,4 +225,3 @@ def test_memory_mcp_rejects_zero_tool_roles() -> None:
 
     with pytest.raises(EndpointsConfigError, match="selected tool-using roles"):
         load_endpoints(data, env={})
-

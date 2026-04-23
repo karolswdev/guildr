@@ -58,8 +58,9 @@ usage or the orchestrator owns the embedding path.
   hashes on digest, discussion, and highlight cards. Memory status also carries
   deterministic role-wing names and an explicit cost-accounting note stating
   that current MemPalace CLI calls expose no usage payload. The opencode config
-  generator can now opt selected tool-using roles into a local MemPalace MCP
-  server while keeping the MCP disabled globally and absent from architect/judge.
+  generator includes a local MemPalace MCP server by default for selected
+  tool-using roles while keeping the MCP disabled globally and absent from
+  architect/judge.
 
 ### Load-bearing gaps
 
@@ -99,7 +100,7 @@ running checklist for product-grade follow/review/intervene work.
 | **M05 Narrator Agent** | Done first pass | Codex | Read-only narrator role, sidecar triggers, fallback diagnostics, sidecar state locking, outcome normalization, and PWA dialogue shell exist. |
 | **M06 PWA Lenses/Map Surface** | Done first pass | Codex | Next-Step, Object, Story, and Goal lenses are in the map surface with WebGL fallback coverage. |
 | **M07 Artifact Preview Depth** | Complete | Claude | Demo-ceremony half via A-10 slices 1/2/2b/3 (demo events + storage + `DemoRunner` + bounded `/api/projects/{id}/demos/...` route + Story/Object Lens demo cards). Artifact-preview half landed via M07 slices 1–4: `artifact_preview_created` emitter with sha256, bounded excerpts (8 KiB text head / 2 KiB code tail / binary placeholder), secret scrubbing, A-9 provenance; engine + narrator hooks emit previews for every canonical artifact (sprint-plan, TEST_REPORT, REVIEW, DEPLOY, narrative digest `.md`); PWA folds previews into `snapshot.previews`, renders `artifactPreviewCard` in Story + Object Lens rails anchored by `producingAtomId`; `PHASE_SOURCE_REFS` threads upstream lineage through every event. |
-| **M08 Memory Spine** | Mostly done | Codex | MemPalace sync/search/provenance packets exist, are attached to next-step context, visible in the PWA memory body/sheet, diffed after phase boundaries via `memory_diff`, shown on Story Lens claim cards, backed by a deterministic role-wing contract plus explicit CLI cost-accounting note, and optionally exposed to selected opencode roles via scoped MCP config. Needs live provider proof once usage is observable. |
+| **M08 Memory Spine** | Mostly done | Codex | MemPalace sync/search/provenance packets exist, are attached to next-step context, visible in the PWA memory body/sheet, diffed after phase boundaries via `memory_diff`, shown on Story Lens claim cards, backed by a deterministic role-wing contract plus explicit CLI cost-accounting note, and exposed by default to selected opencode roles via scoped MCP config. Needs live provider proof once usage is observable. |
 | **M09 Cost/Budget Telemetry** | Partial | Claude | Usage rows and rollups exist. Needs PWA budget controls and provider-aware display. |
 | **M10 Hookability** | Not started | Unassigned | External trigger/plugin boundary still needs design and tests. |
 | **M11 Replay Resilience** | Partial | Codex | Event replay works; needs corruption/rebuild/fallback hardening and replay/export handling for recorded demo artifacts. |
@@ -112,8 +113,8 @@ landed and M08 slices A/B/C/D1/D2 in place, M08 is mostly down to live proof and
 future usage accounting. Backend provenance (`wake_up_hash`, `memory_refs`,
 memory events, and `memory_diff`) is stamped everywhere that matters, Story
 Lens now makes memory-shaped claims explicit, the memory surface shows
-role-wing/cost-accounting metadata, and opencode can opt selected roles into
-MemPalace MCP. See
+role-wing/cost-accounting metadata, and opencode includes MemPalace MCP for
+selected roles by default. See
 `project-management/srs-mini-phases/M08-memory-spine-and-mempalace.md` for the
 full checklist.
 
@@ -143,11 +144,12 @@ full checklist.
    with no exposed token/cost usage, so the surface records a truthful
    `cost_accounting` note instead of fake `usage_recorded` rows.
 
-5. **M08 slice D2 — optional MCP/search exposure** — landed 2026-04-22.
-   `memory_mcp` in YAML/env can generate local `mcp.mempalace` config for
-   coder/tester/reviewer/narrator only. The generated config disables
+5. **M08 slice D2 — default MCP/search exposure** — landed 2026-04-22.
+   `memory_mcp` in YAML/env generates local `mcp.mempalace` config for
+   coder/tester/reviewer/narrator by default. The generated config disables
    `mempalace_*` globally, re-enables it per selected agent, and rejects
-   architect/judge.
+   architect/judge. Operators can set `memory_mcp.enabled: false` when they
+   need to remove MCP from a run.
 
 **Headless/scriptable path for the next session:** Move to M09 budget/PWA
 provider display or M11 replay resilience. M08 has enough spine to support both:

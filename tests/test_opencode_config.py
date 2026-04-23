@@ -53,8 +53,12 @@ def test_build_registers_every_declared_endpoint_as_provider() -> None:
     payload = build_opencode_config(cfg)
     assert payload["$schema"] == OPENCODE_CONFIG_SCHEMA_URL
     assert set(payload["provider"]) == {"local-gpu", "openrouter"}
-    assert "mcp" not in payload
-    assert "tools" not in payload
+    assert payload["mcp"]["mempalace"]["command"] == ["python", "-m", "mempalace.mcp_server"]
+    assert payload["tools"] == {"mempalace_*": False}
+    for role in ("coder", "tester", "reviewer", "narrator"):
+        assert payload["agent"][role]["tools"]["mempalace_*"] is True
+    assert "mempalace_*" not in payload["agent"]["architect"]["tools"]
+    assert "mempalace_*" not in payload["agent"]["judge"]["tools"]
     for provider in payload["provider"].values():
         assert provider["npm"] == OPENCODE_OPENAI_COMPAT_NPM
 
@@ -196,6 +200,24 @@ def test_mem_palace_mcp_is_globally_disabled_and_enabled_per_selected_agent() ->
     assert "mempalace_*" not in payload["agent"]["architect"]["tools"]
     assert "mempalace_*" not in payload["agent"]["judge"]["tools"]
     assert "mempalace_*" not in payload["agent"]["tester"]["tools"]
+
+
+def test_mem_palace_mcp_can_be_explicitly_disabled() -> None:
+    cfg = load_endpoints(
+        {
+            "endpoints": [{"name": "local", "base_url": "http://x", "model": "m"}],
+            "routing": {"coder": ["local"]},
+            "memory_mcp": {"enabled": False},
+        },
+        env={},
+    )
+    assert cfg is not None
+
+    payload = build_opencode_config(cfg)
+
+    assert "mcp" not in payload
+    assert "tools" not in payload
+    assert "mempalace_*" not in payload["agent"]["coder"]["tools"]
 
 
 def test_mem_palace_mcp_config_round_trips_to_disk(tmp_path: Path) -> None:
