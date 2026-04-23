@@ -243,6 +243,11 @@ def _dedupe(values: list[str]) -> list[str]:
 
 def _evidence_matches(expected: str, evidence_refs: list[str]) -> bool:
     expected_lower = expected.lower()
+    expects_demo_artifact = any(token in expected_lower for token in ("demo", "gif", "webm", "playwright"))
+    if not expects_demo_artifact and (expected_lower.startswith("run ") or "`" in expected_lower) and any(
+        ref.lower().endswith("test_report.md") for ref in evidence_refs
+    ):
+        return True
     return any(expected_lower in ref.lower() or ref.lower() in expected_lower for ref in evidence_refs)
 
 

@@ -329,6 +329,59 @@ class TestLoopEvents:
         assert packet_events[0]["packet_id"].startswith("next_")
         assert packet_events[0]["source_refs"]
 
+    def test_review_phase_emits_runtime_functional_acceptance(
+        self,
+        config: Config,
+        sprint_plan: Path,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = ReturningCaptureEvents()
+        (config.project_dir / "TEST_REPORT.md").write_text("All tests passed.", encoding="utf-8")
+        (config.project_dir / "REVIEW.md").write_text("APPROVED", encoding="utf-8")
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events)
+
+        orchestrator._run_phase("review", lambda: None)
+
+        planned = [event for event in events.events if event["type"] == "mini_sprint_planned"]
+        steps = [event for event in events.events if event["type"] == "mini_sprint_step_completed"]
+        accepted = [event for event in events.events if event["type"] == "functional_acceptance_evaluated"]
+        assert planned[-1]["mini_sprint_id"] == "ms_runtime_acceptance"
+        assert planned[-1]["acceptance_criteria"] == ["- [ ] Imports"]
+        assert [step["step_id"] for step in steps[-3:]] == ["implementation", "testing", "review"]
+        assert accepted[-1]["passed"] is True
+        assert accepted[-1]["blocking_findings"] == []
+        assert accepted[-1]["recommended_actions"] == []
+        assert "TEST_REPORT.md" in accepted[-1]["evidence_refs"]
+        assert "REVIEW.md" in accepted[-1]["evidence_refs"]
+
+    def test_review_phase_blocks_acceptance_when_required_demo_missing(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = ReturningCaptureEvents()
+        (config.project_dir / "sprint-plan.md").write_text(
+            "# Sprint Plan\n\n"
+            "## Tasks\n\n"
+            "### Task 1: PWA proof\n"
+            "- **Priority**: P0\n- **Dependencies**: none\n- **Files**: `web/frontend/src/game/GameShell.ts`\n\n"
+            "**Acceptance Criteria:**\n- [ ] PWA map shows the demo card.\n\n"
+            "**Evidence Required:**\n- Run Playwright and capture demo.gif.\n\n"
+            "**Evidence Log:**\n- [ ] Done\n\n",
+            encoding="utf-8",
+        )
+        (config.project_dir / "TEST_REPORT.md").write_text("All tests passed.", encoding="utf-8")
+        (config.project_dir / "REVIEW.md").write_text("APPROVED", encoding="utf-8")
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events)
+
+        orchestrator._run_phase("review", lambda: None)
+
+        accepted = [event for event in events.events if event["type"] == "functional_acceptance_evaluated"]
+        assert accepted[-1]["passed"] is False
+        assert "Missing evidence: Run Playwright and capture demo.gif." in accepted[-1]["blocking_findings"]
+        assert "Demo requested but no captured or presented demo evidence is attached." in accepted[-1]["blocking_findings"]
+        assert accepted[-1]["recommended_actions"] == ["repair_loop", "hero_review", "operator_override"]
+
     def test_phase_boundaries_emit_memory_diff_when_wakeup_changes(
         self,
         config: Config,

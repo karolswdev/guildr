@@ -489,6 +489,39 @@ Delivered 2026-04-23:
 - `web/backend/routes/intents.py` accepts `acceptance_override`, so the PWA
   action has a persisted operator-intent path.
 
+### Slice F8 — Runtime Functional Acceptance Wiring
+
+- Wire the functional acceptance gate into the actual orchestration runtime
+  after review/demo evidence is available.
+- Make successful review phases emit replayable mini-sprint and acceptance
+  events automatically.
+- Preserve strict demo proof: Playwright/GIF/demo evidence is not satisfied by
+  a generic test report.
+
+Evidence:
+
+```bash
+uv run pytest -q tests/test_engine.py tests/test_functional_orchestration.py tests/test_event_schema.py
+uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py
+./web/frontend/build.sh
+git diff --check -- orchestrator/engine.py orchestrator/lib/functional.py tests/test_engine.py project-management/STATUS.md project-management/M10-functional-orchestration-surface.md
+```
+
+Delivered 2026-04-23:
+
+- `Orchestrator._emit_runtime_functional_acceptance(...)` runs after a
+  successful `review` phase.
+- Runtime acceptance parses `sprint-plan.md`, gathers acceptance criteria,
+  evidence requirements, changed files, phase refs, `TEST_REPORT.md`,
+  `REVIEW.md`, and any demo events available on the event bus.
+- The runtime emits `mini_sprint_planned`, implementation/testing/review
+  `mini_sprint_step_completed`, and then `functional_acceptance_evaluated`.
+- Command-style evidence can be satisfied by `TEST_REPORT.md`; explicit demo,
+  GIF, WebM, or Playwright proof stays blocked until a demo artifact/event is
+  present.
+- Engine coverage proves reviewed work produces accepted functional state and
+  explicit missing demo proof produces blocked state with recommended actions.
+
 ## Quality Gates
 
 - Event integrity: every new functional event is registered in backend and
@@ -527,7 +560,7 @@ Delivered 2026-04-23:
 
 ## Immediate Next Step
 
-Run Slice F8: wire the functional acceptance gate into the actual orchestration
-runtime after review/demo evidence is available, so real runs emit
-`functional_acceptance_evaluated` automatically instead of requiring tests or
-manual helper calls to synthesize the event.
+Run Slice F9: improve the functional mini-sprint lane by streaming runtime
+mini-sprint progress earlier than review completion, so the PWA shows planning,
+build, test, review, demo, and acceptance progression as it happens rather than
+receiving the whole functional lane at the review boundary.

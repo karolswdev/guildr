@@ -10,6 +10,14 @@ from typing import Any, Callable
 from orchestrator.lib.artifact_preview import emit_phase_artifact_previews
 from orchestrator.lib.budget import BudgetHalted
 from orchestrator.lib.config import Config
+from orchestrator.lib.functional import (
+    build_demo_compatibility_gate,
+    build_functional_acceptance_gate,
+    build_mini_sprint_plan,
+    emit_functional_acceptance_evaluated,
+    emit_mini_sprint_planned,
+    emit_mini_sprint_step_completed,
+)
 from orchestrator.lib.logger import setup_phase_logger
 from orchestrator.lib.loop_refs import refs_for_phase
 from orchestrator.lib.loops import emit_loop_event, loop_stage_for_step
@@ -18,6 +26,7 @@ from orchestrator.lib.memory_palace import memory_status
 from orchestrator.lib.narrator_sidecar import run_narrator_sidecar
 from orchestrator.lib.next_step import build_next_step_packet, emit_next_step_packet_event
 from orchestrator.lib.session_runners import resolve_session_runner
+from orchestrator.lib.sprint_plan import parse_tasks
 from orchestrator.lib.state import State
 from orchestrator.lib.workflow import enabled_steps
 
@@ -237,6 +246,10 @@ class Orchestrator:
                     )
                 except Exception:  # noqa: BLE001 — preview emission is best-effort
                     logger.exception("artifact preview emission failed for phase %s", name)
+                if name == "review":
+                    self._emit_runtime_functional_acceptance(
+                        phase_done_event if isinstance(phase_done_event, dict) else None
+                    )
                 emit_loop_event(
                     self._events_obj,
                     "loop_completed",
@@ -329,6 +342,155 @@ class Orchestrator:
             source_refs=source_refs,
         )
         self._last_memory_diff_hash = current_hash if isinstance(current_hash, str) else None
+
+    def _emit_runtime_functional_acceptance(self, phase_done_event: dict[str, Any] | None) -> None:
+        """Emit runtime mini-sprint and functional acceptance events after review."""
+        sprint_plan = self.state.project_dir / "sprint-plan.md"
+        if not sprint_plan.exists():
+            return
+        tasks = parse_tasks(sprint_plan.read_text(encoding="utf-8"))
+        acceptance_criteria = [item for task in tasks for item in task.acceptance_criteria]
+        evidence_required = [item for task in tasks for item in task.evidence_required]
+        changed_files = [item for task in tasks for item in task.files]
+        source_refs = ["artifact:sprint-plan.md", "artifact:TEST_REPORT.md", "artifact:REVIEW.md"]
+        if phase_done_event and phase_done_event.get("event_id"):
+            source_refs.append(f"event:{phase_done_event['event_id']}")
+
+        demo = self._runtime_demo_state()
+        demo_gate = build_demo_compatibility_gate(
+            acceptance_criteria=acceptance_criteria,
+            evidence_required=evidence_required,
+            repo_has_playwright=self._repo_has_playwright(),
+            changed_files=changed_files,
+        )
+        if demo["status"] is not None:
+            demo_gate["demo_requested"] = True
+            demo_gate["demo_compatibility"] = "eligible"
+
+        mini_sprint_id = "ms_runtime_acceptance"
+        plan = build_mini_sprint_plan(
+            title="Runtime functional acceptance",
+            objective="Confirm reviewed work satisfies declared acceptance criteria.",
+            scope_refs=["workflow:implementation", "workflow:testing", "workflow:review"],
+            acceptance_criteria=acceptance_criteria,
+            evidence_required=evidence_required,
+            demo_gate=demo_gate,
+            source_refs=source_refs,
+            mini_sprint_id=mini_sprint_id,
+        )
+        emit_mini_sprint_planned(self._events_obj, str(self.state.project_dir.name), plan)
+
+        step_results: list[dict[str, Any]] = []
+        for step_id, step_kind in (
+            ("implementation", "build"),
+            ("testing", "test"),
+            ("review", "review"),
+        ):
+            refs = refs_for_phase(step_id, self.state, include_outputs=True)
+            step_results.append({"step_id": step_id, "status": "done"})
+            emit_mini_sprint_step_completed(
+                self._events_obj,
+                str(self.state.project_dir.name),
+                mini_sprint_id=mini_sprint_id,
+                step_id=step_id,
+                step_kind=step_kind,
+                status="done",
+                artifact_refs=refs["artifact_refs"],
+                evidence_refs=refs["evidence_refs"],
+                source_event_ids=self._event_ids("phase_done", name=step_id),
+                source_refs=[f"workflow:{step_id}", *source_refs],
+            )
+
+        evidence_refs = self._runtime_acceptance_evidence_refs(demo["artifact_refs"])
+        gate = build_functional_acceptance_gate(
+            acceptance_criteria=acceptance_criteria,
+            evidence_required=evidence_required,
+            evidence_refs=evidence_refs,
+            step_results=step_results,
+            review_findings=self._runtime_review_findings(),
+            review_artifact_ref="REVIEW.md",
+            demo_requested=bool(demo_gate.get("demo_requested")),
+            demo_status=demo["status"],
+            demo_artifact_refs=demo["artifact_refs"],
+            source_refs=source_refs,
+        )
+        emit_functional_acceptance_evaluated(
+            self._events_obj,
+            str(self.state.project_dir.name),
+            mini_sprint_id=mini_sprint_id,
+            acceptance_gate=gate,
+        )
+
+    def _runtime_acceptance_evidence_refs(self, demo_artifact_refs: list[str]) -> list[str]:
+        refs: list[str] = []
+        for phase in ("testing", "review"):
+            phase_refs = refs_for_phase(phase, self.state, include_outputs=True)
+            refs.extend(phase_refs["artifact_refs"])
+            refs.extend(phase_refs["evidence_refs"])
+        refs.extend(demo_artifact_refs)
+        return list(dict.fromkeys(refs))
+
+    def _runtime_review_findings(self) -> list[str]:
+        review = self.state.project_dir / "REVIEW.md"
+        if not review.exists():
+            return ["REVIEW.md is missing."]
+        text = review.read_text(encoding="utf-8")
+        findings: list[str] = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            upper = stripped.upper()
+            if "CRITICAL" in upper or "CHANGES REQUESTED" in upper or "[FAIL]" in upper:
+                findings.append(stripped)
+        return findings
+
+    def _runtime_demo_state(self) -> dict[str, Any]:
+        status: str | None = None
+        artifact_refs: list[str] = []
+        for event in self._recent_events():
+            event_type = event.get("type")
+            if event_type == "demo_presented":
+                status = "presented"
+                artifact_refs.extend(_strings(event.get("artifact_refs")))
+            elif event_type == "demo_capture_failed":
+                status = "failed"
+                artifact_refs.extend(_strings(event.get("artifact_refs")))
+            elif event_type == "demo_artifact_created":
+                status = status or "captured"
+                artifact_ref = event.get("artifact_ref")
+                if isinstance(artifact_ref, str) and artifact_ref:
+                    artifact_refs.append(artifact_ref)
+            elif event_type == "demo_planned":
+                status = status or "planned"
+            elif event_type == "demo_skipped":
+                status = status or "skipped"
+        return {"status": status, "artifact_refs": list(dict.fromkeys(artifact_refs))}
+
+    def _repo_has_playwright(self) -> bool:
+        return any(
+            (self.state.project_dir / name).exists()
+            for name in ("playwright.config.ts", "playwright.config.js", "playwright.config.mjs")
+        )
+
+    def _event_ids(self, event_type: str, *, name: str | None = None) -> list[str]:
+        ids: list[str] = []
+        for event in self._recent_events():
+            if event.get("type") != event_type:
+                continue
+            if name is not None and event.get("name") != name:
+                continue
+            event_id = event.get("event_id")
+            if isinstance(event_id, str):
+                ids.append(event_id)
+        return ids
+
+    def _recent_events(self) -> list[dict[str, Any]]:
+        events = getattr(self._events_obj, "events", None)
+        if isinstance(events, list):
+            return [event for event in events if isinstance(event, dict)]
+        history = getattr(self._events_obj, "_history_events", None)
+        if isinstance(history, dict):
+            return [event for event in history.values() if isinstance(event, dict)]
+        return []
 
     def _resolve_phase_handler(self, handler_name: str) -> Callable[..., None]:
         mapping: dict[str, Callable[..., None]] = {
@@ -895,3 +1057,7 @@ class Orchestrator:
 
     def is_dry_run(self) -> bool:
         return self._dry_run
+
+
+def _strings(value: Any) -> list[str]:
+    return [item for item in value or [] if isinstance(item, str) and item]
