@@ -123,6 +123,9 @@ export type NextStepPacket = {
   evidenceRequired: string[];
   demoRequested: boolean;
   demoCompatibility: string | null;
+  demoAdapter: string | null;
+  demoConfidence: string | null;
+  demoReason: string | null;
   sourceRefs: string[];
   memoryRefs: string[];
   raw: Record<string, unknown>;
@@ -305,6 +308,8 @@ export type DemoPlan = {
   status: DemoStatus;
   adapter: string;
   confidence: string;
+  demoCompatibility: string | null;
+  demoRequested: boolean;
   reason: string;
   taskId: string | null;
   atomId: string | null;

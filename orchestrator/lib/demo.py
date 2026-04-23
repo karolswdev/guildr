@@ -23,12 +23,22 @@ CONFIDENCE_INFERRED: str = "inferred_interactive_web"
 CONFIDENCE_STATIC: str = "static_visual"
 CONFIDENCE_NONE: str = "not_demoable"
 
+DEMO_COMPATIBILITY_ELIGIBLE: str = "eligible"
+DEMO_COMPATIBILITY_INELIGIBLE: str = "ineligible"
+DEMO_COMPATIBILITY_UNKNOWN: str = "unknown"
+
 CONFIDENCES: frozenset[str] = frozenset({
     CONFIDENCE_EXPLICIT,
     CONFIDENCE_OPERATOR,
     CONFIDENCE_INFERRED,
     CONFIDENCE_STATIC,
     CONFIDENCE_NONE,
+})
+
+DEMO_COMPATIBILITIES: frozenset[str] = frozenset({
+    DEMO_COMPATIBILITY_ELIGIBLE,
+    DEMO_COMPATIBILITY_INELIGIBLE,
+    DEMO_COMPATIBILITY_UNKNOWN,
 })
 
 _EXPLICIT_KEYWORDS: tuple[str, ...] = (
@@ -145,6 +155,16 @@ def detect_playwright_demo_plan(
     return plan
 
 
+def demo_compatibility_from_plan(plan: dict[str, Any]) -> str:
+    """Map adapter-specific demo confidence to product-facing compatibility."""
+    confidence = _string(plan.get("confidence"))
+    if confidence in {CONFIDENCE_EXPLICIT, CONFIDENCE_OPERATOR, CONFIDENCE_INFERRED}:
+        return DEMO_COMPATIBILITY_ELIGIBLE
+    if confidence == CONFIDENCE_NONE:
+        return DEMO_COMPATIBILITY_INELIGIBLE
+    return DEMO_COMPATIBILITY_UNKNOWN
+
+
 def emit_demo_plan(
     event_bus: Any,
     project_dir: Path,
@@ -188,6 +208,8 @@ def emit_demo_plan(
     common = {
         "project_id": project_id or project_dir.name,
         "demo_id": demo_id,
+        "demo_requested": confidence != CONFIDENCE_NONE,
+        "demo_compatibility": demo_compatibility_from_plan(plan),
         "task_id": _string(task_id) or None,
         "atom_id": _string(atom_id) or None,
         "adapter": adapter,

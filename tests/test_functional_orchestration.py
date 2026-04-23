@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from orchestrator.lib.functional import (
+    build_demo_compatibility_gate,
     build_mini_sprint_plan,
     emit_functional_acceptance_evaluated,
     emit_mini_sprint_planned,
@@ -41,6 +42,35 @@ def test_build_mini_sprint_plan_has_replay_safe_defaults() -> None:
         "demo_compatibility": "unknown",
         "source_refs": ["next:implementation"],
     }
+
+
+def test_demo_compatibility_gate_threads_into_mini_sprint_plan() -> None:
+    gate = build_demo_compatibility_gate(
+        acceptance_criteria=["PWA map opens on mobile and shows the next move."],
+        evidence_required=["Run Playwright and capture demo.gif."],
+        repo_has_playwright=True,
+        changed_files=["web/frontend/src/game/GameShell.ts"],
+        test_command="npx playwright test web/frontend/tests/demo/game-map.spec.ts",
+        spec_path="web/frontend/tests/demo/game-map.spec.ts",
+        route="/game",
+        viewports=["mobile"],
+    )
+    plan = build_mini_sprint_plan(
+        title="Ship Next Move",
+        objective="Make orchestration visible.",
+        acceptance_criteria=["PWA map opens on mobile and shows the next move."],
+        evidence_required=["Run Playwright and capture demo.gif."],
+        demo_gate=gate,
+        mini_sprint_id="ms_next_move",
+    )
+
+    assert gate["demo_requested"] is True
+    assert gate["demo_compatibility"] == "eligible"
+    assert gate["demo_confidence"] == "explicit_playwright"
+    assert plan["demo_requested"] is True
+    assert plan["demo_compatibility"] == "eligible"
+    assert plan["demo_adapter"] == "playwright_web"
+    assert plan["demo_plan"]["route"] == "/game"
 
 
 def test_emit_functional_mini_sprint_events() -> None:

@@ -427,13 +427,35 @@ Remaining depth for a later Hero/Council slice:
 - Add a deterministic adapter that marks a mini-sprint as demo eligible,
   ineligible, or unknown.
 - Hook it to existing demo events.
-- Show the requested demo state in the Evidence And Demo Sheet.
+- Show the requested demo state in the Evidence And Demo Sheet / demo cards.
 
 Evidence:
 
 ```bash
-uv run pytest -q tests/test_demo.py tests/test_demo_runner.py web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py
+uv run pytest -q tests/test_demo.py tests/test_functional_orchestration.py tests/test_demo_runner.py
+uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py
+./web/frontend/build.sh
+git diff --check -- orchestrator/lib/demo.py orchestrator/lib/functional.py tests/test_demo.py tests/test_functional_orchestration.py web/frontend/src/game/types.ts web/frontend/src/game/EventEngine.ts web/frontend/src/game/GameShell.ts web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py
 ```
+
+Delivered 2026-04-23:
+
+- `orchestrator.lib.demo.demo_compatibility_from_plan(...)` maps adapter
+  confidence to product gate values:
+  - `explicit_playwright`, `operator_requested`, `inferred_interactive_web` ->
+    `eligible`
+  - `not_demoable` -> `ineligible`
+  - static/ambiguous visual proof -> `unknown`
+- `emit_demo_plan(...)` now stamps `demo_requested` and
+  `demo_compatibility` on `demo_planned` / `demo_skipped`.
+- `orchestrator.lib.functional.build_demo_compatibility_gate(...)` converts
+  mini-sprint acceptance/evidence text, touched files, commands, route, and
+  viewport hints into a replay-safe gate payload.
+- `build_mini_sprint_plan(...)` can thread that gate into
+  `mini_sprint_planned` without requiring free-form inference in the PWA.
+- `EventEngine` folds demo gate metadata into `snapshot.functional` and
+  `snapshot.demos`; `GameShell` renders the gate beside mini-sprint acceptance
+  and on demo cards.
 
 ### Slice F7 — Functional Acceptance Gate
 
@@ -485,6 +507,6 @@ uv run pytest -q tests/test_functional_orchestration.py tests/test_engine.py web
 
 ## Immediate Next Step
 
-Run Slice F6: add the deterministic demo compatibility gate that converts
-mini-sprint acceptance/evidence context into `eligible`, `ineligible`, or
-`unknown`, then shows the requested demo state in the existing evidence surface.
+Run Slice F7: turn accumulated mini-sprint evidence, tests, preview/demo refs,
+and review findings into an explicit functional acceptance gate with repair,
+Hero review, or operator override as the blocked-state actions.

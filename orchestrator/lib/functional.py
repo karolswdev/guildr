@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from orchestrator.lib.demo import (
+    DEMO_COMPATIBILITIES,
+    detect_playwright_demo_plan,
+    demo_compatibility_from_plan,
+)
 from orchestrator.lib.event_schema import new_event_id
 from orchestrator.lib.event_types import (
     FUNCTIONAL_ACCEPTANCE_EVALUATED,
@@ -21,12 +26,18 @@ def build_mini_sprint_plan(
     evidence_required: list[str] | None = None,
     demo_requested: bool = False,
     demo_compatibility: str = "unknown",
+    demo_gate: dict[str, Any] | None = None,
     source_refs: list[str] | None = None,
     mini_sprint_id: str | None = None,
 ) -> dict[str, Any]:
     """Build a replay-safe functional mini-sprint plan payload."""
     sprint_id = mini_sprint_id or f"ms_{new_event_id()}"
-    return {
+    if demo_gate:
+        demo_requested = bool(demo_gate.get("demo_requested"))
+        demo_compatibility = str(demo_gate.get("demo_compatibility") or "unknown")
+    if demo_compatibility not in DEMO_COMPATIBILITIES:
+        demo_compatibility = "unknown"
+    plan = {
         "mini_sprint_id": sprint_id,
         "title": title,
         "objective": objective,
@@ -36,6 +47,51 @@ def build_mini_sprint_plan(
         "demo_requested": bool(demo_requested),
         "demo_compatibility": demo_compatibility,
         "source_refs": source_refs or [],
+    }
+    if demo_gate:
+        plan["demo_adapter"] = str(demo_gate.get("demo_adapter") or "")
+        plan["demo_confidence"] = str(demo_gate.get("demo_confidence") or "")
+        plan["demo_reason"] = str(demo_gate.get("demo_reason") or "")
+        plan["demo_plan"] = demo_gate.get("demo_plan") if isinstance(demo_gate.get("demo_plan"), dict) else {}
+    return plan
+
+
+def build_demo_compatibility_gate(
+    *,
+    acceptance_criteria: list[str] | None = None,
+    evidence_required: list[str] | None = None,
+    operator_requested: bool = False,
+    repo_has_playwright: bool = False,
+    changed_files: list[str] | None = None,
+    start_command: str | None = None,
+    test_command: str | None = None,
+    spec_path: str | None = None,
+    route: str | None = None,
+    viewports: list[str] | None = None,
+    capture_policy: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build a deterministic mini-sprint demo compatibility gate."""
+    plan = detect_playwright_demo_plan(
+        acceptance_text="\n".join(acceptance_criteria or []),
+        evidence_text="\n".join(evidence_required or []),
+        operator_requested=operator_requested,
+        repo_has_playwright=repo_has_playwright,
+        changed_files=changed_files,
+        start_command=start_command,
+        test_command=test_command,
+        spec_path=spec_path,
+        route=route,
+        viewports=viewports,
+        capture_policy=capture_policy,
+    )
+    compatibility = demo_compatibility_from_plan(plan)
+    return {
+        "demo_requested": compatibility == "eligible",
+        "demo_compatibility": compatibility,
+        "demo_adapter": plan["adapter"],
+        "demo_confidence": plan["confidence"],
+        "demo_reason": plan["reason"],
+        "demo_plan": plan,
     }
 
 

@@ -14,7 +14,11 @@ from orchestrator.lib.demo import (
     CONFIDENCE_NONE,
     CONFIDENCE_OPERATOR,
     CONFIDENCE_STATIC,
+    DEMO_COMPATIBILITY_ELIGIBLE,
+    DEMO_COMPATIBILITY_INELIGIBLE,
+    DEMO_COMPATIBILITY_UNKNOWN,
     DemoPlanError,
+    demo_compatibility_from_plan,
     detect_playwright_demo_plan,
     emit_demo_plan,
 )
@@ -78,6 +82,14 @@ def test_detect_not_demoable_for_pure_backend_work() -> None:
     assert plan["confidence"] == CONFIDENCE_NONE
 
 
+def test_demo_compatibility_maps_adapter_confidence_to_product_gate() -> None:
+    assert demo_compatibility_from_plan({"confidence": CONFIDENCE_EXPLICIT}) == DEMO_COMPATIBILITY_ELIGIBLE
+    assert demo_compatibility_from_plan({"confidence": CONFIDENCE_OPERATOR}) == DEMO_COMPATIBILITY_ELIGIBLE
+    assert demo_compatibility_from_plan({"confidence": CONFIDENCE_INFERRED}) == DEMO_COMPATIBILITY_ELIGIBLE
+    assert demo_compatibility_from_plan({"confidence": CONFIDENCE_STATIC}) == DEMO_COMPATIBILITY_UNKNOWN
+    assert demo_compatibility_from_plan({"confidence": CONFIDENCE_NONE}) == DEMO_COMPATIBILITY_INELIGIBLE
+
+
 def test_emit_demo_planned_stamps_provenance_and_ids(tmp_path: Path) -> None:
     memory_dir = tmp_path / ".orchestrator" / "memory"
     memory_dir.mkdir(parents=True)
@@ -109,6 +121,8 @@ def test_emit_demo_planned_stamps_provenance_and_ids(tmp_path: Path) -> None:
     assert event["type"] == "demo_planned"
     assert event["adapter"] == ADAPTER_PLAYWRIGHT
     assert event["confidence"] == CONFIDENCE_EXPLICIT
+    assert event["demo_requested"] is True
+    assert event["demo_compatibility"] == DEMO_COMPATIBILITY_ELIGIBLE
     assert event["task_id"] == "task-001"
     assert event["route"] == "/game"
     assert event["viewports"] == ["mobile"]
@@ -146,6 +160,8 @@ def test_emit_demo_skipped_when_not_demoable(tmp_path: Path) -> None:
 
     assert event["type"] == "demo_skipped"
     assert event["confidence"] == CONFIDENCE_NONE
+    assert event["demo_requested"] is False
+    assert event["demo_compatibility"] == DEMO_COMPATIBILITY_INELIGIBLE
     assert "no runnable visual surface" in event["reason"]
 
 

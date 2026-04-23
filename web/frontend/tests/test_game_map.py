@@ -237,6 +237,9 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "Evidence required" in text
     assert "Demo readiness" in text
     assert "demoReadinessLabel" in text
+    assert "Demo gate" in text
+    assert "demoGateLabel" in text
+    assert "demoCompatibility" in text
     assert "functional-mini-sprint" in text
     assert "functionalMiniSprintPanel" in text
     assert "Functional evidence" in text
@@ -476,6 +479,8 @@ def test_demo_artifact_url_and_card_helpers(tmp_path: Path) -> None:
           status: 'presented',
           adapter: 'playwright_web',
           confidence: 'explicit_playwright',
+          demoCompatibility: 'eligible',
+          demoRequested: true,
           reason: 'Maps should open on mobile',
           taskId: 'task-1',
           atomId: 'implementation',
@@ -514,6 +519,7 @@ def test_demo_artifact_url_and_card_helpers(tmp_path: Path) -> None:
         assert.ok(html.includes('data-demo-status="presented"'));
         assert.ok(html.includes('data-role="demo-thumb"'));
         assert.ok(html.includes('/api/projects/proj-1/demos/demo_abc123/demo.gif'));
+        assert.ok(html.includes('requested · eligible'));
         assert.ok(html.includes('Maps should open on mobile'));
         assert.ok(html.includes('Ready'));
 
@@ -549,6 +555,10 @@ def test_functional_mini_sprint_panel_helper(tmp_path: Path) -> None:
               miniSprintId: 'ms_login',
               title: 'Ship <login>',
               objective: 'Make sign-in usable.',
+              demoRequested: true,
+              demoCompatibility: 'eligible',
+              demoConfidence: 'explicit_playwright',
+              demoReason: 'Playwright proof requested <mobile>',
               steps: [
                 { stepId: 'implementation', stepKind: 'build', status: 'done' },
                 { stepId: 'testing', stepKind: 'test', status: 'failed' },
@@ -565,6 +575,9 @@ def test_functional_mini_sprint_panel_helper(tmp_path: Path) -> None:
         assert.ok(html.includes('data-role="functional-mini-sprint"'));
         assert.ok(html.includes('Ship &lt;login&gt;'));
         assert.ok(html.includes('Blocked'));
+        assert.ok(html.includes('Demo gate'));
+        assert.ok(html.includes('Requested · eligible · explicit_playwright'));
+        assert.ok(html.includes('Playwright proof requested &lt;mobile&gt;'));
         assert.ok(html.includes('build: done'));
         assert.ok(html.includes('test: failed'));
         assert.ok(html.includes('TEST_REPORT.md'));

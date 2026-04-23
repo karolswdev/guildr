@@ -522,6 +522,9 @@ def test_functional_mini_sprint_replay_fold(tmp_path: Path) -> None:
             evidence_required: ['pytest'],
             demo_requested: true,
             demo_compatibility: 'eligible',
+            demo_adapter: 'playwright_web',
+            demo_confidence: 'explicit_playwright',
+            demo_reason: 'acceptance requested a Playwright demo',
             source_refs: ['event:next'],
           },
           {
@@ -551,6 +554,9 @@ def test_functional_mini_sprint_replay_fold(tmp_path: Path) -> None:
         assert.equal(functional.currentMiniSprint.miniSprintId, 'ms_login');
         assert.equal(functional.currentMiniSprint.demoRequested, true);
         assert.equal(functional.currentMiniSprint.demoCompatibility, 'eligible');
+        assert.equal(functional.currentMiniSprint.demoAdapter, 'playwright_web');
+        assert.equal(functional.currentMiniSprint.demoConfidence, 'explicit_playwright');
+        assert.equal(functional.currentMiniSprint.demoReason, 'acceptance requested a Playwright demo');
         assert.deepEqual(functional.currentMiniSprint.acceptanceCriteria, ['User can sign in.']);
         assert.equal(functional.currentMiniSprint.steps[0].stepKind, 'build');
         assert.equal(functional.acceptance.passed, true);
@@ -679,6 +685,8 @@ def test_demo_events_fold(tmp_path: Path) -> None:
             demo_id: 'demo_abc',
             adapter: 'playwright_web',
             confidence: 'explicit_playwright',
+            demo_requested: true,
+            demo_compatibility: 'eligible',
             reason: 'acceptance text requested a Playwright demo',
             task_id: 'task-001',
             atom_id: 'implementation',
@@ -698,6 +706,8 @@ def test_demo_events_fold(tmp_path: Path) -> None:
             demo_id: 'demo_xyz',
             adapter: 'playwright_web',
             confidence: 'not_demoable',
+            demo_requested: false,
+            demo_compatibility: 'ineligible',
             reason: 'no runnable visual surface detected',
             task_id: 'task-002',
             source_refs: ['event:evt-phase-2'],
@@ -710,11 +720,14 @@ def test_demo_events_fold(tmp_path: Path) -> None:
         assert.equal(snapshot.demos.length, 2);
         assert.equal(snapshot.demos[0].status, 'planned');
         assert.equal(snapshot.demos[0].adapter, 'playwright_web');
+        assert.equal(snapshot.demos[0].demoRequested, true);
+        assert.equal(snapshot.demos[0].demoCompatibility, 'eligible');
         assert.equal(snapshot.demos[0].route, '/game');
         assert.deepEqual(snapshot.demos[0].viewports, ['mobile']);
         assert.equal(snapshot.demos[0].wakeUpHash, 'hash-a10');
         assert.equal(snapshot.demos[1].status, 'skipped');
         assert.equal(snapshot.demos[1].confidence, 'not_demoable');
+        assert.equal(snapshot.demos[1].demoCompatibility, 'ineligible');
         assert.equal(snapshot.latestDemo.demoId, 'demo_xyz');
 
         engine.scrubTo(0);

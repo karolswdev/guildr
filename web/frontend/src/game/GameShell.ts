@@ -1776,17 +1776,27 @@ export function functionalMiniSprintPanel(snapshot: EngineSnapshot): string {
     ? sprint.steps.slice(-4).map((step) => `${step.stepKind || step.stepId}: ${step.status}`).join(" · ")
     : "No functional steps completed yet.";
   const blockers = acceptance?.blockingFindings ?? [];
+  const demoGate = demoGateLabel(sprint);
   return `
     <div data-role="functional-mini-sprint" style="display: grid; gap: 8px;">
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 8px;">
         ${sheetField("Mini-sprint", `${sprint.title || sprint.miniSprintId}: ${sprint.objective || "Objective pending."}`)}
         ${sheetField("Acceptance", verdict)}
+        ${sheetField("Demo gate", demoGate)}
       </div>
       ${sheetSection("Functional steps", [stepRows], "No functional step state has landed yet.")}
       ${sheetRefs("Functional evidence", snapshot.functional.evidenceRefs)}
       ${sheetSection("Blocking findings", blockers, "No blocking findings recorded.")}
     </div>
   `;
+}
+
+function demoGateLabel(sprint: { demoRequested: boolean; demoCompatibility: string | null; demoConfidence?: string | null; demoReason?: string | null }): string {
+  const requested = sprint.demoRequested ? "Requested" : "Not requested";
+  const compatibility = sprint.demoCompatibility || "unknown";
+  const confidence = sprint.demoConfidence ? ` · ${sprint.demoConfidence}` : "";
+  const reason = sprint.demoReason ? ` · ${sprint.demoReason}` : "";
+  return `${requested} · ${compatibility}${confidence}${reason}`;
 }
 
 export function heroRosterPanel(snapshot: EngineSnapshot): string {
@@ -2074,7 +2084,8 @@ function demoArtifactRow(projectId: string, demo: DemoPlan, artifact: DemoArtifa
 export function storyDemoCard(demo: DemoPlan, projectId: string): string {
   const status = demoStatusChip(demo.status);
   const viewport = viewportLabel(demo.viewport);
-  const meta = [demo.adapter, demo.route, viewport].filter(Boolean).join(" · ");
+  const compatibility = demo.demoCompatibility ? `${demo.demoRequested ? "requested" : "not requested"} · ${demo.demoCompatibility}` : "";
+  const meta = [demo.adapter, compatibility, demo.route, viewport].filter(Boolean).join(" · ");
   const artifactChips = demo.artifacts.slice(0, 6).map((artifact) => demoArtifactRow(projectId, demo, artifact)).join("");
   const sourceChips = demo.sourceRefs.slice(0, 5).map((ref) => `<span style="${refChipStyle()}">${escapeHtml(ref)}</span>`).join("");
   const memoryChips = demo.memoryRefs.slice(0, 3).map((ref) => `<span style="${refChipStyle()}">memory: ${escapeHtml(ref)}</span>`).join("");
