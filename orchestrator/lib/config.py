@@ -9,7 +9,25 @@ from pathlib import Path
 
 import yaml
 
+from orchestrator.lib.budget import BudgetConfig
+
 logger = logging.getLogger(__name__)
+
+
+def _budget_config_from_mapping(value: object) -> BudgetConfig:
+    """Build a BudgetConfig from YAML, tolerating hyphenated keys."""
+    if isinstance(value, BudgetConfig):
+        return value
+    if not isinstance(value, dict):
+        return BudgetConfig()
+    known = {f.name for f in fields(BudgetConfig)}
+    cleaned: dict[str, object] = {}
+    for key, val in value.items():
+        normal_key = str(key).replace("-", "_")
+        if normal_key not in known:
+            continue
+        cleaned[normal_key] = val
+    return BudgetConfig(**cleaned)  # type: ignore[arg-type]
 
 
 def _consult_config_from_mapping(value: object) -> "ConsultConfig":
@@ -61,6 +79,7 @@ class Config:
     quiz_max_turns: int = 10
     require_human_approval: bool = True
     expose_public: bool = False
+    budget: BudgetConfig = field(default_factory=BudgetConfig)
     consult: ConsultConfig = field(default_factory=ConsultConfig)
 
     @classmethod
@@ -101,6 +120,9 @@ class Config:
         normalised["project_dir"] = Path(normalised["project_dir"])
 
         # Materialize nested ConsultConfig from a plain mapping, if provided.
+        if "budget" in normalised:
+            normalised["budget"] = _budget_config_from_mapping(normalised["budget"])
+
         if "consult" in normalised:
             normalised["consult"] = _consult_config_from_mapping(normalised["consult"])
 
@@ -139,8 +161,43 @@ class Config:
                 return default
             return v.lower() in ("1", "true", "yes", "on")
 
+        def _float_or_none(name: str, default: float | None) -> float | None:
+            v = os.environ.get(name)
+            if v is None:
+                return default
+            if v.strip().lower() in ("", "none", "null", "unset"):
+                return None
+            return float(v)
+
         def _str(name: str, default: str) -> str:
             return os.environ.get(name, default)
+
+        budget = BudgetConfig(
+            advisory_run_budget_usd=_float_or_none(
+                "ORCHESTRATOR_BUDGET_ADVISORY_RUN_USD",
+                BudgetConfig.advisory_run_budget_usd,
+            ),
+            advisory_phase_budget_usd=_float_or_none(
+                "ORCHESTRATOR_BUDGET_ADVISORY_PHASE_USD",
+                BudgetConfig.advisory_phase_budget_usd,
+            ),
+            hard_run_budget_usd=_float_or_none(
+                "ORCHESTRATOR_BUDGET_HARD_RUN_USD",
+                BudgetConfig.hard_run_budget_usd,
+            ),
+            hard_phase_budget_usd=_float_or_none(
+                "ORCHESTRATOR_BUDGET_HARD_PHASE_USD",
+                BudgetConfig.hard_phase_budget_usd,
+            ),
+            per_call_hard_cap_usd=_float_or_none(
+                "ORCHESTRATOR_BUDGET_PER_CALL_HARD_USD",
+                BudgetConfig.per_call_hard_cap_usd,
+            ),
+            halt_on_hard_cap=_bool(
+                "ORCHESTRATOR_BUDGET_HALT_ON_HARD_CAP",
+                BudgetConfig.halt_on_hard_cap,
+            ),
+        )
 
         return cls(
             llama_server_url=_str("LLAMA_SERVER_URL", url),
@@ -161,6 +218,7 @@ class Config:
                 "REQUIRE_HUMAN_APPROVAL", cls.require_human_approval
             ),
             expose_public=_bool("EXPOSE_PUBLIC", cls.expose_public),
+            budget=budget,
         )
 
     def with_env_overrides(self) -> "Config":
@@ -192,6 +250,37 @@ class Config:
         pd = _str("PROJECT_DIR") or _str("ORCHESTRATOR_PROJECT_DIR")
         if pd:
             overrides["project_dir"] = Path(pd)
+
+        budget = self.budget
+
+        def _float_or_none(name: str) -> float | None | object:
+            v = os.environ.get(name)
+            if v is None:
+                return _MISSING
+            if v.strip().lower() in ("", "none", "null", "unset"):
+                return None
+            return float(v)
+
+        _MISSING = object()
+        budget_overrides: dict[str, object] = {}
+        budget_env = {
+            "advisory_run_budget_usd": "ORCHESTRATOR_BUDGET_ADVISORY_RUN_USD",
+            "advisory_phase_budget_usd": "ORCHESTRATOR_BUDGET_ADVISORY_PHASE_USD",
+            "hard_run_budget_usd": "ORCHESTRATOR_BUDGET_HARD_RUN_USD",
+            "hard_phase_budget_usd": "ORCHESTRATOR_BUDGET_HARD_PHASE_USD",
+            "per_call_hard_cap_usd": "ORCHESTRATOR_BUDGET_PER_CALL_HARD_USD",
+        }
+        for field_name, env_name in budget_env.items():
+            v = _float_or_none(env_name)
+            if v is not _MISSING:
+                budget_overrides[field_name] = v
+        halt = _bool("ORCHESTRATOR_BUDGET_HALT_ON_HARD_CAP")
+        if halt is not None:
+            budget_overrides["halt_on_hard_cap"] = halt
+        if budget_overrides:
+            overrides["budget"] = BudgetConfig(
+                **{**budget.__dict__, **budget_overrides}
+            )
 
         for f in fields(self):
             if f.type is int:

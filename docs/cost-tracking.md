@@ -285,6 +285,13 @@ Budgets are configurable at multiple levels:
 - Escalation budget.
 - Per-call hard cap.
 
+Default posture is deliberately permissive. A fresh project starts with high
+advisory budgets (`$100` run, `$25` phase) and no hard caps. Advisory budgets
+may emit cost context and warnings, but they must not halt execution. A budget
+gate may halt or pause a run only when an operator explicitly configures a hard
+cap and enables hard-cap halting. This prevents unattended executions from
+stopping because of aggressive starter limits.
+
 Budget crossing emits events:
 
 - `budget_warning`: soft threshold crossed.

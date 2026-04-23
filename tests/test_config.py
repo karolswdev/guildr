@@ -69,10 +69,39 @@ class TestFromYaml:
         assert cfg.quiz_max_turns == 10
         assert cfg.require_human_approval is True
         assert cfg.expose_public is False
+        assert cfg.budget.advisory_run_budget_usd == 100.0
+        assert cfg.budget.advisory_phase_budget_usd == 25.0
+        assert cfg.budget.hard_run_budget_usd is None
+        assert cfg.budget.halt_on_hard_cap is False
+        assert cfg.budget.can_halt_execution is False
 
     def test_defaults_expose_public_false(self, minimal_yaml: Path):
         cfg = Config.from_yaml(minimal_yaml)
         assert cfg.expose_public is False
+
+    def test_budget_config_loads_from_yaml(self, tmp_path: Path):
+        path = tmp_path / "budget.yaml"
+        path.write_text(
+            yaml.dump(
+                {
+                    "llama_server_url": "http://127.0.0.1:8080",
+                    "project_dir": str(tmp_path / "project"),
+                    "budget": {
+                        "advisory-run-budget-usd": 250.0,
+                        "advisory_phase_budget_usd": 50.0,
+                        "hard_run_budget_usd": 500.0,
+                        "halt_on_hard_cap": True,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        cfg = Config.from_yaml(path)
+        assert cfg.budget.advisory_run_budget_usd == 250.0
+        assert cfg.budget.advisory_phase_budget_usd == 50.0
+        assert cfg.budget.hard_run_budget_usd == 500.0
+        assert cfg.budget.halt_on_hard_cap is True
+        assert cfg.budget.can_halt_execution is True
 
     def test_missing_required_field(self, tmp_path: Path):
         path = tmp_path / "bad.yaml"
@@ -165,6 +194,40 @@ class TestFromEnv:
         assert cfg.max_total_iterations == 50
         assert cfg.require_human_approval is False
         assert cfg.expose_public is True
+
+    def test_env_budget_defaults_are_permissive(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        monkeypatch.setenv("LLAMA_SERVER_URL", "http://10.0.0.1:8080")
+        monkeypatch.setenv("PROJECT_DIR", str(tmp_path / "proj"))
+        cfg = Config.from_env()
+        assert cfg.budget.advisory_run_budget_usd == 100.0
+        assert cfg.budget.advisory_phase_budget_usd == 25.0
+        assert cfg.budget.hard_run_budget_usd is None
+        assert cfg.budget.hard_phase_budget_usd is None
+        assert cfg.budget.per_call_hard_cap_usd is None
+        assert cfg.budget.halt_on_hard_cap is False
+        assert cfg.budget.can_halt_execution is False
+
+    def test_env_budget_hard_caps_require_explicit_halt(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        monkeypatch.setenv("LLAMA_SERVER_URL", "http://10.0.0.1:8080")
+        monkeypatch.setenv("PROJECT_DIR", str(tmp_path / "proj"))
+        monkeypatch.setenv("ORCHESTRATOR_BUDGET_HARD_RUN_USD", "300")
+        cfg = Config.from_env()
+        assert cfg.budget.hard_run_budget_usd == 300.0
+        assert cfg.budget.can_halt_execution is False
+
+        monkeypatch.setenv("ORCHESTRATOR_BUDGET_HALT_ON_HARD_CAP", "true")
+        cfg = Config.from_env()
+        assert cfg.budget.can_halt_execution is True
+
+    def test_env_can_unset_advisory_budgets(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        monkeypatch.setenv("LLAMA_SERVER_URL", "http://10.0.0.1:8080")
+        monkeypatch.setenv("PROJECT_DIR", str(tmp_path / "proj"))
+        monkeypatch.setenv("ORCHESTRATOR_BUDGET_ADVISORY_RUN_USD", "none")
+        monkeypatch.setenv("ORCHESTRATOR_BUDGET_ADVISORY_PHASE_USD", "none")
+        cfg = Config.from_env()
+        assert cfg.budget.advisory_run_budget_usd is None
+        assert cfg.budget.advisory_phase_budget_usd is None
+        assert cfg.budget.has_advisory_budget is False
 
     def test_legacy_url_var(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         monkeypatch.setenv("LLAMA_URL", "http://10.0.0.2:8080")
