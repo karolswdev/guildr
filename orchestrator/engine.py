@@ -306,6 +306,8 @@ class Orchestrator:
             available=bool(status.get("available")),
             initialized=bool(status.get("initialized")),
             wing=status.get("wing"),
+            role_wings=dict(status.get("role_wings") or {}),
+            cost_accounting=dict(status.get("cost_accounting") or {}),
             memory_refs=list(status.get("memory_refs") or []),
             artifact_refs=list(status.get("memory_refs") or []),
             source_refs=source_refs,

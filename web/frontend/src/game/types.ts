@@ -67,6 +67,8 @@ export type MemPalaceStatus = {
   available: boolean;
   initialized: boolean;
   wing: string | null;
+  roleWings: Record<string, string>;
+  costAccounting: Record<string, unknown>;
   cached_wakeup: string | null;
   last_search: string | null;
   wakeUpHash: string | null;
@@ -85,6 +87,8 @@ export type MemoryEventRecord = {
   available: boolean;
   initialized: boolean;
   wing: string | null;
+  roleWings: Record<string, string>;
+  costAccounting: Record<string, unknown>;
   cachedWakeup: string | null;
   lastSearch: string | null;
   wakeUpHash: string | null;

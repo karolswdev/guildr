@@ -13,6 +13,34 @@ from typing import Any
 
 from orchestrator.lib.scrub import scrub_text
 
+ROLE_WING_ROLES: tuple[str, ...] = (
+    "architect",
+    "coder",
+    "tester",
+    "reviewer",
+    "narrator",
+    "deployer",
+    "judge",
+)
+
+PHASE_ROLE_WINGS: dict[str, str] = {
+    "architect": "architect",
+    "architect_plan": "architect",
+    "architect_refine": "architect",
+    "micro_task_breakdown": "architect",
+    "implementation": "coder",
+    "testing": "tester",
+    "review": "reviewer",
+    "deployment": "deployer",
+    "narrator": "narrator",
+}
+
+MEMORY_COST_ACCOUNTING: dict[str, Any] = {
+    "provider_kind": "external_cli",
+    "usage_recorded": False,
+    "reason": "MemPalace CLI calls do not expose token or cost usage to the orchestrator.",
+}
+
 
 def memory_dir(project_dir: Path) -> Path:
     path = project_dir / ".orchestrator" / "memory"
@@ -70,6 +98,24 @@ def project_wing(project_id: str | None, project_dir: Path) -> str:
     return project_dir.name
 
 
+def role_wing(project_id: str | None, project_dir: Path, role: str) -> str:
+    """Return the deterministic MemPalace wing name reserved for one role."""
+    clean_role = _slug(role)
+    return f"{project_wing(project_id, project_dir)}.{clean_role}"
+
+
+def role_wings(project_id: str | None, project_dir: Path) -> dict[str, str]:
+    """Role-scoped wing contract, stubbed until live MCP/search is enabled."""
+    return {role: role_wing(project_id, project_dir, role) for role in ROLE_WING_ROLES}
+
+
+def role_wing_for_phase(project_id: str | None, project_dir: Path, phase: str) -> str | None:
+    role = PHASE_ROLE_WINGS.get(phase)
+    if role is None:
+        return None
+    return role_wing(project_id, project_dir, role)
+
+
 def resolve_command() -> list[str] | None:
     configured = os.environ.get("GUILDR_MEMPALACE_CMD", "").strip()
     if configured:
@@ -95,6 +141,8 @@ def memory_status(project_id: str | None, project_dir: Path) -> dict[str, Any]:
         "command": " ".join(command) if command else None,
         "initialized": project_initialized(project_dir),
         "wing": project_wing(project_id, project_dir),
+        "role_wings": _metadata_role_wings(metadata, project_id, project_dir),
+        "cost_accounting": dict(MEMORY_COST_ACCOUNTING),
         "cached_wakeup": wakeup.read_text(encoding="utf-8") if wakeup.exists() else "",
         "cached_status": status_file.read_text(encoding="utf-8") if status_file.exists() else "",
         "last_search": search_path(project_dir).read_text(encoding="utf-8") if search_path(project_dir).exists() else "",
@@ -124,10 +172,12 @@ def memory_provenance(project_id: str | None, project_dir: Path) -> dict[str, An
         "available": status["available"],
         "initialized": status["initialized"],
         "wing": status["wing"],
+        "role_wings": status["role_wings"],
         "wake_up_hash": status["wake_up_hash"],
         "wake_up_bytes": status["wake_up_bytes"],
         "memory_refs": status["memory_refs"],
         "artifact_refs": status["memory_refs"],
+        "cost_accounting": status["cost_accounting"],
     }
 
 
@@ -151,6 +201,8 @@ def sync_project_memory(project_id: str | None, project_dir: Path) -> dict[str, 
         json.dumps(
             {
                 "wing": wing,
+                "role_wings": role_wings(project_id, project_dir),
+                "cost_accounting": dict(MEMORY_COST_ACCOUNTING),
                 "init_ran": bool(init_output),
                 "command": command,
                 "wake_up_hash": wakeup_hash(project_dir),
@@ -179,6 +231,8 @@ def refresh_wakeup(project_id: str | None, project_dir: Path) -> dict[str, Any]:
     wakeup_path(project_dir).write_text(wakeup_output, encoding="utf-8")
     metadata = _read_json(metadata_path(project_dir))
     metadata["wing"] = wing
+    metadata["role_wings"] = role_wings(project_id, project_dir)
+    metadata["cost_accounting"] = dict(MEMORY_COST_ACCOUNTING)
     metadata["wake_up_hash"] = wakeup_hash(project_dir)
     metadata_path(project_dir).write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     return {
@@ -242,3 +296,16 @@ def _read_json(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _metadata_role_wings(metadata: dict[str, Any], project_id: str | None, project_dir: Path) -> dict[str, str]:
+    raw = metadata.get("role_wings")
+    if isinstance(raw, dict):
+        clean = {str(k): str(v) for k, v in raw.items() if isinstance(k, str) and isinstance(v, str) and k and v}
+        if clean:
+            return clean
+    return role_wings(project_id, project_dir)
+
+
+def _slug(value: str) -> str:
+    return "".join(c.lower() if c.isalnum() else "_" for c in value).strip("_") or "role"

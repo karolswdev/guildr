@@ -242,6 +242,8 @@ def test_memory_events_replay_fold(tmp_path: Path) -> None:
             available: true,
             initialized: true,
             wing: 'project-p1',
+            role_wings: { coder: 'project-p1.coder' },
+            cost_accounting: { usage_recorded: false, reason: 'MemPalace CLI calls do not expose token or cost usage to the orchestrator.' },
             cached_wakeup: 'Wake up packet body',
             last_search: '',
             wake_up_hash: 'abc1234567890',
@@ -278,6 +280,8 @@ def test_memory_events_replay_fold(tmp_path: Path) -> None:
         let snapshot = engine.snapshot();
         assert.equal(snapshot.memPalaceStatus.error, 'MemPalace unavailable');
         assert.equal(snapshot.memPalaceStatus.wakeUpHash, 'def1234567890');
+        assert.equal(snapshot.memPalaceStatus.roleWings.coder, 'project-p1.coder');
+        assert.equal(snapshot.memPalaceStatus.costAccounting.usage_recorded, false);
         assert.equal(snapshot.memoryEvents.length, 4);
         assert.equal(snapshot.memoryEvents[1].query, 'architecture');
         assert.equal(snapshot.memoryEvents[1].results, 3);

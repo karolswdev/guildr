@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.lib.intents import consume_prompt_intents
-from orchestrator.lib.memory_palace import wakeup_path
+from orchestrator.lib.memory_palace import project_wing, role_wing_for_phase, wakeup_path
 
 PHASES = (
     "memory_refresh",
@@ -196,6 +196,15 @@ def build_operator_context(
     wakeup = _read_text_if_exists(wakeup_path(project_dir), max_chars // 2)
     if wakeup.strip():
         sections.append("## Palace Wake-Up\n\n" + wakeup.strip())
+        scoped_wing = role_wing_for_phase(None, project_dir, clean_phase)
+        if scoped_wing:
+            sections.append(
+                "## Palace Role Wing\n\n"
+                f"- project wing: {project_wing(None, project_dir)}\n"
+                f"- phase: {clean_phase}\n"
+                f"- role wing: {scoped_wing}\n"
+                "- status: reserved contract; deterministic wake-up injection remains authoritative until MemPalace MCP/search is explicitly enabled."
+            )
 
     instructions = read_instructions(project_dir, phase=clean_phase, limit=20)
     if instructions:

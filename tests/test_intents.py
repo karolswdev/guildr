@@ -137,6 +137,21 @@ def test_append_operator_context_does_not_consume_intent_without_event_bus(tmp_p
     assert rows[0]["status"] == "queued"
 
 
+def test_append_operator_context_injects_reserved_memory_role_wing(tmp_path: Path) -> None:
+    memory_dir = tmp_path / ".orchestrator" / "memory"
+    memory_dir.mkdir(parents=True)
+    (memory_dir / "wake-up.md").write_text("wake packet", encoding="utf-8")
+
+    prompt = append_operator_context(tmp_path, "implementation", "Base prompt")
+
+    assert "## Palace Wake-Up" in prompt
+    assert "wake packet" in prompt
+    assert "## Palace Role Wing" in prompt
+    assert f"project wing: {tmp_path.name}" in prompt
+    assert f"role wing: {tmp_path.name}.coder" in prompt
+    assert "deterministic wake-up injection remains authoritative" in prompt
+
+
 def test_ignore_queued_intents_for_passed_step_marks_targeted_intent_ignored(tmp_path: Path) -> None:
     create_queued_intent(
         tmp_path,

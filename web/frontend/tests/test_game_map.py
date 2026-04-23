@@ -477,6 +477,8 @@ def test_memory_status_card_helper(tmp_path: Path) -> None:
             available: true,
             initialized: true,
             wing: 'project-demo',
+            roleWings: { coder: 'project-demo.coder', reviewer: 'project-demo.reviewer' },
+            costAccounting: { usage_recorded: false, reason: 'MemPalace CLI calls do not expose token or cost usage to the orchestrator.' },
             cached_wakeup: 'Wake <packet>\\nNext thing',
             last_search: 'Search <result>',
             wakeUpHash: 'abcdef1234567890',
@@ -493,6 +495,8 @@ def test_memory_status_card_helper(tmp_path: Path) -> None:
               available: true,
               initialized: true,
               wing: 'project-demo',
+              roleWings: { coder: 'project-demo.coder' },
+              costAccounting: { usage_recorded: false },
               cachedWakeup: 'Wake <packet>',
               lastSearch: '',
               wakeUpHash: 'abcdef1234567890',
@@ -512,6 +516,8 @@ def test_memory_status_card_helper(tmp_path: Path) -> None:
               available: true,
               initialized: true,
               wing: 'project-demo',
+              roleWings: { coder: 'project-demo.coder' },
+              costAccounting: { usage_recorded: false },
               cachedWakeup: 'Wake <packet>',
               lastSearch: 'Search <result>',
               wakeUpHash: 'abcdef1234567890',
@@ -532,8 +538,12 @@ def test_memory_status_card_helper(tmp_path: Path) -> None:
         assert.ok(html.includes('data-role="memory-status-card"'));
         assert.ok(html.includes('data-role="memory-wakeup-preview"'));
         assert.ok(html.includes('data-role="memory-last-search"'));
+        assert.ok(html.includes('data-role="memory-role-wings"'));
+        assert.ok(html.includes('data-role="memory-cost-accounting"'));
         assert.ok(html.includes('data-role="memory-event-rail"'));
         assert.ok(html.includes('project-demo'));
+        assert.ok(html.includes('coder: project-demo.coder'));
+        assert.ok(html.includes('MemPalace CLI calls do not expose token or cost usage'));
         assert.ok(html.includes('abcdef1234567890'));
         assert.ok(html.includes('2.0 KiB'));
         assert.ok(html.includes('&lt;packet&gt;'));

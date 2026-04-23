@@ -545,6 +545,8 @@ export class EventEngine {
       available: typeof event.available === "boolean" ? event.available : (previous?.available ?? false),
       initialized: typeof event.initialized === "boolean" ? event.initialized : (previous?.initialized ?? false),
       wing: stringOrNull(event.wing) ?? previous?.wing ?? null,
+      roleWings: stringMap(event.role_wings, previous?.roleWings ?? {}),
+      costAccounting: objectWithFallback(event.cost_accounting, previous?.costAccounting ?? {}),
       cachedWakeup: stringOrNull(event.cached_wakeup) ?? previous?.cached_wakeup ?? null,
       lastSearch: stringOrNull(event.last_search) ?? previous?.last_search ?? null,
       wakeUpHash: stringOrNull(event.wake_up_hash) ?? previous?.wakeUpHash ?? null,
@@ -568,6 +570,8 @@ export class EventEngine {
       available: record.available,
       initialized: record.initialized,
       wing: record.wing,
+      roleWings: { ...record.roleWings },
+      costAccounting: { ...record.costAccounting },
       cached_wakeup: record.cachedWakeup,
       last_search: record.lastSearch,
       wakeUpHash: record.wakeUpHash,
@@ -1116,6 +1120,8 @@ function cloneLoopSnapshot(snapshot: LoopSnapshot): LoopSnapshot {
 function cloneMemoryEventRecord(record: MemoryEventRecord): MemoryEventRecord {
   return {
     ...record,
+    roleWings: { ...record.roleWings },
+    costAccounting: { ...record.costAccounting },
     memoryRefs: [...record.memoryRefs],
     artifactRefs: [...record.artifactRefs],
     lastEvent: record.lastEvent ? { ...record.lastEvent } : null,
@@ -1125,6 +1131,8 @@ function cloneMemoryEventRecord(record: MemoryEventRecord): MemoryEventRecord {
 function cloneMemPalaceStatus(status: MemPalaceStatus): MemPalaceStatus {
   return {
     ...status,
+    roleWings: { ...status.roleWings },
+    costAccounting: { ...status.costAccounting },
     memoryRefs: [...status.memoryRefs],
     artifactRefs: [...status.artifactRefs],
     lastEvent: status.lastEvent ? { ...status.lastEvent } : null,
@@ -1324,6 +1332,22 @@ function stepId(event: RunEvent): string {
 
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function objectWithFallback(value: unknown, fallback: Record<string, unknown>): Record<string, unknown> {
+  const next = objectValue(value);
+  return Object.keys(next).length > 0 ? next : { ...fallback };
+}
+
+function stringMap(value: unknown, fallback: Record<string, string> = {}): Record<string, string> {
+  const raw = objectValue(value);
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v === "string" && v.trim()) {
+      out[k] = v;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : { ...fallback };
 }
 
 function numberOrNull(value: unknown): number | null {

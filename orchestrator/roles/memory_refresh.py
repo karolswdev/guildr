@@ -47,6 +47,8 @@ class MemoryRefresh:
             available=bool(result.get("available")),
             initialized=bool(result.get("initialized")),
             wing=result.get("wing"),
+            role_wings=dict(result.get("role_wings") or {}),
+            cost_accounting=dict(result.get("cost_accounting") or {}),
             wake_up_hash=result.get("wake_up_hash"),
             wake_up_bytes=int(result.get("wake_up_bytes") or 0),
             memory_refs=list(result.get("memory_refs") or []),

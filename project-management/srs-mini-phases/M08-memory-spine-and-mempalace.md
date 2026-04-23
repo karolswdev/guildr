@@ -72,14 +72,14 @@ Only after M08a is green should **M08b — MemPalace MCP For Opencode** add gene
 - [x] PWA: memory body (radar/antenna prop) orbits the goal core; tap opens memory panel (status, last search, sync control, wake-up preview). Landed 2026-04-22: `memory-core:body`, `memory-core-control`, `memory-core-sheet`, replay-folded `memoryEvents`, and `/memory/sync` control.
 - [x] Memory diffing hook: after each successful phase emits `memory_diff` with
   `previous_wake_up_hash`, `wake_up_hash`, and `hash_changed`.
-- [ ] Agent-specific wings: each SDLC role gets a wing scoped to its concerns (can be stubbed with empty wings v1).
+- [x] Agent-specific wings: each SDLC role gets a wing scoped to its concerns (can be stubbed with empty wings v1). Landed 2026-04-22: `role_wings` reserves deterministic architect/coder/tester/reviewer/narrator/deployer/judge wings; role prompts inject the current phase wing; PWA memory card displays the wing contract.
 - [ ] Optional after provenance is green: generate OpenCode `mcp.mempalace` config using `python -m mempalace.mcp_server`, disabled globally and enabled only for selected tool-using agents.
 
 ## Quality gates
 
 - [x] G1 Event integrity on memory events.
 - [x] G8 Security — search queries scrubbed; no secrets in `last-search.txt`.
-- [ ] G7 Cost — memory operations emit `usage_recorded` where they invoke models (e.g., embedding).
+- [x] G7 Cost — current memory operations are audited as external MemPalace CLI calls with no exposed token/cost payload. `memory_status` / memory events carry `cost_accounting.usage_recorded=false` with the reason; future orchestrator-owned embedding/provider calls must emit `usage_recorded`.
 - [x] G4 No-dashboard — memory surface is a body + panel, not a tab grid.
 - [x] G5 Source-ref credibility — every memory-backed narrative/DWA claim carries a memory/artifact/event ref.
 - [x] G2 Replay determinism — replay uses the wake-up hash/refs known at that event index, not current memory state.
@@ -101,6 +101,7 @@ rg -n "\"mcp\"|mempalace|mcp_server" orchestrator/lib/opencode_config.py tests d
 - [x] Every opencode-backed role records or references the wake-up hash it received.
 - [x] Next-step / DWA packets carry memory refs so the PWA can display memory provenance.
 - [x] PWA shows memory status, last search, sync button, wake-up preview.
+- [x] PWA shows role wings and current memory cost-accounting status.
 - [x] Memory errors appear as events (not as silent warnings).
 - [x] Hash changes across phases produce `memory_diff` with `hash_changed`.
 - [ ] Optional M08b only: generated opencode config can expose MemPalace MCP to selected tool-enabled agents without enabling it for zero-tool roles by accident.
@@ -130,3 +131,4 @@ rg -n "\"mcp\"|mempalace|mcp_server" orchestrator/lib/opencode_config.py tests d
 - 2026-04-22 M08 slice A: PWA memory surface landed. `EventEngine` now folds `memory_status`, `memory_refreshed`, `memory_search_completed`, and `memory_error` into replayable `memoryEvents` plus `memPalaceStatus`; scrub/replay rebuild uses the event-index state instead of current palace state. `SceneManager` adds tappable `memory-core:body` on the goal core, and `GameShell` adds `memory-core-control` / `memory-core-sheet` with status, wing, wake hash, packet size, wake-up preview, last search, recent memory event rail, and a sync button posting to `/api/projects/{id}/memory/sync`. Evidence: `uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` -> 25 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,342,500 bytes; `git diff --check` clean.
 - 2026-04-22 M08 slice B: cross-phase memory diff landed. `memory_diff` is registered in the backend/frontend event registries; `Orchestrator._emit_memory_diff_for_phase` runs after each successful `phase_done`, compares current `.orchestrator/memory/wake-up.md` hash to the prior phase-boundary hash, and emits `previous_wake_up_hash`, `wake_up_hash`, `wake_up_bytes`, `hash_changed`, `memory_refs`, `artifact_refs`, and source refs to the triggering phase event. `EventEngine` folds `memory_diff` into `memoryEvents`; `memoryStatusCard` displays changed/unchanged diff rows. Evidence: `uv run pytest -q tests/test_engine.py tests/test_event_schema.py web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` -> 63 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,342,965 bytes; `git diff --check` clean.
 - 2026-04-22 M08 slice C: Story Lens memory claim provenance landed. Backend audit confirmed `narrative_digest_created`, `discussion_entry_created`, and `discussion_highlight_created` already carry `wake_up_hash` + `memory_refs`; `GameShell.storyDigestCard`, `discussionEntryCard`, and `discussionHighlightCard` now render memory refs and wake hash chips next to source/artifact refs so replayed claims show the memory packet that shaped them. Evidence: `uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py` -> 26 passed.
+- 2026-04-22 M08 slice D1: role-wing contract and truthful cost accounting landed. `orchestrator.lib.memory_palace` now reserves deterministic role wings for architect/coder/tester/reviewer/narrator/deployer/judge, persists them into memory metadata, returns them from status/provenance, and records `cost_accounting.usage_recorded=false` because current MemPalace CLI calls expose no token/cost payload. `build_operator_context` injects the current phase's reserved role wing beside the deterministic wake-up packet. Memory events and the PWA memory card surface role wings plus the cost-accounting note. Evidence: `uv run pytest -q tests/test_memory_palace.py tests/test_intents.py orchestrator/tests/test_workflow.py web/backend/tests/test_memory.py web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` -> 53 passed.

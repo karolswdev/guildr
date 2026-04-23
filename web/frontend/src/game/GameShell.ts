@@ -1297,6 +1297,11 @@ export function memoryStatusCard(snapshot: EngineSnapshot): string {
   const wakeup = compactText(status?.cached_wakeup, 760);
   const lastSearch = compactText(status?.last_search, 420);
   const refs = status?.memoryRefs ?? [];
+  const roleWings = Object.entries(status?.roleWings ?? {});
+  const costAccounting = status?.costAccounting ?? {};
+  const costNote = typeof costAccounting.reason === "string"
+    ? costAccounting.reason
+    : "No memory provider cost telemetry has been recorded.";
   const recent = snapshot.memoryEvents.slice(-5).reverse();
   const error = status?.error
     ? `<div style="font-size: 12px; color: #D96A6A; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(status.error)}</div>`
@@ -1332,6 +1337,14 @@ export function memoryStatusCard(snapshot: EngineSnapshot): string {
       <div data-role="memory-last-search" style="${sheetPanelStyle()}">
         <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 5px;">Last search</div>
         <div style="font-size: 12px; color: #C7CAD6; line-height: 1.36; white-space: pre-wrap; overflow-wrap: anywhere;">${escapeHtml(lastSearch || "No memory search has been recorded yet.")}</div>
+      </div>
+      <div data-role="memory-role-wings" style="${sheetPanelStyle()}">
+        <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 5px;">Role wings</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">${roleWings.length > 0 ? roleWings.slice(0, 8).map(([role, wing]) => `<span style="${refChipStyle()}">${escapeHtml(role)}: ${escapeHtml(wing)}</span>`).join("") : `<span style="${emptyChipStyle()}">No role wings reserved yet.</span>`}</div>
+      </div>
+      <div data-role="memory-cost-accounting" style="${sheetPanelStyle()}">
+        <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 5px;">Cost accounting</div>
+        <div style="font-size: 12px; color: #C7CAD6; line-height: 1.36; overflow-wrap: anywhere;">${escapeHtml(costNote)}</div>
       </div>
       ${sheetRefs("Memory refs", refs)}
       <div data-role="memory-event-rail" style="display: grid; gap: 6px;">

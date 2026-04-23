@@ -35,6 +35,8 @@ def _memory_event_payload(result: dict[str, Any]) -> dict[str, Any]:
         "available": bool(result.get("available")),
         "initialized": bool(result.get("initialized")),
         "wing": result.get("wing"),
+        "role_wings": dict(result.get("role_wings") or {}),
+        "cost_accounting": dict(result.get("cost_accounting") or {}),
         "cached_wakeup": result.get("cached_wakeup", ""),
         "last_search": result.get("last_search", ""),
         "wake_up_hash": result.get("wake_up_hash"),
