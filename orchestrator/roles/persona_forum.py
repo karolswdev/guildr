@@ -77,6 +77,25 @@ class PersonaForum:
                 project_id=project_id or self.state.project_dir.name,
                 source_refs=["artifact:FOUNDING_TEAM.json", "artifact:PERSONA_FORUM.md"],
             )
+            from orchestrator.lib.memory_palace import memory_event_fields
+
+            provenance = memory_event_fields(
+                project_id or self.state.project_dir.name, self.state.project_dir
+            )
+            event_bus.emit(
+                "persona_forum_created",
+                project_id=project_id or self.state.project_dir.name,
+                personas=personas,
+                forum_path="PERSONA_FORUM.md",
+                founding_team_path="FOUNDING_TEAM.json",
+                artifact_refs=["FOUNDING_TEAM.json", "PERSONA_FORUM.md"],
+                source_refs=[
+                    "artifact:FOUNDING_TEAM.json",
+                    "artifact:PERSONA_FORUM.md",
+                ],
+                wake_up_hash=provenance.get("wake_up_hash"),
+                memory_refs=list(provenance.get("memory_refs") or []),
+            )
         if compact:
             write_compact_context(self.state.project_dir, max_chars=18000)
         return {

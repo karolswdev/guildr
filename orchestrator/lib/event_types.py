@@ -37,11 +37,18 @@ MEMORY_STATUS: Final = "memory_status"
 MEMORY_REFRESHED: Final = "memory_refreshed"
 MEMORY_SEARCH_COMPLETED: Final = "memory_search_completed"
 MEMORY_ERROR: Final = "memory_error"
+MEMORY_DIFF: Final = "memory_diff"
 
 NEXT_STEP_PACKET_CREATED: Final = "next_step_packet_created"
 NARRATIVE_DIGEST_CREATED: Final = "narrative_digest_created"
 DISCUSSION_ENTRY_CREATED: Final = "discussion_entry_created"
 DISCUSSION_HIGHLIGHT_CREATED: Final = "discussion_highlight_created"
+
+PERSONA_FORUM_CREATED: Final = "persona_forum_created"
+CONSULT_REQUESTED: Final = "consult_requested"
+CONSULT_COMPLETED: Final = "consult_completed"
+HERO_INVITED: Final = "hero_invited"
+HERO_RETIRED: Final = "hero_retired"
 
 OPERATOR_INTENT: Final = "operator_intent"
 OPERATOR_INTENT_APPLIED: Final = "operator_intent_applied"
@@ -91,10 +98,16 @@ EVENT_TYPES: frozenset[str] = frozenset({
     MEMORY_REFRESHED,
     MEMORY_SEARCH_COMPLETED,
     MEMORY_ERROR,
+    MEMORY_DIFF,
     NEXT_STEP_PACKET_CREATED,
     NARRATIVE_DIGEST_CREATED,
     DISCUSSION_ENTRY_CREATED,
     DISCUSSION_HIGHLIGHT_CREATED,
+    PERSONA_FORUM_CREATED,
+    CONSULT_REQUESTED,
+    CONSULT_COMPLETED,
+    HERO_INVITED,
+    HERO_RETIRED,
     OPERATOR_INTENT,
     OPERATOR_INTENT_APPLIED,
     OPERATOR_INTENT_IGNORED,

@@ -117,11 +117,16 @@ class TestFromYaml:
             require_human_approval=False,
             expose_public=True,
         )
+        from dataclasses import asdict, is_dataclass
         data = {}
         for f in original.__dataclass_fields__.values():
             v = getattr(original, f.name)
             if isinstance(v, Path):
                 v = str(v)
+            elif is_dataclass(v):
+                v = asdict(v)
+            elif isinstance(v, set):
+                v = sorted(v)
             data[f.name] = v
         path = tmp_path / "roundtrip.yaml"
         path.write_text(yaml.dump(data), encoding="utf-8")

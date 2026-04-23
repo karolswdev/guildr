@@ -12,6 +12,43 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
+def _consult_config_from_mapping(value: object) -> "ConsultConfig":
+    """Build a ConsultConfig from a plain dict, tolerating missing keys."""
+    if isinstance(value, ConsultConfig):
+        return value
+    if not isinstance(value, dict):
+        return ConsultConfig()
+    known = {f.name for f in fields(ConsultConfig)}
+    cleaned: dict[str, object] = {}
+    for key, val in value.items():
+        normal_key = str(key).replace("-", "_")
+        if normal_key not in known:
+            continue
+        if normal_key == "disabled_triggers" and isinstance(val, list):
+            cleaned[normal_key] = set(val)
+        else:
+            cleaned[normal_key] = val
+    return ConsultConfig(**cleaned)  # type: ignore[arg-type]
+
+
+@dataclass
+class ConsultConfig:
+    """Routing + budget for founding-team consults (A-8.5)."""
+
+    mode: str = "deterministic"
+    mode_overrides: dict[str, str] = field(default_factory=dict)
+    provider: str = "primary"
+    provider_overrides: dict[str, str] = field(default_factory=dict)
+    model: str = "qwen2.5-coder-32b"
+    model_overrides: dict[str, str] = field(default_factory=dict)
+    max_tokens: int = 1200
+    max_tokens_overrides: dict[str, int] = field(default_factory=dict)
+    temperature: float = 0.4
+    timeout_s: float = 45.0
+    fallback_on_error: bool = True
+    disabled_triggers: set[str] = field(default_factory=set)
+
+
 @dataclass
 class Config:
     llama_server_url: str
@@ -24,6 +61,7 @@ class Config:
     quiz_max_turns: int = 10
     require_human_approval: bool = True
     expose_public: bool = False
+    consult: ConsultConfig = field(default_factory=ConsultConfig)
 
     @classmethod
     def from_yaml(cls, path: Path) -> "Config":
@@ -61,6 +99,10 @@ class Config:
 
         # Ensure project_dir is a Path
         normalised["project_dir"] = Path(normalised["project_dir"])
+
+        # Materialize nested ConsultConfig from a plain mapping, if provided.
+        if "consult" in normalised:
+            normalised["consult"] = _consult_config_from_mapping(normalised["consult"])
 
         return cls(**normalised)  # type: ignore[arg-type]
 

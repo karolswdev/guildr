@@ -13,6 +13,7 @@ from orchestrator.lib.logger import setup_phase_logger
 from orchestrator.lib.loop_refs import refs_for_phase
 from orchestrator.lib.loops import emit_loop_event, loop_stage_for_step
 from orchestrator.lib.intents import ignore_queued_intents_for_passed_step
+from orchestrator.lib.memory_palace import memory_status
 from orchestrator.lib.narrator_sidecar import run_narrator_sidecar
 from orchestrator.lib.next_step import build_next_step_packet, emit_next_step_packet_event
 from orchestrator.lib.session_runners import resolve_session_runner
@@ -44,6 +45,7 @@ class Orchestrator:
         git_ops: object | None = None,
         dry_run: bool = False,
         session_runners: dict[str, Any] | None = None,
+        endpoints: Any | None = None,
     ) -> None:
         # All dependent modules are imported lazily so the engine skeleton
         # can be committed independently of Tasks 2-6.
@@ -54,11 +56,13 @@ class Orchestrator:
         self._events = events
         self._git_ops = git_ops
         self._dry_run = dry_run
+        self._last_memory_diff_hash: str | None = None
         # Roles migrated to the opencode runtime (H6.3a+) resolve their
         # runner here. Dry-run and the H5.3-style integration tests inject
         # fakes; production wiring builds one ``OpencodeSession`` per
         # opencode-driven role.
         self._session_runners: dict[str, Any] = dict(session_runners or {})
+        self._endpoints = endpoints
         self.state.events = events
 
     # -- lazy accessors (import on first use) --------------------------------
@@ -201,6 +205,10 @@ class Orchestrator:
 
             if self._validate(name):
                 phase_done_event = self._events_obj.emit("phase_done", name=name)
+                self._emit_memory_diff_for_phase(
+                    name,
+                    phase_done_event if isinstance(phase_done_event, dict) else None,
+                )
                 try:
                     emit_phase_artifact_previews(
                         self._events_obj,
@@ -272,6 +280,37 @@ class Orchestrator:
             )
 
         raise PhaseFailure(name)
+
+    def _emit_memory_diff_for_phase(self, name: str, phase_done_event: dict[str, Any] | None) -> None:
+        """Emit a replayable wake-up hash diff after a successful phase boundary."""
+        project_id = self.state.project_dir.name
+        status = memory_status(project_id, self.state.project_dir)
+        current_hash = status.get("wake_up_hash")
+        previous_hash = self._last_memory_diff_hash
+        if not current_hash and not previous_hash:
+            return
+        hash_changed = bool(previous_hash is not None and current_hash != previous_hash)
+        source_refs: list[str] = []
+        if phase_done_event and phase_done_event.get("event_id"):
+            source_refs.append(f"event:{phase_done_event['event_id']}")
+        source_refs.extend(f"memory:{ref}" for ref in status.get("memory_refs") or [])
+        self._events_obj.emit(
+            "memory_diff",
+            step=name,
+            role="memory",
+            project_id=project_id,
+            previous_wake_up_hash=previous_hash,
+            wake_up_hash=current_hash,
+            wake_up_bytes=int(status.get("wake_up_bytes") or 0),
+            hash_changed=hash_changed,
+            available=bool(status.get("available")),
+            initialized=bool(status.get("initialized")),
+            wing=status.get("wing"),
+            memory_refs=list(status.get("memory_refs") or []),
+            artifact_refs=list(status.get("memory_refs") or []),
+            source_refs=source_refs,
+        )
+        self._last_memory_diff_hash = current_hash if isinstance(current_hash, str) else None
 
     def _resolve_phase_handler(self, handler_name: str) -> Callable[..., None]:
         mapping: dict[str, Callable[..., None]] = {
@@ -398,6 +437,11 @@ class Orchestrator:
                 next_step_packet=None,
             )
             reason = self._gate_registry_obj.get_rejection_reason(name)
+            self._consult_founding_team(
+                "gate_rejected",
+                f"Gate '{name}' rejected",
+                context=reason,
+            )
             raise PhaseFailure(
                 f"Gate '{name}' rejected: {reason}"
             )
@@ -407,6 +451,130 @@ class Orchestrator:
             [gate_event],
             next_step_packet=packet,
         )
+
+    # -- founding-team consult (A-8) ----------------------------------------
+
+    def _consult_founding_team(
+        self,
+        trigger_tag: str,
+        summary: str,
+        *,
+        context: str | None = None,
+    ) -> None:
+        """Run a bounded founding-team consult at a phase trigger site.
+
+        Silently no-ops when:
+        - ``FOUNDING_TEAM.json`` is missing (pre-persona-forum phases).
+        - The trigger is disabled in ``config.consult.disabled_triggers``.
+        - Rendering raises (consult must never break the phase).
+        """
+        try:
+            from orchestrator.lib.consult import ConsultTrigger, consult
+            from orchestrator.lib.consult_model import (
+                ModelPolicy,
+                render_consult_model,
+            )
+            from orchestrator.lib.consult_routing import resolve_policy
+            from orchestrator.lib.founding_team import load_personas
+            from orchestrator.lib.heroes import (
+                active_heroes_for_trigger,
+                increment_consultations_attended,
+            )
+
+            consult_cfg = getattr(self.config, "consult", None)
+            if consult_cfg is None:
+                return
+            policy = resolve_policy(trigger_tag, consult_cfg)
+            if policy is None:
+                return
+
+            personas = load_personas(self.config.project_dir)
+            if not personas:
+                return
+
+            heroes = active_heroes_for_trigger(self.config.project_dir, trigger_tag)
+            trigger = ConsultTrigger(
+                tag=trigger_tag, summary=summary, context=context
+            )
+
+            if policy.mode == "model":
+                model_policy = ModelPolicy(
+                    provider=policy.provider,
+                    model=policy.model,
+                    max_tokens=policy.max_tokens,
+                    temperature=policy.temperature,
+                    timeout_s=policy.timeout_s,
+                    fallback_on_error=policy.fallback_on_error,
+                )
+                model_call = self._make_consult_model_call(model_policy)
+                if model_call is None:
+                    render = (
+                        lambda t, p, h: __import__(
+                            "orchestrator.lib.consult",
+                            fromlist=["render_consult_deterministic"],
+                        ).render_consult_deterministic(t, p, h)
+                    )
+                else:
+                    render = lambda t, p, h: render_consult_model(  # noqa: E731
+                        t, p, h, model_call=model_call, policy=model_policy
+                    )
+            else:
+                from orchestrator.lib.consult import render_consult_deterministic
+
+                render = render_consult_deterministic
+
+            from orchestrator.lib.event_schema import now_iso
+
+            consult(
+                trigger,
+                personas,
+                project_dir=self.config.project_dir,
+                heroes=heroes,
+                event_bus=self._events_obj,
+                project_id=self.config.project_dir.name,
+                render=render,
+                policy=policy,
+            )
+            if heroes:
+                increment_consultations_attended(
+                    self.config.project_dir,
+                    [h.hero_id for h in heroes],
+                    now_iso=now_iso(),
+                )
+        except Exception:  # noqa: BLE001
+            # Consult is advisory; never let it break the phase.
+            logger.exception(
+                "founding-team consult failed at trigger %s", trigger_tag
+            )
+
+    def _make_consult_model_call(self, policy: Any) -> Any | None:
+        """Build a bounded model-call closure for a resolved consult policy.
+
+        Returns None (force deterministic) when no endpoints are wired or the
+        policy's provider is not configured.
+        """
+        endpoints = getattr(self, "_endpoints", None)
+        if endpoints is None:
+            return None
+        from orchestrator.lib.consult_provider import (
+            ConsultProviderUnavailable,
+            build_consult_model_call,
+        )
+        try:
+            return build_consult_model_call(
+                policy=policy,
+                endpoints=endpoints,
+                state=self.state,
+                role="founding_team_consult",
+                step=getattr(policy, "trigger_tag", None),
+            )
+        except ConsultProviderUnavailable:
+            logger.warning(
+                "consult model mode requested but provider %r not configured; "
+                "falling back to deterministic",
+                getattr(policy, "provider", None),
+            )
+            return None
 
     # -- setup helpers -------------------------------------------------------
 
@@ -562,6 +730,9 @@ class Orchestrator:
         """Run architect pass 1 only (H6.5). Stashes draft + status for
         ``approve_plan_draft`` gate and the ``architect_refine`` phase."""
         self._build_architect("architect_plan", phase_logger).plan()
+        self._consult_founding_team(
+            "architect_plan_done", "Architect landed plan.md"
+        )
 
     def _plan_draft_auto_approved(self) -> bool:
         """True when pass-1 already produced sprint-plan.md — skip gate."""
@@ -582,6 +753,9 @@ class Orchestrator:
         """Run architect refinement passes (H6.5). No-op when pass 1
         already produced sprint-plan.md."""
         self._build_architect("architect_refine", phase_logger).refine()
+        self._consult_founding_team(
+            "architect_refine_done", "Architect refined plan"
+        )
 
     def _memory_refresh(
         self,
@@ -623,6 +797,9 @@ class Orchestrator:
 
         breaker = MicroTaskBreaker(self.state, _phase_logger=phase_logger)
         breaker.execute("sprint-plan.md")
+        self._consult_founding_team(
+            "micro_task_breakdown_done", "Sprint plan decomposed"
+        )
 
     def _narrator(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run narrator as an optional workflow-configured phase."""
@@ -638,6 +815,7 @@ class Orchestrator:
 
         coder = Coder(runner, self.state, phase_logger=phase_logger)
         coder.execute("sprint-plan.md")
+        self._consult_founding_team("coder_done", "Coder produced implementation")
 
     def _tester(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run the Tester role via an opencode session runner (H6.3b)."""
@@ -649,6 +827,7 @@ class Orchestrator:
 
         tester = Tester(runner, self.state, phase_logger=phase_logger)
         tester.execute("sprint-plan.md")
+        self._consult_founding_team("tester_done", "Tester produced test suite")
 
     def _guru_escalation(
         self,
@@ -675,6 +854,7 @@ class Orchestrator:
 
         reviewer = Reviewer(runner, self.state, phase_logger=phase_logger)
         reviewer.execute("sprint-plan.md")
+        self._consult_founding_team("reviewer_done", "Reviewer posted review")
 
     def _deployer(self, *, phase_logger: logging.Logger | None = None) -> None:
         """Run the Deployer via an opencode session runner (H6.3d)."""

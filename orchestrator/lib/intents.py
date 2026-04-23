@@ -11,6 +11,79 @@ from orchestrator.lib.scrub import scrub_payload
 
 PROMPT_CONTEXT_KINDS = {"interject", "intercept", "reroute"}
 UNSUPPORTED_PROMPT_KINDS = {"note", "resume", "skip", "retry"}
+HERO_LIFECYCLE_KINDS = {"invite_hero", "dismiss_hero"}
+
+
+def apply_hero_intents(
+    project_dir: Path,
+    *,
+    event_bus: Any = None,
+    project_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Apply any queued hero lifecycle intents; return applied event rows.
+
+    Heroes are managed via a separate append-only log in
+    ``.orchestrator/heroes.jsonl``; this helper marks the originating
+    intent rows ``applied`` and emits ``hero_invited`` / ``hero_retired``.
+    """
+    from orchestrator.lib.heroes import (
+        dismiss_hero_from_intent,
+        invite_hero_from_intent,
+    )
+
+    rows = read_intents(project_dir)
+    applied_events: list[dict[str, Any]] = []
+    changed = False
+    applied_at = now_iso()
+
+    for item in rows:
+        if item.get("status") != "queued":
+            continue
+        kind = item.get("kind")
+        if kind not in HERO_LIFECYCLE_KINDS:
+            continue
+        result = None
+        event_name = None
+        if kind == "invite_hero":
+            result = invite_hero_from_intent(project_dir, item, now_iso=applied_at)
+            event_name = "hero_invited"
+        else:
+            result = dismiss_hero_from_intent(project_dir, item, now_iso=applied_at)
+            event_name = "hero_retired"
+        if result is None:
+            continue
+        item["status"] = "applied"
+        item["applied_at"] = applied_at
+        item["applied_to"] = "hero_lifecycle"
+        changed = True
+        applied_events.append({
+            "client_intent_id": item.get("client_intent_id"),
+            "intent_event_id": item.get("intent_event_id"),
+            "kind": kind,
+            "hero_id": result.hero_id,
+            "hero_status": result.status,
+            "applied_to": "hero_lifecycle",
+            "source_refs": [
+                f"event:{item.get('intent_event_id')}",
+                "artifact:.orchestrator/heroes.jsonl",
+            ],
+        })
+        if event_bus is not None:
+            event_bus.emit(
+                event_name,
+                project_id=project_id or project_dir.name,
+                hero_id=result.hero_id,
+                name=result.name,
+                status=result.status,
+                term_mode=result.term_mode,
+                consultation_trigger=result.consultation_trigger,
+                target_step=result.target_step,
+                target_deliverable=result.target_deliverable,
+            )
+
+    if changed:
+        write_intents(project_dir, rows)
+    return applied_events
 
 
 def intents_path(project_dir: Path) -> Path:
