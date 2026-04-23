@@ -260,6 +260,49 @@ def test_next_step_packet_replay_fold(tmp_path: Path) -> None:
     )
 
 
+def test_hero_invitation_replay_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: '1',
+            type: 'hero_invited',
+            hero_id: 'hero_security_abc',
+            name: 'Security Reviewer',
+            status: 'active',
+            term_mode: 'single_consultation',
+            target_step: 'implementation',
+            target_deliverable: null,
+            consultation_trigger: null,
+            source_refs: ['artifact:.orchestrator/heroes.jsonl'],
+          },
+          {
+            event_id: '2',
+            type: 'hero_retired',
+            hero_id: 'hero_security_abc',
+            name: 'Security Reviewer',
+            retired_reason: 'single_consultation_complete',
+          },
+        ]);
+        let heroes = engine.snapshot().heroes;
+        assert.equal(heroes.active.length, 0);
+        assert.equal(heroes.retired.length, 1);
+        assert.equal(heroes.retired[0].name, 'Security Reviewer');
+        assert.equal(heroes.retired[0].retiredReason, 'single_consultation_complete');
+        engine.scrubTo(0);
+        heroes = engine.snapshot().heroes;
+        assert.equal(heroes.active.length, 1);
+        assert.equal(heroes.active[0].targetStep, 'implementation');
+        engine.resumeLive();
+        assert.equal(engine.snapshot().heroes.retired.length, 1);
+        """,
+    )
+
+
 def test_memory_events_replay_fold(tmp_path: Path) -> None:
     run_engine_script(
         tmp_path,

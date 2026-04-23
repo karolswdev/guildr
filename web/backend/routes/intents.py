@@ -22,7 +22,7 @@ __all__ = ["router", "is_secret_key", "scrub_payload"]
 
 router = APIRouter()
 
-IntentKind = Literal["intercept", "resume", "interject", "skip", "retry", "reroute", "note"]
+IntentKind = Literal["intercept", "resume", "interject", "skip", "retry", "reroute", "note", "invite_hero"]
 
 
 class OperatorIntentRequest(BaseModel):

@@ -18,6 +18,8 @@ import type {
   FunctionalMiniSprint,
   FunctionalMiniSprintStep,
   FunctionalSnapshot,
+  HeroPresence,
+  HeroSnapshot,
   LoopSnapshot,
   LoopStage,
   MemoryEventRecord,
@@ -48,6 +50,7 @@ export class EventEngine {
   private memoryEvents: MemoryEventRecord[] = [];
   private nextStepPacket: NextStepPacket | null = null;
   private functional: FunctionalSnapshot = emptyFunctionalSnapshot();
+  private heroes: HeroSnapshot = emptyHeroSnapshot();
   private digests: NarrativeDigest[] = [];
   private discussion: DiscussionEntry[] = [];
   private discussionHighlights: DiscussionHighlight[] = [];
@@ -141,6 +144,7 @@ export class EventEngine {
     this.memoryEvents = [];
     this.nextStepPacket = null;
     this.functional = emptyFunctionalSnapshot();
+    this.heroes = emptyHeroSnapshot();
     this.digests = [];
     this.discussion = [];
     this.discussionHighlights = [];
@@ -178,6 +182,7 @@ export class EventEngine {
     this.memoryEvents = [];
     this.nextStepPacket = null;
     this.functional = emptyFunctionalSnapshot();
+    this.heroes = emptyHeroSnapshot();
     this.digests = [];
     this.discussion = [];
     this.discussionHighlights = [];
@@ -213,6 +218,7 @@ export class EventEngine {
         ? attachPendingIntents(cloneNextStepPacket(this.nextStepPacket), this.pendingIntents)
         : null,
       functional: cloneFunctionalSnapshot(this.functional),
+      heroes: cloneHeroSnapshot(this.heroes),
       digests: this.digests.map(cloneNarrativeDigest),
       latestDigest: this.digests.length > 0 ? cloneNarrativeDigest(this.digests[this.digests.length - 1]) : null,
       discussion: this.discussion.map(cloneDiscussionEntry),
@@ -255,6 +261,7 @@ export class EventEngine {
     this.memoryEvents = [];
     this.nextStepPacket = null;
     this.functional = emptyFunctionalSnapshot();
+    this.heroes = emptyHeroSnapshot();
     this.digests = [];
     this.discussion = [];
     this.discussionHighlights = [];
@@ -304,6 +311,7 @@ export class EventEngine {
       this.memoryEvents = [];
       this.nextStepPacket = null;
       this.functional = emptyFunctionalSnapshot();
+      this.heroes = emptyHeroSnapshot();
       this.digests = [];
       this.discussion = [];
       this.discussionHighlights = [];
@@ -380,6 +388,9 @@ export class EventEngine {
       type === "functional_acceptance_evaluated"
     ) {
       this.applyFunctionalEvent(event, type);
+    }
+    if (type === "hero_invited" || type === "hero_retired") {
+      this.applyHeroEvent(event, type);
     }
     if (type === "narrative_digest_created") {
       this.applyNarrativeDigest(event);
@@ -1056,6 +1067,35 @@ export class EventEngine {
     }
   }
 
+  private applyHeroEvent(event: RunEvent, type: string): void {
+    const heroId = stringOrNull(event.hero_id);
+    if (!heroId) {
+      return;
+    }
+    const current = this.heroes.byId[heroId];
+    const status = type === "hero_retired" ? "retired" : stringOrNull(event.status) ?? current?.status ?? "active";
+    const next: HeroPresence = {
+      heroId,
+      name: stringOrNull(event.name) ?? current?.name ?? heroId,
+      status,
+      termMode: stringOrNull(event.term_mode) ?? current?.termMode ?? null,
+      targetStep: stringOrNull(event.target_step) ?? current?.targetStep ?? null,
+      targetDeliverable: stringOrNull(event.target_deliverable) ?? current?.targetDeliverable ?? null,
+      consultationTrigger: stringOrNull(event.consultation_trigger) ?? current?.consultationTrigger ?? null,
+      retiredReason: stringOrNull(event.retired_reason) ?? current?.retiredReason ?? null,
+      sourceRefs: mergeRefs(current?.sourceRefs ?? [], arrayOfStrings(event.source_refs)),
+      lastEvent: event,
+    };
+    this.heroes.byId[heroId] = next;
+    this.recountHeroes();
+  }
+
+  private recountHeroes(): void {
+    const rows = Object.values(this.heroes.byId);
+    this.heroes.active = rows.filter((hero) => hero.status === "active");
+    this.heroes.retired = rows.filter((hero) => hero.status !== "active");
+  }
+
   private recountLoopStages(): void {
     this.loops.activeStageCounts = emptyStageCounts();
     for (const loop of Object.values(this.loops.byAtom)) {
@@ -1133,6 +1173,14 @@ export function emptyFunctionalSnapshot(): FunctionalSnapshot {
     byId: {},
     acceptance: null,
     evidenceRefs: [],
+  };
+}
+
+export function emptyHeroSnapshot(): HeroSnapshot {
+  return {
+    byId: {},
+    active: [],
+    retired: [],
   };
 }
 
@@ -1264,6 +1312,23 @@ function cloneFunctionalSnapshot(snapshot: FunctionalSnapshot): FunctionalSnapsh
     byId,
     acceptance: snapshot.acceptance ? cloneFunctionalAcceptance(snapshot.acceptance) : null,
     evidenceRefs: [...snapshot.evidenceRefs],
+  };
+}
+
+function cloneHeroSnapshot(snapshot: HeroSnapshot): HeroSnapshot {
+  const byId = Object.fromEntries(
+    Object.entries(snapshot.byId).map(([id, hero]) => [id, cloneHeroPresence(hero)]),
+  );
+  const active = snapshot.active.map((hero) => byId[hero.heroId] ?? cloneHeroPresence(hero));
+  const retired = snapshot.retired.map((hero) => byId[hero.heroId] ?? cloneHeroPresence(hero));
+  return { byId, active, retired };
+}
+
+function cloneHeroPresence(hero: HeroPresence): HeroPresence {
+  return {
+    ...hero,
+    sourceRefs: [...hero.sourceRefs],
+    lastEvent: hero.lastEvent ? { ...hero.lastEvent } : null,
   };
 }
 

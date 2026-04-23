@@ -130,6 +130,62 @@ async def test_operator_intent_route_refreshes_authoritative_next_step_packet(
 
 
 @pytest.mark.asyncio
+async def test_invite_hero_intent_route_refreshes_packet_with_hero_payload(
+    app: FastAPI,
+    fresh_store: ProjectStore,
+) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        create_resp = await client.post("/api/projects", json={"name": "Hero Invite"})
+        project_id = create_resp.json()["id"]
+
+        response = await client.post(
+            f"/api/projects/{project_id}/intents",
+            json={
+                "kind": "invite_hero",
+                "atom_id": "memory_refresh",
+                "payload": {
+                    "instruction": "Review the next memory refresh for auth bypasses.",
+                    "api_key": "sk-live-secret",
+                    "hero": {
+                        "name": "Security Reviewer",
+                        "provider": "openrouter",
+                        "model": "qwen2.5-coder-32b",
+                        "mission": "Review the next memory refresh for auth bypasses.",
+                        "watch_for": "auth gaps",
+                        "term": {"mode": "single_consultation"},
+                    },
+                    "target": {
+                        "step": "memory_refresh",
+                        "deliverable": None,
+                        "consultation_trigger": None,
+                    },
+                },
+                "client_intent_id": "client-hero",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "invite_hero"
+    events = [
+        json.loads(line)
+        for line in event_log_path(project_id).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [event["type"] for event in events] == [
+        "operator_intent",
+        "next_step_packet_created",
+        "narrator_sidecar_requested",
+    ]
+    assert events[0]["kind"] == "invite_hero"
+    assert events[0]["payload"]["hero"]["name"] == "Security Reviewer"
+    assert events[0]["payload"]["api_key"] == "[redacted]"
+    assert events[1]["packet"]["queued_intents"][0]["kind"] == "invite_hero"
+    assert events[1]["packet"]["queued_intents"][0]["payload"]["hero"]["watch_for"] == "auth gaps"
+    assert "sk-live-secret" not in event_log_path(project_id).read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
 async def test_note_intent_creates_discussion_entry(app: FastAPI, fresh_store: ProjectStore) -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:

@@ -391,13 +391,36 @@ status, evidence refs, acceptance verdict, and blocking findings. Evidence:
 - Add an `invite_hero` intent mode to the compose surface.
 - Persist mission, watch_for, provider/model, term, and target step.
 - Fold accepted Hero rows into replay state.
-- Render Hero presence in Council And Hero Sheet.
+- Render Hero presence in the map-native orchestration surface.
 
 Evidence:
 
 ```bash
-uv run pytest -q tests/test_intents.py web/backend/tests/test_intents.py web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py
+uv run pytest -q web/backend/tests/test_intents.py tests/test_heroes_lifecycle.py
+uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py
+./web/frontend/build.sh
+git diff --check -- web/backend/routes/intents.py web/backend/tests/test_intents.py web/frontend/src/game/types.ts web/frontend/src/game/EventEngine.ts web/frontend/src/game/GameShell.ts web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py
 ```
+
+Delivered 2026-04-23:
+
+- `web/backend/routes/intents.py` accepts `invite_hero` through the same durable
+  operator intent route as interject/intercept/reroute.
+- `GameShell` adds a `Hero` action in the Next Move Sheet and a Hero compose
+  mode with fields for name, watch-for, provider, model, term, scope, and
+  mission.
+- `heroInvitePayload(...)` emits the lifecycle shape consumed by
+  `orchestrator.lib.heroes`.
+- `EventEngine` folds `hero_invited` and `hero_retired` into
+  `snapshot.heroes`, with active/retired rows preserved through replay scrub.
+- The Next Move Sheet renders a replay-backed Hero roster panel so accepted
+  Hero presence is visible next to mini-sprint evidence and queued intents.
+
+Remaining depth for a later Hero/Council slice:
+
+- dedicated dismiss/renew controls,
+- promotion of a Hero suggestion into a follow-up operator intent,
+- council-specific scope expansion warnings.
 
 ### Slice F6 — Demo Compatibility Gate
 
@@ -462,5 +485,6 @@ uv run pytest -q tests/test_functional_orchestration.py tests/test_engine.py web
 
 ## Immediate Next Step
 
-Run Slice F5: add bounded Hero invite intent UI with mission, watch-for list,
-model/provider, term, and target step.
+Run Slice F6: add the deterministic demo compatibility gate that converts
+mini-sprint acceptance/evidence context into `eligible`, `ineligible`, or
+`unknown`, then shows the requested demo state in the existing evidence surface.

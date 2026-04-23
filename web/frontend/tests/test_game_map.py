@@ -241,6 +241,12 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "functionalMiniSprintPanel" in text
     assert "Functional evidence" in text
     assert "Blocking findings" in text
+    assert "hero-roster-panel" in text
+    assert "heroInvitePayload" in text
+    assert "hero-invite-fields" in text
+    assert "next-invite-hero" in text
+    assert "invite_hero" in text
+    assert "hero-term-options" in text
     assert "goal-core-sheet" in text
     assert "goal-core-control" in text
     assert "openGoalCoreSheet" in text
@@ -566,6 +572,67 @@ def test_functional_mini_sprint_panel_helper(tmp_path: Path) -> None:
         assert.ok(!html.includes('Ship <login>'));
         assert.ok(!html.includes('Missing mobile proof <375px>'));
         """,
+        include_three=True,
+    )
+
+
+def test_hero_invite_payload_and_roster_helper(tmp_path: Path) -> None:
+    run_script(
+        tmp_path,
+        GAME_SHELL_TS,
+        """
+        import assert from 'node:assert/strict';
+
+        globalThis.document = {
+          createElement: () => {
+            const node = { textContent: '', get innerHTML() { return String(this.textContent).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } };
+            return node;
+          },
+        };
+
+        const { heroInvitePayload, heroRosterPanel } = await import('__BUNDLE__');
+
+        const payload = heroInvitePayload({
+          mission: ' Review auth flow ',
+          name: ' Security <Reviewer> ',
+          watchFor: ' token leaks ',
+          provider: ' openrouter ',
+          model: ' cheap-model ',
+          termMode: 'bogus',
+          step: 'implementation',
+          scope: 'implementation',
+        });
+        assert.equal(payload.instruction, 'Review auth flow');
+        assert.equal(payload.hero.name, 'Security <Reviewer>');
+        assert.equal(payload.hero.provider, 'openrouter');
+        assert.equal(payload.hero.model, 'cheap-model');
+        assert.equal(payload.hero.watch_for, 'token leaks');
+        assert.equal(payload.hero.term.mode, 'single_consultation');
+        assert.equal(payload.target.step, 'implementation');
+
+        const html = heroRosterPanel({
+          heroes: {
+            active: [{
+              heroId: 'hero_1',
+              name: 'Security <Reviewer>',
+              status: 'active',
+              termMode: 'single_consultation',
+              targetStep: 'implementation',
+              targetDeliverable: null,
+              consultationTrigger: null,
+              retiredReason: null,
+              sourceRefs: [],
+              lastEvent: null,
+            }],
+            retired: [{ heroId: 'hero_0' }],
+            byId: {},
+          },
+        });
+        assert.ok(html.includes('data-role="hero-roster-panel"'));
+        assert.ok(html.includes('Active Heroes'));
+        assert.ok(html.includes('Security &lt;Reviewer&gt;'));
+        assert.ok(!html.includes('Security <Reviewer>'));
+      """,
         include_three=True,
     )
 

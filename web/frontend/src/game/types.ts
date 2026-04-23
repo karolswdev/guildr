@@ -170,6 +170,25 @@ export type FunctionalSnapshot = {
   evidenceRefs: string[];
 };
 
+export type HeroPresence = {
+  heroId: string;
+  name: string;
+  status: string;
+  termMode: string | null;
+  targetStep: string | null;
+  targetDeliverable: string | null;
+  consultationTrigger: string | null;
+  retiredReason: string | null;
+  sourceRefs: string[];
+  lastEvent: RunEvent | null;
+};
+
+export type HeroSnapshot = {
+  byId: Record<string, HeroPresence>;
+  active: HeroPresence[];
+  retired: HeroPresence[];
+};
+
 export type OperatorIntentStatus = "queued" | "applied" | "ignored";
 
 export type OperatorIntentState = {
@@ -342,6 +361,7 @@ export type EngineSnapshot = {
   memoryEvents: MemoryEventRecord[];
   nextStepPacket: NextStepPacket | null;
   functional: FunctionalSnapshot;
+  heroes: HeroSnapshot;
   digests: NarrativeDigest[];
   latestDigest: NarrativeDigest | null;
   discussion: DiscussionEntry[];

@@ -29,7 +29,7 @@ export type ProjectBrief = {
   source_refs: string[];
 };
 
-type ComposeAction = "shape" | "interject" | "intercept";
+type ComposeAction = "shape" | "interject" | "intercept" | "hero";
 type BudgetGateDecision = "approved" | "rejected";
 
 type BudgetGateDecisionBody = {
@@ -946,6 +946,7 @@ export class GameShell {
           ${sheetSection("Evidence required", packet.evidenceRequired, "No explicit evidence requirements are declared yet.")}
         </div>
         ${functionalMiniSprintPanel(snapshot)}
+        ${heroRosterPanel(snapshot)}
         ${latestDigestPanel(snapshot)}
         ${discussionPanel(snapshot, packet.step)}
         ${sheetSection("Context", packet.contextPreview, "No context preview yet.")}
@@ -960,8 +961,9 @@ export class GameShell {
             ${intentColumn("Ignored", intents.ignored.map(intentStateLabel))}
           </div>
         </div>
-        <div style="display: grid; grid-template-columns: minmax(0, 1fr) 118px; gap: 8px; align-items: center;">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) repeat(2, 118px); gap: 8px; align-items: center;">
           <div style="min-width: 0; color: #AEB4C6; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(packet.step)}</div>
+          <button data-action="next-invite-hero" style="${ghostButtonStyle()}">Hero</button>
           <button data-action="next-interject" style="${primaryButtonStyle()}">Nudge</button>
         </div>
       </div>
@@ -1155,6 +1157,12 @@ export class GameShell {
         this.openComposeDock(packet.step, "interject");
       }
     });
+    const inviteHero = this.nextStepSheet.querySelector('[data-action="next-invite-hero"]') as HTMLButtonElement | null;
+    inviteHero?.addEventListener("click", () => {
+      if (packet?.step) {
+        this.openComposeDock(packet.step, "hero");
+      }
+    });
   }
 
   private renderComposeDock(): void {
@@ -1162,6 +1170,11 @@ export class GameShell {
     const step = this.options.workflow.find((item) => item.id === atomId);
     const textarea = this.composeDock.querySelector('[data-role="compose-draft"]') as HTMLTextAreaElement | null;
     const currentDraft = textarea?.value ?? "";
+    const heroName = (this.composeDock.querySelector('[data-role="hero-name"]') as HTMLInputElement | null)?.value ?? "";
+    const heroWatchFor = (this.composeDock.querySelector('[data-role="hero-watch-for"]') as HTMLInputElement | null)?.value ?? "";
+    const heroProvider = (this.composeDock.querySelector('[data-role="hero-provider"]') as HTMLInputElement | null)?.value ?? "primary";
+    const heroModel = (this.composeDock.querySelector('[data-role="hero-model"]') as HTMLInputElement | null)?.value ?? "";
+    const heroTerm = (this.composeDock.querySelector('[data-role="hero-term"]') as HTMLInputElement | null)?.value ?? "single_consultation";
     this.composeDock.innerHTML = `
       <div style="display: grid; gap: 8px;">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
@@ -1175,6 +1188,7 @@ export class GameShell {
           ${scopeChip("", "Whole run", this.selectedScope === "")}
           ${this.options.workflow.map((item) => scopeChip(item.id, item.title || item.id, this.selectedScope === item.id)).join("")}
         </div>
+        ${this.composeAction === "hero" ? heroInviteFields({ name: heroName, watchFor: heroWatchFor, provider: heroProvider, model: heroModel, termMode: heroTerm }) : ""}
         <div style="display: grid; grid-template-columns: minmax(0, 1fr) 86px; gap: 8px; align-items: end;">
           <textarea data-role="compose-draft" rows="1" placeholder="${composePlaceholder(this.composeAction)}" style="width: 100%; min-height: 44px; max-height: calc(25vh - 108px); box-sizing: border-box; resize: none; border: 1px solid var(--line); border-radius: 999px; background: #10141E; color: #E8EAF0; padding: 11px 14px; font: 14px Inter, system-ui, sans-serif; line-height: 1.35;">${escapeHtml(currentDraft)}</textarea>
           <button data-action="dock-queue" style="${primaryButtonStyle()}">Queue</button>
@@ -1185,6 +1199,18 @@ export class GameShell {
       button.addEventListener("click", () => {
         this.selectedScope = button.dataset.scope || "";
         this.renderComposeDock();
+      });
+    });
+    this.composeDock.querySelectorAll<HTMLButtonElement>("[data-hero-term-option]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const term = normalizeHeroTermMode(button.dataset.heroTermOption || "");
+        const input = this.composeDock.querySelector('[data-role="hero-term"]') as HTMLInputElement | null;
+        if (input) {
+          input.value = term;
+        }
+        this.composeDock.querySelectorAll<HTMLButtonElement>("[data-hero-term-option]").forEach((termButton) => {
+          termButton.style.cssText = heroTermChipStyle(termButton.dataset.heroTermOption === term);
+        });
       });
     });
     (this.composeDock.querySelector('[data-action="dock-cancel"]') as HTMLButtonElement).addEventListener("click", () => this.closeComposeDock());
@@ -1227,22 +1253,27 @@ export class GameShell {
       ? "reroute"
       : this.composeAction === "intercept"
         ? "intercept"
-        : "interject";
-    if (this.composeAction === "intercept" || this.composeAction === "shape") {
-      await apiPost(`/api/projects/${this.options.projectId}/intents`, {
-        kind,
-        atom_id: atomId,
-        client_intent_id: clientIntentId,
-        payload: { instruction, scope: this.selectedScope || null, source: "map" },
-      });
-    } else {
-      await apiPost(`/api/projects/${this.options.projectId}/intents`, {
-        kind,
-        atom_id: atomId,
-        client_intent_id: clientIntentId,
-        payload: { instruction, scope: this.selectedScope || null, source: "map" },
-      });
-    }
+        : this.composeAction === "hero"
+          ? "invite_hero"
+          : "interject";
+    const payload = this.composeAction === "hero"
+      ? heroInvitePayload({
+        mission: instruction,
+        name: (this.composeDock.querySelector('[data-role="hero-name"]') as HTMLInputElement | null)?.value || "",
+        watchFor: (this.composeDock.querySelector('[data-role="hero-watch-for"]') as HTMLInputElement | null)?.value || "",
+        provider: (this.composeDock.querySelector('[data-role="hero-provider"]') as HTMLInputElement | null)?.value || "",
+        model: (this.composeDock.querySelector('[data-role="hero-model"]') as HTMLInputElement | null)?.value || "",
+        termMode: (this.composeDock.querySelector('[data-role="hero-term"]') as HTMLInputElement | null)?.value || "",
+        step: this.selectedScope || atomId,
+        scope: this.selectedScope || null,
+      })
+      : { instruction, scope: this.selectedScope || null, source: "map" };
+    await apiPost(`/api/projects/${this.options.projectId}/intents`, {
+      kind,
+      atom_id: atomId,
+      client_intent_id: clientIntentId,
+      payload,
+    });
     this.closeComposeDock();
   }
 
@@ -1756,6 +1787,67 @@ export function functionalMiniSprintPanel(snapshot: EngineSnapshot): string {
       ${sheetSection("Blocking findings", blockers, "No blocking findings recorded.")}
     </div>
   `;
+}
+
+export function heroRosterPanel(snapshot: EngineSnapshot): string {
+  const active = snapshot.heroes?.active ?? [];
+  const retiredCount = snapshot.heroes?.retired?.length ?? 0;
+  if (active.length === 0) {
+    return `
+      <div data-role="hero-roster-panel" style="${sheetPanelStyle()}">
+        <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 4px;">Hero roster</div>
+        <div style="font-size: 12px; color: #AEB4C6; line-height: 1.35;">No temporary Hero reviewer is active yet.</div>
+      </div>
+    `;
+  }
+  const rows = active.slice(0, 4).map((hero) => {
+    const target = hero.targetStep || hero.targetDeliverable || hero.consultationTrigger || "run";
+    const term = hero.termMode || "term pending";
+    return `${hero.name}: ${term} for ${target}`;
+  });
+  return `
+    <div data-role="hero-roster-panel" style="display: grid; gap: 7px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 8px;">
+        ${sheetField("Active Heroes", `${active.length}`)}
+        ${sheetField("Retired Heroes", `${retiredCount}`)}
+      </div>
+      ${sheetSection("Hero assignments", rows, "No active Hero assignments.")}
+    </div>
+  `;
+}
+
+type HeroInvitePayloadInput = {
+  mission: string;
+  name: string;
+  watchFor: string;
+  provider: string;
+  model: string;
+  termMode: string;
+  step: string | null;
+  scope: string | null;
+};
+
+export function heroInvitePayload(input: HeroInvitePayloadInput): Record<string, unknown> {
+  const mission = input.mission.trim();
+  const name = input.name.trim() || "Hero Reviewer";
+  return {
+    instruction: mission,
+    scope: input.scope,
+    source: "map",
+    hero: {
+      name,
+      provider: input.provider.trim() || "primary",
+      model: input.model.trim(),
+      mission,
+      watch_for: input.watchFor.trim() || "risks and blind spots",
+      term: { mode: normalizeHeroTermMode(input.termMode) },
+    },
+    target: {
+      step: input.step,
+      deliverable: null,
+      consultation_trigger: null,
+    },
+  };
 }
 
 function sheetSection(label: string, rows: string[], empty: string): string {
@@ -2419,12 +2511,79 @@ function scopeChip(value: string, label: string, selected: boolean): string {
   ].join("; ")}">${escapeHtml(label)}</button>`;
 }
 
+const HERO_TERM_MODES = ["single_consultation", "until_step_complete", "until_deliverable", "manual_dismissal"] as const;
+
+function heroInviteFields(values: { name: string; watchFor: string; provider: string; model: string; termMode: string }): string {
+  const termMode = normalizeHeroTermMode(values.termMode);
+  return `
+    <div data-role="hero-invite-fields" style="display: grid; gap: 8px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 7px;">
+        <input data-role="hero-name" value="${escapeHtml(values.name)}" placeholder="Hero name" style="${composeInputStyle()}">
+        <input data-role="hero-watch-for" value="${escapeHtml(values.watchFor)}" placeholder="Watch for" style="${composeInputStyle()}">
+        <input data-role="hero-provider" value="${escapeHtml(values.provider || "primary")}" placeholder="Provider" style="${composeInputStyle()}">
+        <input data-role="hero-model" value="${escapeHtml(values.model)}" placeholder="Model" style="${composeInputStyle()}">
+      </div>
+      <input data-role="hero-term" type="hidden" value="${escapeHtml(termMode)}">
+      <div data-role="hero-term-options" style="display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px;">
+        ${HERO_TERM_MODES.map((mode) => `<button data-hero-term-option="${mode}" style="${heroTermChipStyle(mode === termMode)}">${escapeHtml(heroTermLabel(mode))}</button>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function heroTermLabel(mode: string): string {
+  if (mode === "until_step_complete") {
+    return "Step";
+  }
+  if (mode === "until_deliverable") {
+    return "Deliverable";
+  }
+  if (mode === "manual_dismissal") {
+    return "Manual";
+  }
+  return "One consult";
+}
+
+function normalizeHeroTermMode(value: string): string {
+  return HERO_TERM_MODES.includes(value as (typeof HERO_TERM_MODES)[number]) ? value : "single_consultation";
+}
+
+function composeInputStyle(): string {
+  return [
+    "height: 38px",
+    "min-width: 0",
+    "box-sizing: border-box",
+    "border: 1px solid var(--line)",
+    "border-radius: 999px",
+    "background: #10141E",
+    "color: #E8EAF0",
+    "font: 800 12px Inter, system-ui, sans-serif",
+    "padding: 0 12px",
+  ].join("; ");
+}
+
+function heroTermChipStyle(selected: boolean): string {
+  return [
+    "height: 32px",
+    `border: 1px solid ${selected ? "#D9B84D" : "var(--line)"}`,
+    "border-radius: 999px",
+    `background: ${selected ? "rgba(217,184,77,0.16)" : "#10141E"}`,
+    `color: ${selected ? "#F4D978" : "#C7CAD6"}`,
+    "font: 900 11px Inter, system-ui, sans-serif",
+    "padding: 0 11px",
+    "white-space: nowrap",
+  ].join("; ");
+}
+
 function composePlaceholder(action: ComposeAction): string {
   if (action === "shape") {
     return "Redirect this object...";
   }
   if (action === "intercept") {
     return "Stop or capture before it proceeds...";
+  }
+  if (action === "hero") {
+    return "Mission for the Hero reviewer...";
   }
   return "Nudge this run...";
 }
