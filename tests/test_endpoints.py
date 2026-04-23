@@ -9,6 +9,7 @@ import pytest
 from orchestrator.lib.endpoints import (
     EndpointsConfig,
     EndpointsConfigError,
+    MEMPALACE_MCP_ALLOWED_ROLES,
     RouteEntry,
     load_endpoints,
     load_endpoints_from_yaml,
@@ -57,6 +58,7 @@ def test_load_parses_endpoints_and_routing() -> None:
     assert architect[0] == RouteEntry(endpoint="remote-sonnet", model=None)
     assert architect[1] == RouteEntry(endpoint="local", model="qwen-local-override")
     assert cfg.routing["coder"] == [RouteEntry(endpoint="local")]
+    assert cfg.memory_mcp.enabled is False
 
 
 def test_missing_required_endpoint_field_raises() -> None:
@@ -153,4 +155,60 @@ routing:
     assert cfg is not None
     assert cfg.routing["coder"][1].model == "qwen-alt"
 
+
+def test_memory_mcp_config_is_opt_in_and_scoped_to_tool_roles() -> None:
+    data = {
+        "endpoints": [{"name": "local", "base_url": "http://x", "model": "m"}],
+        "routing": {"coder": ["local"]},
+        "memory_mcp": {
+            "enabled": True,
+            "roles": ["coder", "tester", "reviewer", "narrator"],
+            "command": ["python", "-m", "mempalace.mcp_server"],
+            "timeout_ms": 9000,
+            "environment": {"MEMPALACE_PROFILE": "project"},
+        },
+    }
+
+    cfg = load_endpoints(data, env={})
+
+    assert cfg is not None
+    assert cfg.memory_mcp.enabled is True
+    assert cfg.memory_mcp.roles == ("coder", "tester", "reviewer", "narrator")
+    assert set(cfg.memory_mcp.roles) <= set(MEMPALACE_MCP_ALLOWED_ROLES)
+    assert cfg.memory_mcp.command == ("python", "-m", "mempalace.mcp_server")
+    assert cfg.memory_mcp.timeout_ms == 9000
+    assert cfg.memory_mcp.environment == {"MEMPALACE_PROFILE": "project"}
+
+
+def test_memory_mcp_env_overrides_yaml() -> None:
+    data = {
+        "endpoints": [{"name": "local", "base_url": "http://x", "model": "m"}],
+        "routing": {"coder": ["local"]},
+        "memory_mcp": {"enabled": False},
+    }
+
+    cfg = load_endpoints(
+        data,
+        env={
+            "GUILDR_MEMPALACE_MCP_ENABLED": "true",
+            "GUILDR_MEMPALACE_MCP_ROLES": "coder,narrator",
+            "GUILDR_MEMPALACE_MCP_COMMAND": "uvx --from mempalace python -m mempalace.mcp_server",
+        },
+    )
+
+    assert cfg is not None
+    assert cfg.memory_mcp.enabled is True
+    assert cfg.memory_mcp.roles == ("coder", "narrator")
+    assert cfg.memory_mcp.command == ("uvx", "--from", "mempalace", "python", "-m", "mempalace.mcp_server")
+
+
+def test_memory_mcp_rejects_zero_tool_roles() -> None:
+    data = {
+        "endpoints": [{"name": "local", "base_url": "http://x", "model": "m"}],
+        "routing": {"architect": ["local"]},
+        "memory_mcp": {"enabled": True, "roles": ["architect"]},
+    }
+
+    with pytest.raises(EndpointsConfigError, match="selected tool-using roles"):
+        load_endpoints(data, env={})
 

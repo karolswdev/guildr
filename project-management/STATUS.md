@@ -23,9 +23,8 @@ by replay-folded memory events and the existing sync route, and every
 successful phase boundary emits a `memory_diff` hash-change signal. **M08 slice
 C is now landed too:** Story Lens narrative and discussion cards expose memory
 refs plus wake-up hashes beside source/artifact refs. The load-bearing
-remaining M08 work is optional MemPalace MCP/search exposure and live proof of
-provider accounting once MemPalace exposes usage or the orchestrator owns the
-embedding path.
+remaining M08 work is live proof of provider accounting once MemPalace exposes
+usage or the orchestrator owns the embedding path.
 
 ### What actually works
 
@@ -58,7 +57,9 @@ embedding path.
   map-native memory body/sheet. Story Lens now renders memory refs and wake
   hashes on digest, discussion, and highlight cards. Memory status also carries
   deterministic role-wing names and an explicit cost-accounting note stating
-  that current MemPalace CLI calls expose no usage payload.
+  that current MemPalace CLI calls expose no usage payload. The opencode config
+  generator can now opt selected tool-using roles into a local MemPalace MCP
+  server while keeping the MCP disabled globally and absent from architect/judge.
 
 ### Load-bearing gaps
 
@@ -68,11 +69,11 @@ embedding path.
 2. **Live provider confidence.** Usage rows now share one payload path across
    advisor and opencode calls, but a real attended provider walkthrough still
    needs to prove cost/runtime telemetry under live failure and retry behavior.
-3. **Memory MCP/search augmentation is still intentionally off.** M08's
-   operator-facing surface, phase-boundary diff signal, Story Lens provenance,
-   role-wing contract, and cost-accounting note now exist. The remaining choice
-   is when to expose MemPalace MCP/search to selected tool-using roles without
-   making zero-tool roles nondeterministic.
+3. **Memory provider accounting still depends on upstream usage visibility.**
+   M08's operator-facing surface, phase-boundary diff signal, Story Lens
+   provenance, role-wing contract, cost-accounting note, and opt-in MCP config
+   now exist. Future orchestrator-owned embedding/provider calls must emit
+   `usage_recorded`.
 4. **Founding-team cadence and intervention depth.** Intents are durable and
    replayable. A-8 now has a bounded consultation design, including temporary
    Hero reviewers, but the recurring consultation implementation still needs
@@ -98,7 +99,7 @@ running checklist for product-grade follow/review/intervene work.
 | **M05 Narrator Agent** | Done first pass | Codex | Read-only narrator role, sidecar triggers, fallback diagnostics, sidecar state locking, outcome normalization, and PWA dialogue shell exist. |
 | **M06 PWA Lenses/Map Surface** | Done first pass | Codex | Next-Step, Object, Story, and Goal lenses are in the map surface with WebGL fallback coverage. |
 | **M07 Artifact Preview Depth** | Complete | Claude | Demo-ceremony half via A-10 slices 1/2/2b/3 (demo events + storage + `DemoRunner` + bounded `/api/projects/{id}/demos/...` route + Story/Object Lens demo cards). Artifact-preview half landed via M07 slices 1–4: `artifact_preview_created` emitter with sha256, bounded excerpts (8 KiB text head / 2 KiB code tail / binary placeholder), secret scrubbing, A-9 provenance; engine + narrator hooks emit previews for every canonical artifact (sprint-plan, TEST_REPORT, REVIEW, DEPLOY, narrative digest `.md`); PWA folds previews into `snapshot.previews`, renders `artifactPreviewCard` in Story + Object Lens rails anchored by `producingAtomId`; `PHASE_SOURCE_REFS` threads upstream lineage through every event. |
-| **M08 Memory Spine** | Partial | Codex | MemPalace sync/search/provenance packets exist, are attached to next-step context, visible in the PWA memory body/sheet, diffed after phase boundaries via `memory_diff`, shown on Story Lens claim cards, and backed by a deterministic role-wing contract plus explicit CLI cost-accounting note. Needs optional MCP/search exposure design and live provider proof. |
+| **M08 Memory Spine** | Mostly done | Codex | MemPalace sync/search/provenance packets exist, are attached to next-step context, visible in the PWA memory body/sheet, diffed after phase boundaries via `memory_diff`, shown on Story Lens claim cards, backed by a deterministic role-wing contract plus explicit CLI cost-accounting note, and optionally exposed to selected opencode roles via scoped MCP config. Needs live provider proof once usage is observable. |
 | **M09 Cost/Budget Telemetry** | Partial | Claude | Usage rows and rollups exist. Needs PWA budget controls and provider-aware display. |
 | **M10 Hookability** | Not started | Unassigned | External trigger/plugin boundary still needs design and tests. |
 | **M11 Replay Resilience** | Partial | Codex | Event replay works; needs corruption/rebuild/fallback hardening and replay/export handling for recorded demo artifacts. |
@@ -107,11 +108,12 @@ running checklist for product-grade follow/review/intervene work.
 ## Next Recommended Task
 
 **Next milestone: continue M08 Memory Spine.** With M07 artifact previews fully
-landed and M08 slices A/B/C/D1 in place, the largest remaining gap is optional
-MemPalace MCP/search exposure for selected roles. Backend provenance
-(`wake_up_hash`, `memory_refs`, memory events, and `memory_diff`) is stamped
-everywhere that matters, Story Lens now makes memory-shaped claims explicit, and
-the memory surface shows role-wing/cost-accounting metadata. See
+landed and M08 slices A/B/C/D1/D2 in place, M08 is mostly down to live proof and
+future usage accounting. Backend provenance (`wake_up_hash`, `memory_refs`,
+memory events, and `memory_diff`) is stamped everywhere that matters, Story
+Lens now makes memory-shaped claims explicit, the memory surface shows
+role-wing/cost-accounting metadata, and opencode can opt selected roles into
+MemPalace MCP. See
 `project-management/srs-mini-phases/M08-memory-spine-and-mempalace.md` for the
 full checklist.
 
@@ -141,15 +143,16 @@ full checklist.
    with no exposed token/cost usage, so the surface records a truthful
    `cost_accounting` note instead of fake `usage_recorded` rows.
 
-5. **M08 slice D2 — optional MCP/search exposure.** Add generated
-   `mcp.mempalace` config only for selected tool-using agents, prove architect
-   and judge remain prompt-only, and keep deterministic wake-up injection as
-   the authoritative replay path.
+5. **M08 slice D2 — optional MCP/search exposure** — landed 2026-04-22.
+   `memory_mcp` in YAML/env can generate local `mcp.mempalace` config for
+   coder/tester/reviewer/narrator only. The generated config disables
+   `mempalace_*` globally, re-enables it per selected agent, and rejects
+   architect/judge.
 
-**Headless/scriptable path for the next session:** Continue with M08 slice D2:
-add opt-in MemPalace MCP/search configuration for coder/tester/reviewer/narrator
-only, with tests proving zero-tool roles stay clean and prompts still include
-the deterministic wake-up packet.
+**Headless/scriptable path for the next session:** Move to M09 budget/PWA
+provider display or M11 replay resilience. M08 has enough spine to support both:
+events are replayable, memory claims are citeable, and live retrieval is now
+opt-in and scoped.
 
 **When a human is at the device with providers ready:** run the attended PWA
 walkthrough with `--gate`, real opencode providers, visible gate decisions,

@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
-from orchestrator.lib.endpoints import EndpointsConfig
+from orchestrator.lib.endpoints import EndpointsConfig, MemoryMcpConfig
 
 OPENCODE_CONFIG_SCHEMA_URL = "https://opencode.ai/config.json"
 OPENCODE_OPENAI_COMPAT_NPM = "@ai-sdk/openai-compatible"
@@ -72,11 +72,26 @@ def build_opencode_config(cfg: EndpointsConfig) -> dict[str, Any]:
                 for model_id in sorted(models_by_endpoint[ep.name])
             },
         }
-    return {
+    memory_mcp = getattr(cfg, "memory_mcp", MemoryMcpConfig())
+    payload: dict[str, Any] = {
         "$schema": OPENCODE_CONFIG_SCHEMA_URL,
         "provider": providers,
-        "agent": build_agent_definitions(),
+        "agent": build_agent_definitions(memory_mcp_roles=memory_mcp.roles if memory_mcp.enabled else ()),
     }
+    if memory_mcp.enabled:
+        payload["mcp"] = {
+            "mempalace": {
+                "type": "local",
+                "command": list(memory_mcp.command),
+                "enabled": True,
+                "timeout": memory_mcp.timeout_ms,
+            }
+        }
+        if memory_mcp.environment:
+            payload["mcp"]["mempalace"]["environment"] = dict(memory_mcp.environment)
+        # Keep MCP tools unavailable globally; enable them only for selected agents below.
+        payload["tools"] = {"mempalace_*": False}
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +110,7 @@ def _tools(**overrides: bool) -> dict[str, bool]:
     return base
 
 
-def build_agent_definitions() -> dict[str, Any]:
+def build_agent_definitions(*, memory_mcp_roles: Iterable[str] = ()) -> dict[str, Any]:
     """Per-role opencode agents with explicit tool allowlists (H6.3e).
 
     The architect and judge produce a text or JSON completion with no
@@ -103,7 +118,8 @@ def build_agent_definitions() -> dict[str, Any]:
     minimal surface they actually need; nothing declared here grants
     wider access than the H6.3a–d behaviour they replaced.
     """
-    return {
+    memory_roles = set(memory_mcp_roles)
+    agents = {
         "architect": {
             "mode": "primary",
             "description": "Produces sprint-plan.md from qwendea.md. Text output only.",
@@ -140,6 +156,10 @@ def build_agent_definitions() -> dict[str, Any]:
             "tools": _tools(read=True, glob=True, grep=True),
         },
     }
+    for role in memory_roles:
+        if role in agents:
+            agents[role]["tools"]["mempalace_*"] = True
+    return agents
 
 
 def opencode_config_path(project_dir: Path) -> Path:

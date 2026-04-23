@@ -53,6 +53,8 @@ def test_build_registers_every_declared_endpoint_as_provider() -> None:
     payload = build_opencode_config(cfg)
     assert payload["$schema"] == OPENCODE_CONFIG_SCHEMA_URL
     assert set(payload["provider"]) == {"local-gpu", "openrouter"}
+    assert "mcp" not in payload
+    assert "tools" not in payload
     for provider in payload["provider"].values():
         assert provider["npm"] == OPENCODE_OPENAI_COMPAT_NPM
 
@@ -153,3 +155,63 @@ def test_narrator_agent_is_read_only() -> None:
     assert tools["write"] is False
     assert tools["edit"] is False
     assert tools["webfetch"] is False
+
+
+def test_mem_palace_mcp_is_globally_disabled_and_enabled_per_selected_agent() -> None:
+    data = {
+        "endpoints": [
+            {"name": "local", "base_url": "http://127.0.0.1:8080", "model": "qwen"},
+        ],
+        "routing": {
+            "architect": ["local"],
+            "coder": ["local"],
+            "tester": ["local"],
+            "reviewer": ["local"],
+            "narrator": ["local"],
+        },
+        "memory_mcp": {
+            "enabled": True,
+            "roles": ["coder", "reviewer", "narrator"],
+            "command": ["python", "-m", "mempalace.mcp_server"],
+            "timeout_ms": 7000,
+            "environment": {"MEMPALACE_WING": "project-1"},
+        },
+    }
+    cfg = load_endpoints(data, env={})
+    assert cfg is not None
+
+    payload = build_opencode_config(cfg)
+
+    assert payload["mcp"]["mempalace"] == {
+        "type": "local",
+        "command": ["python", "-m", "mempalace.mcp_server"],
+        "enabled": True,
+        "timeout": 7000,
+        "environment": {"MEMPALACE_WING": "project-1"},
+    }
+    assert payload["tools"] == {"mempalace_*": False}
+    assert payload["agent"]["coder"]["tools"]["mempalace_*"] is True
+    assert payload["agent"]["reviewer"]["tools"]["mempalace_*"] is True
+    assert payload["agent"]["narrator"]["tools"]["mempalace_*"] is True
+    assert "mempalace_*" not in payload["agent"]["architect"]["tools"]
+    assert "mempalace_*" not in payload["agent"]["judge"]["tools"]
+    assert "mempalace_*" not in payload["agent"]["tester"]["tools"]
+
+
+def test_mem_palace_mcp_config_round_trips_to_disk(tmp_path: Path) -> None:
+    cfg = load_endpoints(
+        {
+            "endpoints": [{"name": "local", "base_url": "http://x", "model": "m"}],
+            "routing": {"coder": ["local"]},
+            "memory_mcp": {"enabled": True, "roles": ["coder"]},
+        },
+        env={},
+    )
+    assert cfg is not None
+
+    written = write_opencode_config(cfg, tmp_path)
+    payload = json.loads(written.read_text(encoding="utf-8"))
+
+    assert payload["mcp"]["mempalace"]["command"] == ["python", "-m", "mempalace.mcp_server"]
+    assert payload["tools"]["mempalace_*"] is False
+    assert payload["agent"]["coder"]["tools"]["mempalace_*"] is True

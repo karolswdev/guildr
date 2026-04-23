@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,25 @@ class RouteEntry:
 
     endpoint: str
     model: str | None = None
+
+
+MEMPALACE_MCP_ALLOWED_ROLES: tuple[str, ...] = (
+    "coder",
+    "tester",
+    "reviewer",
+    "narrator",
+)
+
+
+@dataclass
+class MemoryMcpConfig:
+    """Opt-in MemPalace MCP exposure for selected opencode roles."""
+
+    enabled: bool = False
+    roles: tuple[str, ...] = MEMPALACE_MCP_ALLOWED_ROLES
+    command: tuple[str, ...] = ("python", "-m", "mempalace.mcp_server")
+    timeout_ms: int = 5000
+    environment: dict[str, str] = field(default_factory=dict)
 
 
 class EndpointsConfigError(ValueError):
@@ -185,12 +205,81 @@ def _resolve_route_entry(raw: Any, *, role: str, known: set[str]) -> RouteEntry:
     return RouteEntry(endpoint=endpoint, model=model)
 
 
+def _bool_from_env(raw: str | None) -> bool | None:
+    if raw is None:
+        return None
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise EndpointsConfigError(f"Invalid boolean value for GUILDR_MEMPALACE_MCP_ENABLED: {raw!r}")
+
+
+def _resolve_memory_mcp(raw: Any, *, env: dict[str, str]) -> MemoryMcpConfig:
+    cfg = MemoryMcpConfig()
+    if raw is not None:
+        if not isinstance(raw, dict):
+            raise EndpointsConfigError("'memory_mcp' must be a mapping when declared")
+        if "enabled" in raw:
+            enabled = raw["enabled"]
+            if not isinstance(enabled, bool):
+                raise EndpointsConfigError("'memory_mcp.enabled' must be a boolean")
+            cfg.enabled = enabled
+        if "roles" in raw:
+            roles = raw["roles"]
+            if not isinstance(roles, list) or not all(isinstance(role, str) for role in roles):
+                raise EndpointsConfigError("'memory_mcp.roles' must be a list of role names")
+            cfg.roles = tuple(role.strip() for role in roles if role.strip())
+        if "command" in raw:
+            command = raw["command"]
+            if isinstance(command, str):
+                cfg.command = tuple(shlex.split(command))
+            elif isinstance(command, list) and all(isinstance(part, str) for part in command):
+                cfg.command = tuple(command)
+            else:
+                raise EndpointsConfigError("'memory_mcp.command' must be a string or list of strings")
+        if "timeout_ms" in raw:
+            cfg.timeout_ms = int(raw["timeout_ms"])
+        if "environment" in raw:
+            environment = raw["environment"] or {}
+            if not isinstance(environment, dict):
+                raise EndpointsConfigError("'memory_mcp.environment' must be a mapping")
+            cfg.environment = {str(k): str(v) for k, v in environment.items()}
+
+    env_enabled = _bool_from_env(env.get("GUILDR_MEMPALACE_MCP_ENABLED"))
+    if env_enabled is not None:
+        cfg.enabled = env_enabled
+    env_roles = env.get("GUILDR_MEMPALACE_MCP_ROLES")
+    if env_roles:
+        cfg.roles = tuple(role.strip() for role in env_roles.split(",") if role.strip())
+    env_command = env.get("GUILDR_MEMPALACE_MCP_COMMAND")
+    if env_command:
+        cfg.command = tuple(shlex.split(env_command))
+
+    if cfg.enabled:
+        if not cfg.command:
+            raise EndpointsConfigError("'memory_mcp.command' cannot be empty when enabled")
+        illegal = sorted(set(cfg.roles) - set(MEMPALACE_MCP_ALLOWED_ROLES))
+        if illegal:
+            raise EndpointsConfigError(
+                "memory_mcp roles must be selected tool-using roles only; "
+                f"illegal roles: {illegal}; allowed roles: {list(MEMPALACE_MCP_ALLOWED_ROLES)}"
+            )
+        if not cfg.roles:
+            raise EndpointsConfigError("'memory_mcp.roles' cannot be empty when enabled")
+        if cfg.timeout_ms <= 0:
+            raise EndpointsConfigError("'memory_mcp.timeout_ms' must be positive")
+    return cfg
+
+
 @dataclass
 class EndpointsConfig:
     """Parsed + env-overridden endpoints + routing block."""
 
     endpoints: list[EndpointSpec]
     routing: dict[str, list[RouteEntry]]
+    memory_mcp: MemoryMcpConfig = field(default_factory=MemoryMcpConfig)
 
     @property
     def by_name(self) -> dict[str, EndpointSpec]:
@@ -254,7 +343,9 @@ def load_endpoints(
         # of an implicit preference order that might surprise them.)
         del default  # noqa: F841
 
-    return EndpointsConfig(endpoints=endpoints, routing=routing)
+    memory_mcp = _resolve_memory_mcp(data.get("memory_mcp"), env=active_env)
+
+    return EndpointsConfig(endpoints=endpoints, routing=routing, memory_mcp=memory_mcp)
 
 
 def load_endpoints_from_yaml(
@@ -270,5 +361,3 @@ def load_endpoints_from_yaml(
     if not isinstance(data, dict):
         return None
     return load_endpoints(data, env=env)
-
-

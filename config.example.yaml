@@ -56,3 +56,14 @@ expose_public: false
 #     - local-gpu
 #   reviewer:
 #     - openrouter
+#
+# Optional MemPalace MCP exposure for selected opencode roles. Disabled by
+# default. Deterministic wake-up prompt injection remains authoritative; this
+# only grants live memory lookup to tool-using roles that can tolerate extra
+# MCP context.
+#
+# memory_mcp:
+#   enabled: true
+#   roles: [coder, tester, reviewer, narrator]
+#   command: ["python", "-m", "mempalace.mcp_server"]
+#   timeout_ms: 5000
