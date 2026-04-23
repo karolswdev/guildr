@@ -71,6 +71,10 @@ DEMO_PRESENTED: Final = "demo_presented"
 
 ARTIFACT_PREVIEW_CREATED: Final = "artifact_preview_created"
 
+MINI_SPRINT_PLANNED: Final = "mini_sprint_planned"
+MINI_SPRINT_STEP_COMPLETED: Final = "mini_sprint_step_completed"
+FUNCTIONAL_ACCEPTANCE_EVALUATED: Final = "functional_acceptance_evaluated"
+
 EVENT_TYPES: frozenset[str] = frozenset({
     RUN_STARTED,
     RUN_COMPLETE,
@@ -124,6 +128,9 @@ EVENT_TYPES: frozenset[str] = frozenset({
     DEMO_CAPTURE_FAILED,
     DEMO_PRESENTED,
     ARTIFACT_PREVIEW_CREATED,
+    MINI_SPRINT_PLANNED,
+    MINI_SPRINT_STEP_COMPLETED,
+    FUNCTIONAL_ACCEPTANCE_EVALUATED,
 })
 
 

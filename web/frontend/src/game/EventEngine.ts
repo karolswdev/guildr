@@ -14,6 +14,10 @@ import type {
   DiscussionEntry,
   DiscussionHighlight,
   EngineSnapshot,
+  FunctionalAcceptance,
+  FunctionalMiniSprint,
+  FunctionalMiniSprintStep,
+  FunctionalSnapshot,
   LoopSnapshot,
   LoopStage,
   MemoryEventRecord,
@@ -43,6 +47,7 @@ export class EventEngine {
   private memPalaceStatus: MemPalaceStatus | null = null;
   private memoryEvents: MemoryEventRecord[] = [];
   private nextStepPacket: NextStepPacket | null = null;
+  private functional: FunctionalSnapshot = emptyFunctionalSnapshot();
   private digests: NarrativeDigest[] = [];
   private discussion: DiscussionEntry[] = [];
   private discussionHighlights: DiscussionHighlight[] = [];
@@ -135,6 +140,7 @@ export class EventEngine {
     this.memPalaceStatus = null;
     this.memoryEvents = [];
     this.nextStepPacket = null;
+    this.functional = emptyFunctionalSnapshot();
     this.digests = [];
     this.discussion = [];
     this.discussionHighlights = [];
@@ -171,6 +177,7 @@ export class EventEngine {
     this.memPalaceStatus = null;
     this.memoryEvents = [];
     this.nextStepPacket = null;
+    this.functional = emptyFunctionalSnapshot();
     this.digests = [];
     this.discussion = [];
     this.discussionHighlights = [];
@@ -205,6 +212,7 @@ export class EventEngine {
       nextStepPacket: this.nextStepPacket
         ? attachPendingIntents(cloneNextStepPacket(this.nextStepPacket), this.pendingIntents)
         : null,
+      functional: cloneFunctionalSnapshot(this.functional),
       digests: this.digests.map(cloneNarrativeDigest),
       latestDigest: this.digests.length > 0 ? cloneNarrativeDigest(this.digests[this.digests.length - 1]) : null,
       discussion: this.discussion.map(cloneDiscussionEntry),
@@ -246,6 +254,7 @@ export class EventEngine {
     this.memPalaceStatus = null;
     this.memoryEvents = [];
     this.nextStepPacket = null;
+    this.functional = emptyFunctionalSnapshot();
     this.digests = [];
     this.discussion = [];
     this.discussionHighlights = [];
@@ -294,6 +303,7 @@ export class EventEngine {
       this.memPalaceStatus = null;
       this.memoryEvents = [];
       this.nextStepPacket = null;
+      this.functional = emptyFunctionalSnapshot();
       this.digests = [];
       this.discussion = [];
       this.discussionHighlights = [];
@@ -363,6 +373,13 @@ export class EventEngine {
     }
     if (type === "next_step_packet_created") {
       this.applyNextStepPacket(event);
+    }
+    if (
+      type === "mini_sprint_planned" ||
+      type === "mini_sprint_step_completed" ||
+      type === "functional_acceptance_evaluated"
+    ) {
+      this.applyFunctionalEvent(event, type);
     }
     if (type === "narrative_digest_created") {
       this.applyNarrativeDigest(event);
@@ -644,6 +661,65 @@ export class EventEngine {
       memoryRefs: arrayOfStrings(event.memory_refs),
       raw: { ...packet },
     };
+  }
+
+  private applyFunctionalEvent(event: RunEvent, type: string): void {
+    const miniSprintId = key(event.mini_sprint_id, "");
+    if (!miniSprintId) {
+      return;
+    }
+    if (type === "mini_sprint_planned") {
+      const sprint: FunctionalMiniSprint = {
+        miniSprintId,
+        title: key(event.title, miniSprintId),
+        objective: key(event.objective, ""),
+        scopeRefs: arrayOfStrings(event.scope_refs),
+        acceptanceCriteria: arrayOfStrings(event.acceptance_criteria),
+        evidenceRequired: arrayOfStrings(event.evidence_required),
+        demoRequested: event.demo_requested === true,
+        demoCompatibility: stringOrNull(event.demo_compatibility),
+        sourceRefs: arrayOfStrings(event.source_refs),
+        steps: this.functional.byId[miniSprintId]?.steps ?? [],
+        acceptance: this.functional.byId[miniSprintId]?.acceptance ?? null,
+        lastEvent: event,
+      };
+      this.functional.byId[miniSprintId] = sprint;
+      this.functional.currentMiniSprint = sprint;
+      this.functional.evidenceRefs = functionalEvidenceRefs(sprint);
+      this.functional.acceptance = sprint.acceptance;
+      return;
+    }
+
+    const sprint = this.functional.byId[miniSprintId] ?? emptyFunctionalMiniSprint(miniSprintId);
+    if (type === "mini_sprint_step_completed") {
+      const step: FunctionalMiniSprintStep = {
+        stepId: key(event.step_id ?? event.step, ""),
+        stepKind: key(event.step_kind, ""),
+        status: key(event.status, "done"),
+        artifactRefs: arrayOfStrings(event.artifact_refs),
+        evidenceRefs: arrayOfStrings(event.evidence_refs),
+        sourceEventIds: arrayOfStrings(event.source_event_ids),
+        sourceRefs: arrayOfStrings(event.source_refs),
+        lastEvent: event,
+      };
+      sprint.steps = [...sprint.steps.filter((item) => item.stepId !== step.stepId), step];
+      sprint.lastEvent = event;
+    }
+    if (type === "functional_acceptance_evaluated") {
+      sprint.acceptance = {
+        passed: event.passed === true,
+        criteriaResults: arrayOfObjects(event.criteria_results),
+        blockingFindings: arrayOfStrings(event.blocking_findings),
+        reviewArtifactRef: stringOrNull(event.review_artifact_ref),
+        sourceRefs: arrayOfStrings(event.source_refs),
+        lastEvent: event,
+      };
+      sprint.lastEvent = event;
+    }
+    this.functional.byId[miniSprintId] = sprint;
+    this.functional.currentMiniSprint = sprint;
+    this.functional.acceptance = sprint.acceptance;
+    this.functional.evidenceRefs = functionalEvidenceRefs(sprint);
   }
 
   private applyNarrativeDigest(event: RunEvent): void {
@@ -1051,6 +1127,32 @@ export function emptyLoopSnapshot(): LoopSnapshot {
   };
 }
 
+export function emptyFunctionalSnapshot(): FunctionalSnapshot {
+  return {
+    currentMiniSprint: null,
+    byId: {},
+    acceptance: null,
+    evidenceRefs: [],
+  };
+}
+
+function emptyFunctionalMiniSprint(miniSprintId: string): FunctionalMiniSprint {
+  return {
+    miniSprintId,
+    title: miniSprintId,
+    objective: "",
+    scopeRefs: [],
+    acceptanceCriteria: [],
+    evidenceRequired: [],
+    demoRequested: false,
+    demoCompatibility: null,
+    sourceRefs: [],
+    steps: [],
+    acceptance: null,
+    lastEvent: null,
+  };
+}
+
 type FoldCost = {
   effectiveCost: number | null;
   providerReportedCost: number | null;
@@ -1149,6 +1251,53 @@ function cloneLoopSnapshot(snapshot: LoopSnapshot): LoopSnapshot {
     activeStageCounts: { ...snapshot.activeStageCounts },
     selectedStageFilter: snapshot.selectedStageFilter,
     lastLoopEvent: snapshot.lastLoopEvent,
+  };
+}
+
+function cloneFunctionalSnapshot(snapshot: FunctionalSnapshot): FunctionalSnapshot {
+  const byId = Object.fromEntries(
+    Object.entries(snapshot.byId).map(([id, sprint]) => [id, cloneFunctionalMiniSprint(sprint)]),
+  );
+  const currentId = snapshot.currentMiniSprint?.miniSprintId ?? "";
+  return {
+    currentMiniSprint: currentId ? byId[currentId] ?? null : null,
+    byId,
+    acceptance: snapshot.acceptance ? cloneFunctionalAcceptance(snapshot.acceptance) : null,
+    evidenceRefs: [...snapshot.evidenceRefs],
+  };
+}
+
+function cloneFunctionalMiniSprint(sprint: FunctionalMiniSprint): FunctionalMiniSprint {
+  return {
+    ...sprint,
+    scopeRefs: [...sprint.scopeRefs],
+    acceptanceCriteria: [...sprint.acceptanceCriteria],
+    evidenceRequired: [...sprint.evidenceRequired],
+    sourceRefs: [...sprint.sourceRefs],
+    steps: sprint.steps.map(cloneFunctionalStep),
+    acceptance: sprint.acceptance ? cloneFunctionalAcceptance(sprint.acceptance) : null,
+    lastEvent: sprint.lastEvent ? { ...sprint.lastEvent } : null,
+  };
+}
+
+function cloneFunctionalStep(step: FunctionalMiniSprintStep): FunctionalMiniSprintStep {
+  return {
+    ...step,
+    artifactRefs: [...step.artifactRefs],
+    evidenceRefs: [...step.evidenceRefs],
+    sourceEventIds: [...step.sourceEventIds],
+    sourceRefs: [...step.sourceRefs],
+    lastEvent: step.lastEvent ? { ...step.lastEvent } : null,
+  };
+}
+
+function cloneFunctionalAcceptance(acceptance: FunctionalAcceptance): FunctionalAcceptance {
+  return {
+    ...acceptance,
+    criteriaResults: acceptance.criteriaResults.map((item) => ({ ...item })),
+    blockingFindings: [...acceptance.blockingFindings],
+    sourceRefs: [...acceptance.sourceRefs],
+    lastEvent: acceptance.lastEvent ? { ...acceptance.lastEvent } : null,
   };
 }
 
@@ -1461,6 +1610,24 @@ function nextLoopStage(stage: LoopStage): LoopStage | null {
 
 function arrayOfStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function arrayOfObjects(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => (
+      Boolean(item) && typeof item === "object" && !Array.isArray(item)
+    ))
+    : [];
+}
+
+function functionalEvidenceRefs(sprint: FunctionalMiniSprint): string[] {
+  const refs = [
+    ...sprint.evidenceRequired,
+    ...sprint.steps.flatMap((step) => step.evidenceRefs),
+    ...sprint.steps.flatMap((step) => step.artifactRefs),
+    ...(sprint.acceptance?.reviewArtifactRef ? [sprint.acceptance.reviewArtifactRef] : []),
+  ];
+  return [...new Set(refs.filter(Boolean))].slice(0, 24);
 }
 
 function narrativeHighlights(value: unknown): NarrativeHighlight[] {

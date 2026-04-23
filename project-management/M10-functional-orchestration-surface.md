@@ -345,10 +345,10 @@ existing Next-Step sheet. Evidence: `uv run pytest -q web/frontend/tests/test_ev
 
 ### Slice F3 — Mini-Sprint Event Skeleton
 
-- Register `mini_sprint_planned`, `mini_sprint_step_completed`, and
+- [x] Register `mini_sprint_planned`, `mini_sprint_step_completed`, and
   `functional_acceptance_evaluated`.
-- Add deterministic emitter helpers.
-- Add EventEngine fold fields:
+- [x] Add deterministic emitter helpers.
+- [x] Add EventEngine fold fields:
   - `snapshot.functional.currentMiniSprint`
   - `snapshot.functional.acceptance`
   - `snapshot.functional.evidenceRefs`
@@ -358,6 +358,11 @@ Evidence:
 ```bash
 uv run pytest -q tests/test_event_schema.py tests/test_functional_orchestration.py web/frontend/tests/test_event_engine.py
 ```
+
+Landed 2026-04-23: backend/frontend event registries now include the three
+functional events, `orchestrator.lib.functional` provides deterministic mini-
+sprint emitters, and `EventEngine` folds functional mini-sprint, step, evidence,
+and acceptance state. Evidence: `uv run pytest -q tests/test_event_schema.py tests/test_functional_orchestration.py` -> 6 passed; `uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` -> 28 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,368,724 bytes.
 
 ### Slice F4 — Next Move Sheet Upgrade
 
@@ -449,5 +454,5 @@ uv run pytest -q tests/test_functional_orchestration.py tests/test_engine.py web
 
 ## Immediate Next Step
 
-Run Slice F3: register the mini-sprint event skeleton and fold it into
-`EventEngine`, then use that state to drive the next map-native surface patch.
+Run Slice F4: use the functional mini-sprint fold to upgrade the Next Move
+surface with mini-sprint evidence, acceptance state, and scope warnings.

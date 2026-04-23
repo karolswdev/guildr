@@ -23,6 +23,12 @@ def test_registry_contains_next_step_packet_event() -> None:
     assert "next_step_packet_created" in EVENT_TYPES
 
 
+def test_registry_contains_functional_mini_sprint_events() -> None:
+    assert "mini_sprint_planned" in EVENT_TYPES
+    assert "mini_sprint_step_completed" in EVENT_TYPES
+    assert "functional_acceptance_evaluated" in EVENT_TYPES
+
+
 def test_frontend_event_type_mirror_matches_backend_registry() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "web/frontend/src/game/eventTypes.ts").read_text(encoding="utf-8")

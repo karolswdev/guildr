@@ -128,6 +128,48 @@ export type NextStepPacket = {
   raw: Record<string, unknown>;
 };
 
+export type FunctionalMiniSprint = {
+  miniSprintId: string;
+  title: string;
+  objective: string;
+  scopeRefs: string[];
+  acceptanceCriteria: string[];
+  evidenceRequired: string[];
+  demoRequested: boolean;
+  demoCompatibility: string | null;
+  sourceRefs: string[];
+  steps: FunctionalMiniSprintStep[];
+  acceptance: FunctionalAcceptance | null;
+  lastEvent: RunEvent | null;
+};
+
+export type FunctionalMiniSprintStep = {
+  stepId: string;
+  stepKind: string;
+  status: string;
+  artifactRefs: string[];
+  evidenceRefs: string[];
+  sourceEventIds: string[];
+  sourceRefs: string[];
+  lastEvent: RunEvent | null;
+};
+
+export type FunctionalAcceptance = {
+  passed: boolean;
+  criteriaResults: Record<string, unknown>[];
+  blockingFindings: string[];
+  reviewArtifactRef: string | null;
+  sourceRefs: string[];
+  lastEvent: RunEvent | null;
+};
+
+export type FunctionalSnapshot = {
+  currentMiniSprint: FunctionalMiniSprint | null;
+  byId: Record<string, FunctionalMiniSprint>;
+  acceptance: FunctionalAcceptance | null;
+  evidenceRefs: string[];
+};
+
 export type OperatorIntentStatus = "queued" | "applied" | "ignored";
 
 export type OperatorIntentState = {
@@ -299,6 +341,7 @@ export type EngineSnapshot = {
   memPalaceStatus: MemPalaceStatus | null;
   memoryEvents: MemoryEventRecord[];
   nextStepPacket: NextStepPacket | null;
+  functional: FunctionalSnapshot;
   digests: NarrativeDigest[];
   latestDigest: NarrativeDigest | null;
   discussion: DiscussionEntry[];

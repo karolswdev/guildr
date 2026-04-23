@@ -460,6 +460,65 @@ def test_pending_intent_attaches_to_current_next_step_packet(tmp_path: Path) -> 
     )
 
 
+def test_functional_mini_sprint_replay_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: 'ms-1',
+            type: 'mini_sprint_planned',
+            mini_sprint_id: 'ms_login',
+            title: 'Ship login',
+            objective: 'Make login usable.',
+            scope_refs: ['workflow:implementation'],
+            acceptance_criteria: ['User can sign in.'],
+            evidence_required: ['pytest'],
+            demo_requested: true,
+            demo_compatibility: 'eligible',
+            source_refs: ['event:next'],
+          },
+          {
+            event_id: 'ms-step-1',
+            type: 'mini_sprint_step_completed',
+            mini_sprint_id: 'ms_login',
+            step_id: 'implementation',
+            step_kind: 'build',
+            status: 'done',
+            artifact_refs: ['app.py'],
+            evidence_refs: ['TEST_REPORT.md'],
+            source_event_ids: ['phase-done'],
+            source_refs: ['event:phase-done'],
+          },
+          {
+            event_id: 'ms-accept-1',
+            type: 'functional_acceptance_evaluated',
+            mini_sprint_id: 'ms_login',
+            criteria_results: [{ criterion: 'User can sign in.', passed: true }],
+            passed: true,
+            blocking_findings: [],
+            review_artifact_ref: 'REVIEW.md',
+            source_refs: ['artifact:REVIEW.md'],
+          },
+        ]);
+        const functional = engine.snapshot().functional;
+        assert.equal(functional.currentMiniSprint.miniSprintId, 'ms_login');
+        assert.equal(functional.currentMiniSprint.demoRequested, true);
+        assert.equal(functional.currentMiniSprint.demoCompatibility, 'eligible');
+        assert.deepEqual(functional.currentMiniSprint.acceptanceCriteria, ['User can sign in.']);
+        assert.equal(functional.currentMiniSprint.steps[0].stepKind, 'build');
+        assert.equal(functional.acceptance.passed, true);
+        assert.deepEqual(functional.evidenceRefs, ['pytest', 'TEST_REPORT.md', 'app.py', 'REVIEW.md']);
+        engine.scrubTo(0);
+        assert.equal(engine.snapshot().functional.currentMiniSprint.steps.length, 0);
+        assert.equal(engine.snapshot().functional.acceptance, null);
+        """,
+    )
+
+
 def test_narrative_digest_replay_fold(tmp_path: Path) -> None:
     run_engine_script(
         tmp_path,
