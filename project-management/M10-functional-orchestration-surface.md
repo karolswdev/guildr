@@ -707,6 +707,37 @@ Delivered 2026-04-23:
 - Frontend helper coverage now asserts lane-highlight markers in the rendered
   rail, and source-level coverage checks the new cross-highlight surfaces.
 
+### Slice F15 — Lane-Native Replay Jumps
+
+- Let the operator move from functional proof back into replay without leaving
+  the lane surface.
+- Reuse replay anchors already present in folded state: mini-sprint step
+  `sourceEventIds`, functional `lastEvent`, and demo artifact `eventId`.
+- Keep replay navigation deterministic: lane jumps scrub the existing timeline
+  and do not synthesize any new replay state.
+
+Evidence:
+
+```bash
+uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py
+./web/frontend/build.sh
+git diff --check -- web/frontend/src/game/GameShell.ts web/frontend/tests/test_game_map.py project-management/STATUS.md project-management/M10-functional-orchestration-surface.md
+```
+
+Delivered 2026-04-23:
+
+- Lane segments with a replay anchor now expose a `Replay` action that scrubs
+  directly to the event that produced the current build/test/demo/review/
+  acceptance proof.
+- Expanded evidence rows now expose their own replay jumps when the folded row
+  has an event anchor, so proof inspection can move straight into the relevant
+  replay point instead of forcing manual timeline scrubbing.
+- `GameShell` resolves replay indices strictly from the current snapshot
+  history, workflow mapping, and folded event ids; no backend changes were
+  required.
+- Frontend helper coverage now asserts replay-jump controls and event-anchor
+  markup in the rendered lane rail.
+
 ## Quality Gates
 
 - Event integrity: every new functional event is registered in backend and
@@ -745,6 +776,6 @@ Delivered 2026-04-23:
 
 ## Immediate Next Step
 
-Run Slice F15: add lane-native replay jumps so highlighted lane segments and
-their evidence blocks can scrub the timeline or open the exact replay window
-that produced the current build/test/demo/review/acceptance proof.
+Run Slice F16: add lane-native replay bookmarks in the timeline ribbon so the
+current mini-sprint proof events are visible as named markers, not only as
+scrub targets hidden behind buttons.

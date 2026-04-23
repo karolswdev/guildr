@@ -634,6 +634,15 @@ export class GameShell {
         this.toggleFunctionalLaneStep(button.dataset.functionalLaneToggle || "");
       });
     });
+    this.functionalLaneRail.querySelectorAll<HTMLButtonElement>("[data-functional-lane-jump]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.handleFunctionalLaneJump(
+          button.dataset.functionalLaneStepId || "",
+          button.dataset.functionalLaneEventId || "",
+        );
+      });
+    });
   }
 
   private renderNarratorFrame(narration: NarrationCue): void {
@@ -870,6 +879,19 @@ export class GameShell {
     if (this.lastSnapshot) {
       this.renderFunctionalLane(this.lastSnapshot);
     }
+  }
+
+  private handleFunctionalLaneJump(stepId: string, eventId = ""): void {
+    if (!this.lastSnapshot) {
+      return;
+    }
+    this.setFunctionalLaneFocus(stepId);
+    const replayIndex = replayIndexForLaneEvent(this.lastSnapshot, this.options.workflow, stepId, eventId);
+    if (replayIndex < 0) {
+      return;
+    }
+    this.options.engine.scrubTo(replayIndex);
+    this.showTimeline(5000);
   }
 
   private functionalLaneHighlightedStep(): string {
@@ -2067,11 +2089,17 @@ type FunctionalLaneItem = {
   target: string;
   state: string;
   detail: string;
-  details: string[];
+  details: FunctionalLaneDetailRow[];
   tone: string;
   expanded: boolean;
   highlighted: boolean;
+  replayEventId: string;
   actions?: Array<{ action: string; label: string }>;
+};
+
+type FunctionalLaneDetailRow = {
+  text: string;
+  replayEventId: string;
 };
 
 function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[], expandedStep: string, highlightedStep: string): FunctionalLaneItem[] {
@@ -2095,10 +2123,11 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[],
       target: buildTarget || "implementation",
       state: laneStateLabel(buildStep?.status ?? "pending"),
       detail: buildStep ? laneEvidenceDetail(buildStep.evidenceRefs, buildStep.artifactRefs) : "Waiting for implementation.",
-      details: buildStep ? functionalLaneDetailRows(buildStep.evidenceRefs, buildStep.artifactRefs, buildStep.sourceRefs) : [],
+      details: buildStep ? functionalLaneDetailRows(buildStep.evidenceRefs, buildStep.artifactRefs, buildStep.sourceRefs, lastStepEventId(buildStep)) : [],
       tone: laneToneForStatus(buildStep?.status ?? "pending"),
       expanded: expandedStep === "build",
       highlighted: highlightedStep === "build",
+      replayEventId: buildStep ? lastStepEventId(buildStep) : "",
     },
     {
       id: "test",
@@ -2106,10 +2135,11 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[],
       target: testTarget || "testing",
       state: laneStateLabel(testStep?.status ?? "pending"),
       detail: testStep ? laneEvidenceDetail(testStep.evidenceRefs, testStep.artifactRefs) : "Waiting for test proof.",
-      details: testStep ? functionalLaneDetailRows(testStep.evidenceRefs, testStep.artifactRefs, testStep.sourceRefs) : [],
+      details: testStep ? functionalLaneDetailRows(testStep.evidenceRefs, testStep.artifactRefs, testStep.sourceRefs, lastStepEventId(testStep)) : [],
       tone: laneToneForStatus(testStep?.status ?? "pending"),
       expanded: expandedStep === "test",
       highlighted: highlightedStep === "test",
+      replayEventId: testStep ? lastStepEventId(testStep) : "",
     },
     {
       id: "demo",
@@ -2121,10 +2151,11 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[],
         : sprint.demoRequested
           ? `Gate ${sprint.demoCompatibility || "unknown"}`
           : "No demo ceremony required.",
-      details: demo ? functionalLaneDemoDetails(demo) : sprint.demoRequested ? [`Demo gate: ${sprint.demoCompatibility || "unknown"}`] : [],
+      details: demo ? functionalLaneDemoDetails(demo) : sprint.demoRequested ? [{ text: `Demo gate: ${sprint.demoCompatibility || "unknown"}`, replayEventId: "" }] : [],
       tone: demo ? laneToneForStatus(demo.status) : sprint.demoRequested ? "active" : "idle",
       expanded: expandedStep === "demo",
       highlighted: highlightedStep === "demo",
+      replayEventId: demo ? demoReplayEventId(demo) : "",
       actions: demo || sprint.demoRequested ? [{ action: "demo-open", label: "Open" }] : [],
     },
     {
@@ -2133,10 +2164,11 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[],
       target: reviewTarget || "review",
       state: laneStateLabel(reviewStep?.status ?? "pending"),
       detail: reviewStep ? laneEvidenceDetail(reviewStep.evidenceRefs, reviewStep.artifactRefs) : "Waiting for review verdict.",
-      details: reviewStep ? functionalLaneDetailRows(reviewStep.evidenceRefs, reviewStep.artifactRefs, reviewStep.sourceRefs) : [],
+      details: reviewStep ? functionalLaneDetailRows(reviewStep.evidenceRefs, reviewStep.artifactRefs, reviewStep.sourceRefs, lastStepEventId(reviewStep)) : [],
       tone: laneToneForStatus(reviewStep?.status ?? "pending"),
       expanded: expandedStep === "review",
       highlighted: highlightedStep === "review",
+      replayEventId: reviewStep ? lastStepEventId(reviewStep) : "",
     },
     {
       id: "acceptance",
@@ -2150,6 +2182,7 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[],
       tone: acceptance ? (acceptance.passed ? "done" : "error") : "waiting",
       expanded: expandedStep === "acceptance",
       highlighted: highlightedStep === "acceptance",
+      replayEventId: acceptance?.lastEvent?.event_id ?? "",
       actions: acceptance && !acceptance.passed
         ? functionalLaneAcceptanceActions(acceptance)
         : [],
@@ -2167,11 +2200,19 @@ function functionalLaneStepCard(item: FunctionalLaneItem): string {
         </span>
         <span style="font-size: 12px; color: #E8EAF0; font-weight: 850; line-height: 1.28; overflow-wrap: anywhere;">${escapeHtml(item.detail)}</span>
       </button>
+      ${functionalLaneReplayButton(item)}
       ${functionalLaneExpandButton(item)}
       ${functionalLaneActionButtons(item.actions ?? [], item.id, item.highlighted)}
       ${functionalLaneDetailPanel(item)}
     </div>
   `;
+}
+
+function functionalLaneReplayButton(item: FunctionalLaneItem): string {
+  if (!item.replayEventId) {
+    return "";
+  }
+  return `<button data-functional-lane-jump="segment" data-functional-lane-step-id="${escapeHtml(item.id)}" data-functional-lane-event-id="${escapeHtml(item.replayEventId)}" style="${functionalLaneActionStyle(item.highlighted)}">Replay</button>`;
 }
 
 function functionalLaneExpandButton(item: FunctionalLaneItem): string {
@@ -2198,7 +2239,12 @@ function functionalLaneDetailPanel(item: FunctionalLaneItem): string {
   }
   return `
     <div data-role="functional-lane-details" style="display: grid; gap: 5px; padding-top: 2px;">
-      ${item.details.slice(0, 6).map((row) => `<div style="${sheetLineStyle()}">${escapeHtml(row)}</div>`).join("")}
+      ${item.details.slice(0, 6).map((row) => `
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) ${row.replayEventId ? "70px" : "0"}; gap: 8px; align-items: center;">
+          <div style="${sheetLineStyle()}">${escapeHtml(row.text)}</div>
+          ${row.replayEventId ? `<button data-functional-lane-jump="detail" data-functional-lane-step-id="${escapeHtml(item.id)}" data-functional-lane-event-id="${escapeHtml(row.replayEventId)}" style="${functionalLaneActionStyle(item.highlighted)}">Replay</button>` : ""}
+        </div>
+      `).join("")}
     </div>
   `;
 }
@@ -2218,30 +2264,55 @@ function functionalLaneAcceptanceActions(acceptance: { recommendedActions?: stri
   return out;
 }
 
-function functionalLaneDetailRows(evidenceRefs: string[] | undefined, artifactRefs: string[] | undefined, sourceRefs: string[] | undefined): string[] {
+function functionalLaneDetailRows(
+  evidenceRefs: string[] | undefined,
+  artifactRefs: string[] | undefined,
+  sourceRefs: string[] | undefined,
+  replayEventId: string,
+): FunctionalLaneDetailRow[] {
   return [
-    ...(evidenceRefs ?? []).slice(0, 3).map((ref) => `Evidence: ${ref}`),
-    ...(artifactRefs ?? []).slice(0, 3).map((ref) => `Artifact: ${ref}`),
-    ...(sourceRefs ?? []).slice(0, 2).map((ref) => `Source: ${ref}`),
+    ...(evidenceRefs ?? []).slice(0, 3).map((ref) => ({ text: `Evidence: ${ref}`, replayEventId })),
+    ...(artifactRefs ?? []).slice(0, 3).map((ref) => ({ text: `Artifact: ${ref}`, replayEventId })),
+    ...(sourceRefs ?? []).slice(0, 2).map((ref) => ({ text: `Source: ${ref}`, replayEventId })),
   ];
 }
 
-function functionalLaneDemoDetails(demo: DemoPlan): string[] {
+function functionalLaneDemoDetails(demo: DemoPlan): FunctionalLaneDetailRow[] {
+  const fallbackEventId = demoReplayEventId(demo);
   return [
-    ...(demo.captureError ? [`Error: ${demo.captureError}`] : []),
-    ...(demo.summaryRef ? [`Summary: ${demo.summaryRef}`] : []),
-    ...(demo.artifactRefs ?? []).slice(0, 4).map((ref) => `Artifact: ${ref}`),
-    ...(demo.sourceRefs ?? []).slice(0, 2).map((ref) => `Source: ${ref}`),
+    ...(demo.captureError ? [{ text: `Error: ${demo.captureError}`, replayEventId: fallbackEventId }] : []),
+    ...(demo.summaryRef ? [{ text: `Summary: ${demo.summaryRef}`, replayEventId: fallbackEventId }] : []),
+    ...(demo.artifacts ?? []).slice(0, 4).map((artifact) => ({
+      text: `Artifact: ${artifact.ref}`,
+      replayEventId: artifact.eventId || fallbackEventId,
+    })),
+    ...(demo.sourceRefs ?? []).slice(0, 2).map((ref) => ({ text: `Source: ${ref}`, replayEventId: fallbackEventId })),
   ];
 }
 
-function functionalLaneAcceptanceDetails(acceptance: FunctionalAcceptance): string[] {
+function functionalLaneAcceptanceDetails(acceptance: FunctionalAcceptance): FunctionalLaneDetailRow[] {
+  const replayEventId = acceptance.lastEvent?.event_id ?? "";
   return [
-    ...(acceptance.blockingFindings ?? []).slice(0, 3).map((finding) => `Blocker: ${finding}`),
-    ...(acceptance.evidenceRefs ?? []).slice(0, 3).map((ref) => `Evidence: ${ref}`),
-    ...(acceptance.reviewArtifactRef ? [`Review: ${acceptance.reviewArtifactRef}`] : []),
-    ...(acceptance.sourceRefs ?? []).slice(0, 2).map((ref) => `Source: ${ref}`),
+    ...(acceptance.blockingFindings ?? []).slice(0, 3).map((finding) => ({ text: `Blocker: ${finding}`, replayEventId })),
+    ...(acceptance.evidenceRefs ?? []).slice(0, 3).map((ref) => ({ text: `Evidence: ${ref}`, replayEventId })),
+    ...(acceptance.reviewArtifactRef ? [{ text: `Review: ${acceptance.reviewArtifactRef}`, replayEventId }] : []),
+    ...(acceptance.sourceRefs ?? []).slice(0, 2).map((ref) => ({ text: `Source: ${ref}`, replayEventId })),
   ];
+}
+
+function lastStepEventId(step: FunctionalMiniSprintStep): string {
+  const sourceEventIds = Array.isArray(step.sourceEventIds) ? step.sourceEventIds : [];
+  return sourceEventIds[sourceEventIds.length - 1] || step.lastEvent?.event_id || "";
+}
+
+function demoReplayEventId(demo: DemoPlan): string {
+  for (let index = demo.artifacts.length - 1; index >= 0; index -= 1) {
+    const eventId = demo.artifacts[index]?.eventId || "";
+    if (eventId) {
+      return eventId;
+    }
+  }
+  return demo.lastEvent?.event_id || "";
 }
 
 function laneStepIdForTarget(target: string, workflow: WorkflowStep[]): string {
@@ -2296,6 +2367,46 @@ function functionalLaneFocusAtomIds(snapshot: EngineSnapshot, workflow: Workflow
     ].filter((atomId, index, all) => Boolean(atomId) && all.indexOf(atomId) === index);
   }
   return [];
+}
+
+function replayIndexForLaneEvent(snapshot: EngineSnapshot, workflow: WorkflowStep[], stepId: string, preferredEventId: string): number {
+  const eventId = preferredEventId || replayEventIdForLaneStep(snapshot, workflow, stepId);
+  if (!eventId) {
+    return -1;
+  }
+  for (let index = snapshot.events.length - 1; index >= 0; index -= 1) {
+    if (snapshot.events[index]?.event_id === eventId) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function replayEventIdForLaneStep(snapshot: EngineSnapshot, workflow: WorkflowStep[], stepId: string): string {
+  const sprint = snapshot.functional.currentMiniSprint;
+  if (!sprint) {
+    return "";
+  }
+  if (stepId === "build") {
+    const step = sprint.steps.find((item) => item.stepKind === "build" || item.stepId === workflowStepIdByKind(workflow, "implementation", "build"));
+    return step ? lastStepEventId(step) : "";
+  }
+  if (stepId === "test") {
+    const step = sprint.steps.find((item) => item.stepKind === "test" || item.stepId === workflowStepIdByKind(workflow, "testing", "test"));
+    return step ? lastStepEventId(step) : "";
+  }
+  if (stepId === "review") {
+    const step = sprint.steps.find((item) => item.stepKind === "review" || item.stepId === workflowStepIdByKind(workflow, "review", "review"));
+    return step ? lastStepEventId(step) : "";
+  }
+  if (stepId === "demo") {
+    const demo = [...snapshot.demos].reverse().find((item) => item.taskId === sprint.miniSprintId) ?? null;
+    return demo ? demoReplayEventId(demo) : "";
+  }
+  if (stepId === "acceptance") {
+    return sprint.acceptance?.lastEvent?.event_id ?? "";
+  }
+  return "";
 }
 
 function functionalLaneActionAtomId(snapshot: EngineSnapshot, workflow: WorkflowStep[]): string {

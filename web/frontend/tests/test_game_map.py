@@ -251,6 +251,8 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "data-functional-lane-highlighted" in text
     assert "focusedFunctionalLaneStep" in text
     assert "functionalLaneSurfaceStyle" in text
+    assert "data-functional-lane-jump" in text
+    assert "replayIndexForLaneEvent" in text
     assert "Functional evidence" in text
     assert "Blocking findings" in text
     assert "functional-acceptance-actions" in text
@@ -626,6 +628,11 @@ def test_functional_lane_rail_helper(tmp_path: Path) -> None:
 
         const { functionalLaneRail } = await import('__BUNDLE__');
         const snapshot = {
+          events: [
+            { event_id: 'evt_build', type: 'mini_sprint_step_completed' },
+            { event_id: 'evt_demo', type: 'demo_artifact_created' },
+            { event_id: 'evt_accept', type: 'functional_acceptance_evaluated' },
+          ],
           demos: [{
             demoId: 'demo_runtime',
             status: 'presented',
@@ -633,6 +640,7 @@ def test_functional_lane_rail_helper(tmp_path: Path) -> None:
             captureError: null,
             reason: 'Playwright proof requested',
             artifactRefs: ['.orchestrator/demos/demo_runtime/demo.gif'],
+            artifacts: [{ ref: '.orchestrator/demos/demo_runtime/demo.gif', eventId: 'evt_demo' }],
           }],
           functional: {
             currentMiniSprint: {
@@ -646,9 +654,10 @@ def test_functional_lane_rail_helper(tmp_path: Path) -> None:
                 blockingFindings: ['Waiting for reviewer sign-off <strict>'],
                 reviewArtifactRef: 'REVIEW.md',
                 evidenceRefs: ['TEST_REPORT.md', 'demo.gif'],
+                lastEvent: { event_id: 'evt_accept', type: 'functional_acceptance_evaluated' },
               },
               steps: [
-                { stepId: 'implementation', stepKind: 'build', status: 'done', evidenceRefs: ['app.py'], artifactRefs: ['app.py'] },
+                { stepId: 'implementation', stepKind: 'build', status: 'done', evidenceRefs: ['app.py'], artifactRefs: ['app.py'], sourceEventIds: ['evt_build'] },
                 { stepId: 'testing', stepKind: 'test', status: 'done', evidenceRefs: ['TEST_REPORT.md'], artifactRefs: [] },
                 { stepId: 'review', stepKind: 'review', status: 'done', evidenceRefs: ['REVIEW.md'], artifactRefs: [] },
               ],
@@ -671,12 +680,17 @@ def test_functional_lane_rail_helper(tmp_path: Path) -> None:
         assert.ok(html.includes('data-functional-lane-step-id="demo"'));
         assert.ok(html.includes('data-role="functional-lane-actions"'));
         assert.ok(html.includes('data-functional-lane-action="demo-open"'));
+        assert.ok(html.includes('data-functional-lane-jump="segment"'));
+        assert.ok(html.includes('data-functional-lane-jump="detail"'));
+        assert.ok(html.includes('data-functional-lane-event-id="evt_demo"'));
+        assert.ok(html.includes('data-functional-lane-event-id="evt_accept"'));
         assert.ok(html.includes('data-functional-lane-action="acceptance-repair"'));
         assert.ok(html.includes('data-functional-lane-action="acceptance-hero"'));
         assert.ok(html.includes('data-functional-lane-action="acceptance-override"'));
         assert.ok(html.includes('data-role="functional-lane-details"'));
         assert.ok(html.includes('Blocker: Waiting for reviewer sign-off &lt;strict&gt;'));
         assert.ok(html.includes('Evidence: TEST_REPORT.md'));
+        assert.ok(html.includes('Replay'));
         assert.ok(html.includes('Ship login'));
         assert.ok(html.includes('Presented'));
         assert.ok(html.includes('Blocked'));
