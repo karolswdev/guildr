@@ -259,7 +259,9 @@ def test_zero_cost_local_provider_uses_local_estimate(state: SimpleNamespace) ->
     assert usage["extraction_path"] == "opencode_message.local_estimate"
     assert usage["cost"]["estimated_cost"] == pytest.approx(0.005)
     assert usage["cost"]["rate_card_version"] == "local-test"
+    assert usage["cost"]["rate_card_ref"] == ".orchestrator/costs/rate-cards/local-test.json"
     assert usage["rate_card_version"] == "local-test"
+    assert usage["rate_card_ref"] == ".orchestrator/costs/rate-cards/local-test.json"
 
 
 def test_opencode_and_advisor_usage_rows_share_core_schema(state: SimpleNamespace) -> None:
@@ -296,7 +298,7 @@ def test_opencode_and_advisor_usage_rows_share_core_schema(state: SimpleNamespac
     }
     cost_keys = {
         "currency", "provider_reported_cost", "estimated_cost", "effective_cost",
-        "source", "confidence", "extraction_path", "rate_card_version",
+        "source", "confidence", "extraction_path", "rate_card_version", "rate_card_ref",
     }
     for call_id in [opencode_ids[0], advisor_id]:
         row = by_call_id[call_id]

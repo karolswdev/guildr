@@ -258,6 +258,12 @@ written with the same write-once immutability rule as provider rate cards.
 Replay resolves local cost profiles using this version string, not the
 current machine config at replay time.
 
+Usage rows that reference a rate card must also carry
+`cost.rate_card_ref` / top-level `rate_card_ref`, a repo-relative path such as
+`.orchestrator/costs/rate-cards/local-mac-studio-2026-04-21T20:00:00Z.json`.
+The PWA Economics sheet folds these refs into replay state so an operator can
+see which immutable pricing assumptions a replay point depends on.
+
 When no local snapshot exists yet, the orchestrator writes one from the current
 local profile defaults / environment:
 

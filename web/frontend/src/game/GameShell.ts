@@ -1430,6 +1430,11 @@ export function costSummaryCard(cost: CostSnapshot): string {
     ...cost.warnings.map((level) => `warning: ${level}`),
     ...cost.exceeded.map((level) => `exceeded: ${level}`),
   ];
+  const rateCardRows = [
+    ...cost.rateCardVersions.map((version) => `version: ${version}`),
+    ...cost.rateCardRefs.map((ref) => `ref: ${ref}`),
+    ...cost.missingRateCardVersions.map((version) => `missing: ${version}`),
+  ];
 
   return `
     <div data-role="cost-summary-card" style="display: grid; gap: 10px;">
@@ -1441,6 +1446,7 @@ export function costSummaryCard(cost: CostSnapshot): string {
         ${sheetField("Tokens", `${formatInteger(tokenTotal)} total`)}
       </div>
       ${sheetSection("Budget state", budgetRows, "No budget state has been recorded yet.")}
+      ${sheetSection("Rate cards", rateCardRows, "No rate-card snapshots have been referenced yet.")}
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px;">
         ${costBucketRail("Provider", cost.byProvider, "cost-provider-rail")}
         ${costBucketRail("Model", cost.byModel, "cost-model-rail")}

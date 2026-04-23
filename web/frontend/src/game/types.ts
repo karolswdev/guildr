@@ -61,6 +61,9 @@ export type CostSnapshot = CostBucket & {
   warnings: string[];
   exceeded: string[];
   openBudgetGateIds: string[];
+  rateCardVersions: string[];
+  rateCardRefs: string[];
+  missingRateCardVersions: string[];
 };
 
 export type MemPalaceStatus = {

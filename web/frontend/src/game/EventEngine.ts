@@ -481,6 +481,23 @@ export class EventEngine {
     if (remainingPhase !== null) {
       this.cost.remainingPhaseBudgetUsd = remainingPhase;
     }
+
+    const costBlock = objectValue(event.cost);
+    const rateCardVersion = stringOrNull(costBlock.rate_card_version) ?? stringOrNull(event.rate_card_version);
+    const rateCardRef = stringOrNull(costBlock.rate_card_ref) ?? stringOrNull(event.rate_card_ref);
+    if (rateCardVersion && !this.cost.rateCardVersions.includes(rateCardVersion)) {
+      this.cost.rateCardVersions.push(rateCardVersion);
+    }
+    if (rateCardRef && !this.cost.rateCardRefs.includes(rateCardRef)) {
+      this.cost.rateCardRefs.push(rateCardRef);
+    }
+    if (
+      rateCardVersion &&
+      (costBlock.rate_card_missing === true || event.rate_card_missing === true) &&
+      !this.cost.missingRateCardVersions.includes(rateCardVersion)
+    ) {
+      this.cost.missingRateCardVersions.push(rateCardVersion);
+    }
   }
 
   private applyBudgetEvent(event: RunEvent, type: string): void {
@@ -1015,6 +1032,9 @@ export function emptyCostSnapshot(): CostSnapshot {
     warnings: [],
     exceeded: [],
     openBudgetGateIds: [],
+    rateCardVersions: [],
+    rateCardRefs: [],
+    missingRateCardVersions: [],
   };
 }
 
@@ -1105,6 +1125,9 @@ function cloneCostSnapshot(snapshot: CostSnapshot): CostSnapshot {
     warnings: [...snapshot.warnings],
     exceeded: [...snapshot.exceeded],
     openBudgetGateIds: [...snapshot.openBudgetGateIds],
+    rateCardVersions: [...snapshot.rateCardVersions],
+    rateCardRefs: [...snapshot.rateCardRefs],
+    missingRateCardVersions: [...snapshot.missingRateCardVersions],
   };
 }
 

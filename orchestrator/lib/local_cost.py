@@ -17,6 +17,11 @@ DEFAULT_PROFILE: dict[str, Any] = {
 }
 
 
+def rate_card_snapshot_ref(rate_card_version: str) -> str:
+    """Return the replay-safe repo-relative path for a rate-card version."""
+    return f".orchestrator/costs/rate-cards/{rate_card_version}.json"
+
+
 def load_local_cost_profile(project_dir: Path | None = None) -> tuple[dict[str, Any], str]:
     """Return (profile, rate_card_version) for local llama.cpp estimates.
 
@@ -81,7 +86,7 @@ def _default_profile() -> tuple[dict[str, Any], str]:
 def _persist_snapshot(project_dir: Path, profile: dict[str, Any], version: str) -> dict[str, Any]:
     rate_dir = project_dir / ".orchestrator" / "costs" / "rate-cards"
     rate_dir.mkdir(parents=True, exist_ok=True)
-    path = rate_dir / f"{version}.json"
+    path = project_dir / rate_card_snapshot_ref(version)
     payload = dict(profile)
     try:
         with path.open("x", encoding="utf-8") as fh:

@@ -89,7 +89,14 @@ def test_cost_replay_and_budget_gate(tmp_path: Path) -> None:
             role: 'architect',
             usage: { input_tokens: 10, output_tokens: 5 },
             budget: { run_budget_usd: 10, phase_budget_usd: 2, remaining_run_budget_usd: 9.75, remaining_phase_budget_usd: 1.75 },
-            cost: { effective_cost: 0.25, provider_reported_cost: 0.25, estimated_cost: null, source: 'provider_reported' },
+            cost: {
+              effective_cost: 0.25,
+              provider_reported_cost: 0.25,
+              estimated_cost: null,
+              source: 'provider_reported',
+              rate_card_version: 'openrouter-2026-04-22T10:00:00Z',
+              rate_card_ref: '.orchestrator/costs/rate-cards/openrouter-2026-04-22T10:00:00Z.json',
+            },
           },
           {
             event_id: '2',
@@ -115,6 +122,8 @@ def test_cost_replay_and_budget_gate(tmp_path: Path) -> None:
         assert.equal(cost.phaseBudgetUsd, 2);
         assert.equal(cost.remainingRunBudgetUsd, 7.5);
         assert.equal(cost.runHalted, true);
+        assert.deepEqual(cost.rateCardVersions, ['openrouter-2026-04-22T10:00:00Z']);
+        assert.deepEqual(cost.rateCardRefs, ['.orchestrator/costs/rate-cards/openrouter-2026-04-22T10:00:00Z.json']);
         engine.scrubTo(0);
         cost = engine.snapshot().cost;
         assert.equal(cost.effectiveUsd, 0.25);

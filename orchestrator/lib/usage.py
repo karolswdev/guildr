@@ -6,7 +6,11 @@ from typing import Any
 
 from orchestrator.lib.budget import apply_budget_to_usage, emit_budget_events
 from orchestrator.lib.event_schema import new_event_id
-from orchestrator.lib.local_cost import estimate_local_cost, load_local_cost_profile
+from orchestrator.lib.local_cost import (
+    estimate_local_cost,
+    load_local_cost_profile,
+    rate_card_snapshot_ref,
+)
 
 
 def emit_llm_usage(
@@ -232,6 +236,7 @@ def _usage_payload(
     runtime_extra: dict[str, Any] | None = None,
     rate_card_version: str | None = None,
 ) -> dict[str, Any]:
+    rate_card_ref = rate_card_snapshot_ref(rate_card_version) if rate_card_version else None
     usage = {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
@@ -265,6 +270,7 @@ def _usage_payload(
             "confidence": confidence,
             "extraction_path": extraction_path,
             "rate_card_version": rate_card_version,
+            "rate_card_ref": rate_card_ref,
         },
         "source": source,
         "confidence": confidence,
@@ -273,6 +279,7 @@ def _usage_payload(
     }
     if rate_card_version:
         payload["rate_card_version"] = rate_card_version
+        payload["rate_card_ref"] = rate_card_ref
     if finish_reason:
         payload["finish_reason"] = finish_reason
     if error is not None:
