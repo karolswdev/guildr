@@ -47,6 +47,9 @@ Start there:
 - `srs-mini-phases/QUALITY_GATES.md` — cross-phase invariants
 - `srs-mini-phases/TRACEABILITY.md` — SRS section ↔ mini-phase map
 - `srs-mini-phases/M01…M12-*.md` — twelve executable mini-phases
+- `M10-functional-orchestration-surface.md` — operator-facing functional
+  workflow plan over Command Core, Next Move, mini-sprints, Heroes, demos, and
+  acceptance gates
 
 The mini-phase pack does not replace the Phase 0-8 visual-map track; both
 tracks must remain honest for the release gate (M12 / Phase 8) to pass.

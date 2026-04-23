@@ -84,6 +84,10 @@ usage or the orchestrator owns the embedding path.
    shipped mini-sprint is the remaining proof. Optional ffmpeg GIF derivation
    from `interaction.webm` is also deferred. M11 owns the replay/export
    bundling of those artifacts.
+6. **Functional orchestration surface.** The event spine is strong enough to
+   plan the product workflow layer explicitly. The new M10 functional plan
+   defines Command Core, Next Move, Mini-Sprint Lane, Council/Hero, demo
+   evidence, and functional acceptance as the next operator-facing track.
 
 ## Phase Board
 
@@ -102,16 +106,54 @@ running checklist for product-grade follow/review/intervene work.
 | **M07 Artifact Preview Depth** | Complete | Claude | Demo-ceremony half via A-10 slices 1/2/2b/3 (demo events + storage + `DemoRunner` + bounded `/api/projects/{id}/demos/...` route + Story/Object Lens demo cards). Artifact-preview half landed via M07 slices 1–4: `artifact_preview_created` emitter with sha256, bounded excerpts (8 KiB text head / 2 KiB code tail / binary placeholder), secret scrubbing, A-9 provenance; engine + narrator hooks emit previews for every canonical artifact (sprint-plan, TEST_REPORT, REVIEW, DEPLOY, narrative digest `.md`); PWA folds previews into `snapshot.previews`, renders `artifactPreviewCard` in Story + Object Lens rails anchored by `producingAtomId`; `PHASE_SOURCE_REFS` threads upstream lineage through every event. |
 | **M08 Memory Spine** | Mostly done | Codex | MemPalace sync/search/provenance packets exist, are attached to next-step context, visible in the PWA memory body/sheet, diffed after phase boundaries via `memory_diff`, shown on Story Lens claim cards, backed by a deterministic role-wing contract plus explicit CLI cost-accounting note, and exposed by default to selected opencode roles via scoped MCP config. Needs live provider proof once usage is observable. |
 | **M09 Cost/Budget Telemetry** | Partial | Codex/Claude | Usage rows, rollups, replay-folded cost buckets, atom cost rings, a map-native PWA Economics sheet, permissive high advisory defaults, PWA budget-gate decisions, and runtime hard-cap enforcement now exist. Needs rate-card snapshots, provider health, and full call-site proof. |
-| **M10 Hookability** | Not started | Unassigned | External trigger/plugin boundary still needs design and tests. |
+| **M10 Functional Surface + Hookability** | Planned | Codex | `M10-functional-orchestration-surface.md` now defines operator-facing functional workflows: Command Core, Next Move, Mini-Sprint Lane, Council/Hero, demo evidence, and acceptance gates. Existing hookability file still owns programmable hook/advisor boundaries. |
 | **M11 Replay Resilience** | Partial | Codex | Event replay works; needs corruption/rebuild/fallback hardening and replay/export handling for recorded demo artifacts. |
 | **M12 Release Hardening** | Not started | Unassigned | Requires live attended run, mobile polish, accessibility pass, and packaging checks. |
 
 ## Next Recommended Task
 
-**Next milestone: continue M09 Cost/Budget Telemetry.** M08 now has enough
-memory spine to feed cost-aware runs, and M09 slice A gave the PWA a real
-Economics lens over replay-folded `CostSnapshot` state. Keep M09 focused on
-truthful spend control before moving deeper into M11 replay export polish.
+**Next milestone: start the M10 Functional Orchestration Surface while keeping
+M09 provider-health work queued.** M09 cost/budget/rate-card truth now gives
+the surface enough integrity to plan product workflows explicitly. The next
+product question is no longer only "what did the run cost?" but "what
+functional mini-sprint is underway, what proof will accept it, and where can
+the operator intervene?"
+
+Primary planning file: `project-management/M10-functional-orchestration-surface.md`.
+
+**Recommended functional slice order:**
+
+1. **F1 — Functional plan file and board wiring** — landed as design/planning.
+   The file defines Command Core, Next Move Sheet, Mini-Sprint Lane,
+   Council/Hero Sheet, Evidence/Demo Sheet, functional event contracts, context
+   packets, quality gates, and slices F2-F7.
+
+2. **F2 — Command Core readiness audit.** Audit current `GameShell` first
+   viewport and Next-Step sheet against the core user jobs, then make the
+   smallest map-native UI/test patch that better answers what/who/what
+   happened/what next/how to intervene.
+
+3. **F3 — Mini-sprint event skeleton.** Register `mini_sprint_planned`,
+   `mini_sprint_step_completed`, and `functional_acceptance_evaluated`; fold
+   them into `EventEngine`.
+
+4. **F4 — Next Move Sheet upgrade.** Add acceptance criteria, evidence
+   required, demo request, Hero invite, and scope-warning rows to the existing
+   Next-Step surface.
+
+5. **F5 — Hero invite intent UI.** Add bounded `invite_hero` intent mode with
+   mission, watch-for list, model/provider, term, and target step.
+
+6. **F6 — Demo compatibility gate.** Detect demo eligibility and show requested
+   demo state through existing demo ceremony events.
+
+7. **F7 — Functional acceptance gate.** Emit and render explicit pass/fail
+   criteria and blocking findings after test/review/demo evidence.
+
+**M09 follow-up still queued:** provider health and local telemetry remain the
+next infrastructure slice once the functional surface needs provider state.
+
+Legacy M09 slice order retained for cost-track continuity:
 
 **Recommended slice order (each shippable independently):**
 
