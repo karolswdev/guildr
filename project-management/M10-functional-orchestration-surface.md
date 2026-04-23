@@ -645,6 +645,35 @@ Delivered 2026-04-23:
 - Frontend helper coverage now asserts the lane action controls are rendered in
   the rail HTML.
 
+### Slice F13 — Lane-Native Evidence Expansion
+
+- Let lane segments expand inline to show their key refs and blockers without
+  leaving the map shell.
+- Keep expansion strictly replay-derived from the same mini-sprint/demo/
+  acceptance state already folded by `EventEngine`.
+- Keep the detail surface bounded: a small number of evidence, artifact, source,
+  and blocker rows, not unbounded logs.
+
+Evidence:
+
+```bash
+uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py
+./web/frontend/build.sh
+git diff --check -- web/frontend/src/game/GameShell.ts web/frontend/tests/test_game_map.py project-management/STATUS.md project-management/M10-functional-orchestration-surface.md
+```
+
+Delivered 2026-04-23:
+
+- Lane segments now expose a `Details` toggle that expands inline inside the
+  map-native lane rail.
+- Build/test/review expansion shows bounded evidence, artifact, and source
+  refs; demo expansion shows captured artifact refs and ceremony refs; acceptance
+  expansion shows blockers, evidence, review ref, and source refs.
+- Expansion state is held in `GameShell` only as view state; all expanded rows
+  are still derived from replay-folded orchestration state.
+- Frontend helper coverage now asserts both the expansion toggle and the
+  expanded inline detail rail.
+
 ## Quality Gates
 
 - Event integrity: every new functional event is registered in backend and
@@ -683,6 +712,6 @@ Delivered 2026-04-23:
 
 ## Immediate Next Step
 
-Run Slice F13: add lane-native evidence expansion so a lane segment can expand
-inline to show its key refs, demo artifacts, or blocking findings without
-leaving the map shell.
+Run Slice F14: add lane-native cross-highlighting so selecting an expanded lane
+segment also highlights the related object/demo/acceptance evidence in the
+scene and sheet surfaces.

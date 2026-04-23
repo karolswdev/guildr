@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { AssetManager } from "./assets/AssetManager.js";
 import { EventEngine } from "./EventEngine.js";
 import { SceneManager, type SpatialViewLevel } from "./SceneManager.js";
-import type { ArtifactPreview, CostBucket, CostSnapshot, DemoArtifact, DemoPlan, DemoStatus, DemoViewport, DiscussionEntry, DiscussionHighlight, EngineSnapshot, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
+import type { ArtifactPreview, CostBucket, CostSnapshot, DemoArtifact, DemoPlan, DemoStatus, DemoViewport, DiscussionEntry, DiscussionHighlight, EngineSnapshot, FunctionalAcceptance, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
 
 type GameShellOptions = {
   projectId: string;
@@ -87,6 +87,7 @@ export class GameShell {
   private narratorFullText = "";
   private narratorVisibleText = "";
   private viewLevel: SpatialViewLevel = "global";
+  private expandedFunctionalLaneStep = "";
 
   constructor(private readonly container: Element, private readonly options: GameShellOptions) {
     this.mountShell();
@@ -594,10 +595,11 @@ export class GameShell {
   }
 
   private renderFunctionalLane(snapshot: EngineSnapshot): void {
-    const html = functionalLaneRail(snapshot, this.options.workflow);
+    const html = functionalLaneRail(snapshot, this.options.workflow, this.expandedFunctionalLaneStep);
     if (!html) {
       this.functionalLaneRail.style.display = "none";
       this.functionalLaneRail.innerHTML = "";
+      this.expandedFunctionalLaneStep = "";
       return;
     }
     this.functionalLaneRail.style.display = "block";
@@ -609,6 +611,12 @@ export class GameShell {
       button.addEventListener("click", (event) => {
         event.stopPropagation();
         void this.handleFunctionalLaneAction(button.dataset.functionalLaneAction || "");
+      });
+    });
+    this.functionalLaneRail.querySelectorAll<HTMLButtonElement>("[data-functional-lane-toggle]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.toggleFunctionalLaneStep(button.dataset.functionalLaneToggle || "");
       });
     });
   }
@@ -833,6 +841,16 @@ export class GameShell {
     }
     if (action === "acceptance-override") {
       await this.queueFunctionalAcceptanceIntentForAtom("acceptance_override", atomId);
+    }
+  }
+
+  private toggleFunctionalLaneStep(stepId: string): void {
+    if (!stepId) {
+      return;
+    }
+    this.expandedFunctionalLaneStep = this.expandedFunctionalLaneStep === stepId ? "" : stepId;
+    if (this.lastSnapshot) {
+      this.renderFunctionalLane(this.lastSnapshot);
     }
   }
 
@@ -1942,12 +1960,12 @@ export function functionalMiniSprintPanel(snapshot: EngineSnapshot): string {
   `;
 }
 
-export function functionalLaneRail(snapshot: EngineSnapshot, workflow: WorkflowStep[]): string {
+export function functionalLaneRail(snapshot: EngineSnapshot, workflow: WorkflowStep[], expandedStep = ""): string {
   const sprint = snapshot.functional.currentMiniSprint;
   if (!sprint) {
     return "";
   }
-  const items = functionalLaneItems(snapshot, workflow);
+  const items = functionalLaneItems(snapshot, workflow, expandedStep);
   if (items.length === 0) {
     return "";
   }
@@ -1998,11 +2016,13 @@ type FunctionalLaneItem = {
   target: string;
   state: string;
   detail: string;
+  details: string[];
   tone: string;
+  expanded: boolean;
   actions?: Array<{ action: string; label: string }>;
 };
 
-function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[]): FunctionalLaneItem[] {
+function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[], expandedStep: string): FunctionalLaneItem[] {
   const sprint = snapshot.functional.currentMiniSprint;
   if (!sprint) {
     return [];
@@ -2023,7 +2043,9 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[])
       target: buildTarget || "implementation",
       state: laneStateLabel(buildStep?.status ?? "pending"),
       detail: buildStep ? laneEvidenceDetail(buildStep.evidenceRefs, buildStep.artifactRefs) : "Waiting for implementation.",
+      details: buildStep ? functionalLaneDetailRows(buildStep.evidenceRefs, buildStep.artifactRefs, buildStep.sourceRefs) : [],
       tone: laneToneForStatus(buildStep?.status ?? "pending"),
+      expanded: expandedStep === "build",
     },
     {
       id: "test",
@@ -2031,7 +2053,9 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[])
       target: testTarget || "testing",
       state: laneStateLabel(testStep?.status ?? "pending"),
       detail: testStep ? laneEvidenceDetail(testStep.evidenceRefs, testStep.artifactRefs) : "Waiting for test proof.",
+      details: testStep ? functionalLaneDetailRows(testStep.evidenceRefs, testStep.artifactRefs, testStep.sourceRefs) : [],
       tone: laneToneForStatus(testStep?.status ?? "pending"),
+      expanded: expandedStep === "test",
     },
     {
       id: "demo",
@@ -2043,7 +2067,9 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[])
         : sprint.demoRequested
           ? `Gate ${sprint.demoCompatibility || "unknown"}`
           : "No demo ceremony required.",
+      details: demo ? functionalLaneDemoDetails(demo) : sprint.demoRequested ? [`Demo gate: ${sprint.demoCompatibility || "unknown"}`] : [],
       tone: demo ? laneToneForStatus(demo.status) : sprint.demoRequested ? "active" : "idle",
+      expanded: expandedStep === "demo",
       actions: demo || sprint.demoRequested ? [{ action: "demo-open", label: "Open" }] : [],
     },
     {
@@ -2052,7 +2078,9 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[])
       target: reviewTarget || "review",
       state: laneStateLabel(reviewStep?.status ?? "pending"),
       detail: reviewStep ? laneEvidenceDetail(reviewStep.evidenceRefs, reviewStep.artifactRefs) : "Waiting for review verdict.",
+      details: reviewStep ? functionalLaneDetailRows(reviewStep.evidenceRefs, reviewStep.artifactRefs, reviewStep.sourceRefs) : [],
       tone: laneToneForStatus(reviewStep?.status ?? "pending"),
+      expanded: expandedStep === "review",
     },
     {
       id: "acceptance",
@@ -2062,7 +2090,9 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[])
       detail: acceptance
         ? compactText(acceptance.blockingFindings[0] || acceptance.reviewArtifactRef || laneEvidenceDetail(acceptance.evidenceRefs, []), 72) || "Acceptance recorded."
         : "Waiting for final acceptance gate.",
+      details: acceptance ? functionalLaneAcceptanceDetails(acceptance) : [],
       tone: acceptance ? (acceptance.passed ? "done" : "error") : "waiting",
+      expanded: expandedStep === "acceptance",
       actions: acceptance && !acceptance.passed
         ? functionalLaneAcceptanceActions(acceptance)
         : [],
@@ -2072,15 +2102,26 @@ function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[])
 
 function functionalLaneStepCard(item: FunctionalLaneItem): string {
   return `
-    <button data-functional-lane-target="${escapeHtml(item.target)}" data-functional-lane-step="${escapeHtml(item.id)}" style="${functionalLaneButtonStyle(item.tone)}">
-      <span style="display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;">
-        <span style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">${escapeHtml(item.label)}</span>
-        <span style="${functionalLaneStateStyle(item.tone)}">${escapeHtml(item.state)}</span>
-      </span>
-      <span style="font-size: 12px; color: #E8EAF0; font-weight: 850; line-height: 1.28; overflow-wrap: anywhere;">${escapeHtml(item.detail)}</span>
+    <div data-functional-lane-step="${escapeHtml(item.id)}" style="${functionalLaneButtonStyle(item.tone)}">
+      <button data-functional-lane-target="${escapeHtml(item.target)}" style="display: grid; gap: 7px; text-align: left; color: inherit; background: transparent; border: 0; padding: 0;">
+        <span style="display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <span style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">${escapeHtml(item.label)}</span>
+          <span style="${functionalLaneStateStyle(item.tone)}">${escapeHtml(item.state)}</span>
+        </span>
+        <span style="font-size: 12px; color: #E8EAF0; font-weight: 850; line-height: 1.28; overflow-wrap: anywhere;">${escapeHtml(item.detail)}</span>
+      </button>
+      ${functionalLaneExpandButton(item)}
       ${functionalLaneActionButtons(item.actions ?? [])}
-    </button>
+      ${functionalLaneDetailPanel(item)}
+    </div>
   `;
+}
+
+function functionalLaneExpandButton(item: FunctionalLaneItem): string {
+  if (item.details.length === 0) {
+    return "";
+  }
+  return `<button data-functional-lane-toggle="${escapeHtml(item.id)}" style="${functionalLaneActionStyle()}">${escapeHtml(item.expanded ? "Hide details" : "Details")}</button>`;
 }
 
 function functionalLaneActionButtons(actions: Array<{ action: string; label: string }>): string {
@@ -2091,6 +2132,17 @@ function functionalLaneActionButtons(actions: Array<{ action: string; label: str
     <span data-role="functional-lane-actions" style="display: flex; flex-wrap: wrap; gap: 6px;">
       ${actions.map((item) => `<button data-functional-lane-action="${escapeHtml(item.action)}" style="${functionalLaneActionStyle()}">${escapeHtml(item.label)}</button>`).join("")}
     </span>
+  `;
+}
+
+function functionalLaneDetailPanel(item: FunctionalLaneItem): string {
+  if (!item.expanded || item.details.length === 0) {
+    return "";
+  }
+  return `
+    <div data-role="functional-lane-details" style="display: grid; gap: 5px; padding-top: 2px;">
+      ${item.details.slice(0, 6).map((row) => `<div style="${sheetLineStyle()}">${escapeHtml(row)}</div>`).join("")}
+    </div>
   `;
 }
 
@@ -2107,6 +2159,32 @@ function functionalLaneAcceptanceActions(acceptance: { recommendedActions?: stri
     out.push({ action: "acceptance-override", label: "Override" });
   }
   return out;
+}
+
+function functionalLaneDetailRows(evidenceRefs: string[] | undefined, artifactRefs: string[] | undefined, sourceRefs: string[] | undefined): string[] {
+  return [
+    ...(evidenceRefs ?? []).slice(0, 3).map((ref) => `Evidence: ${ref}`),
+    ...(artifactRefs ?? []).slice(0, 3).map((ref) => `Artifact: ${ref}`),
+    ...(sourceRefs ?? []).slice(0, 2).map((ref) => `Source: ${ref}`),
+  ];
+}
+
+function functionalLaneDemoDetails(demo: DemoPlan): string[] {
+  return [
+    ...(demo.captureError ? [`Error: ${demo.captureError}`] : []),
+    ...(demo.summaryRef ? [`Summary: ${demo.summaryRef}`] : []),
+    ...(demo.artifactRefs ?? []).slice(0, 4).map((ref) => `Artifact: ${ref}`),
+    ...(demo.sourceRefs ?? []).slice(0, 2).map((ref) => `Source: ${ref}`),
+  ];
+}
+
+function functionalLaneAcceptanceDetails(acceptance: FunctionalAcceptance): string[] {
+  return [
+    ...(acceptance.blockingFindings ?? []).slice(0, 3).map((finding) => `Blocker: ${finding}`),
+    ...(acceptance.evidenceRefs ?? []).slice(0, 3).map((ref) => `Evidence: ${ref}`),
+    ...(acceptance.reviewArtifactRef ? [`Review: ${acceptance.reviewArtifactRef}`] : []),
+    ...(acceptance.sourceRefs ?? []).slice(0, 2).map((ref) => `Source: ${ref}`),
+  ];
 }
 
 function functionalLaneActionAtomId(snapshot: EngineSnapshot, workflow: WorkflowStep[]): string {
