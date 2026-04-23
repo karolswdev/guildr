@@ -323,9 +323,14 @@ Quality gate:
 
 ### Slice F2 — Command Core Readiness Audit
 
-- Audit current `GameShell` first viewport against the Core User Jobs.
-- Create a checklist of missing PWA fields and controls.
-- Add tests that assert the bundle contains the required Command Core roles.
+- [x] Audit current `GameShell` first viewport against the Core User Jobs.
+- [x] Add the first missing functional fields to the authoritative Next-Step
+  packet fold: acceptance criteria, evidence required, demo request, and demo
+  compatibility.
+- [x] Render those fields in the map-native Next-Step sheet under a functional
+  readiness section.
+- [x] Add tests that assert the bundle contains the required Command Core /
+  Next Move roles.
 
 Evidence:
 
@@ -333,6 +338,10 @@ Evidence:
 uv run pytest -q web/frontend/tests/test_game_map.py
 ./web/frontend/build.sh
 ```
+
+Landed 2026-04-23: `EventEngine` now folds next-step acceptance/evidence/demo
+fields, and `GameShell` renders them in `functional-readiness` inside the
+existing Next-Step sheet. Evidence: `uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` -> 27 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,363,053 bytes.
 
 ### Slice F3 — Mini-Sprint Event Skeleton
 
@@ -440,6 +449,5 @@ uv run pytest -q tests/test_functional_orchestration.py tests/test_engine.py web
 
 ## Immediate Next Step
 
-Run Slice F2: audit the current PWA first viewport and Next-Step sheet against
-this document, then produce the first small UI/code patch that makes the
-functional command surface more explicit without adding a new route.
+Run Slice F3: register the mini-sprint event skeleton and fold it into
+`EventEngine`, then use that state to drive the next map-native surface patch.

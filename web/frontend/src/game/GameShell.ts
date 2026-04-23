@@ -937,6 +937,14 @@ export class GameShell {
           ${sheetField("Objective", packet.objective || "No objective in packet.")}
           ${sheetField("Why now", packet.whyNow || "No timing reason in packet.")}
         </div>
+        <div data-role="functional-readiness" style="display: grid; gap: 8px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 8px;">
+            ${sheetField("Demo readiness", demoReadinessLabel(packet))}
+            ${sheetField("Interventions", packet.interventionOptions.length > 0 ? packet.interventionOptions.join(", ") : "No declared interventions.")}
+          </div>
+          ${sheetSection("Acceptance criteria", packet.acceptanceCriteria, "No acceptance criteria are declared for this next move yet.")}
+          ${sheetSection("Evidence required", packet.evidenceRequired, "No explicit evidence requirements are declared yet.")}
+        </div>
         ${latestDigestPanel(snapshot)}
         ${discussionPanel(snapshot, packet.step)}
         ${sheetSection("Context", packet.contextPreview, "No context preview yet.")}
@@ -1709,6 +1717,13 @@ function sheetField(label: string, value: string): string {
       <div style="font-size: 12px; color: #E8EAF0; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(value)}</div>
     </div>
   `;
+}
+
+function demoReadinessLabel(packet: NextStepPacket): string {
+  const compatibility = packet.demoCompatibility || "unknown";
+  return packet.demoRequested
+    ? `Requested · ${compatibility}`
+    : `Not requested · ${compatibility}`;
 }
 
 function sheetSection(label: string, rows: string[], empty: string): string {

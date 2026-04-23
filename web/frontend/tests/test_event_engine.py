@@ -219,6 +219,10 @@ def test_next_step_packet_replay_fold(tmp_path: Path) -> None:
               queued_intents: [{ client_intent_id: 'intent-1', kind: 'interject' }],
               context_preview: ['Memory wake-up hash: abc'],
               intervention_options: ['interject'],
+              acceptance_criteria: ['Wake-up packet is refreshed.'],
+              evidence_required: ['memory_diff event'],
+              demo_requested: true,
+              demo_compatibility: 'ineligible',
               source_refs: ['workflow:memory_refresh', 'memory:.orchestrator/memory/wake-up.md'],
             },
           },
@@ -248,6 +252,10 @@ def test_next_step_packet_replay_fold(tmp_path: Path) -> None:
         assert.deepEqual(packet.memoryRefs, ['.orchestrator/memory/wake-up.md']);
         assert.equal(packet.queuedIntents[0].client_intent_id, 'intent-1');
         assert.equal(packet.contextPreview[0], 'Memory wake-up hash: abc');
+        assert.deepEqual(packet.acceptanceCriteria, ['Wake-up packet is refreshed.']);
+        assert.deepEqual(packet.evidenceRequired, ['memory_diff event']);
+        assert.equal(packet.demoRequested, true);
+        assert.equal(packet.demoCompatibility, 'ineligible');
         """,
     )
 

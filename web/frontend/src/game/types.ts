@@ -119,6 +119,10 @@ export type NextStepPacket = {
   queuedIntents: Record<string, unknown>[];
   contextPreview: string[];
   interventionOptions: string[];
+  acceptanceCriteria: string[];
+  evidenceRequired: string[];
+  demoRequested: boolean;
+  demoCompatibility: string | null;
   sourceRefs: string[];
   memoryRefs: string[];
   raw: Record<string, unknown>;

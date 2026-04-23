@@ -232,6 +232,11 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "next-step-sheet" in text
     assert "next-step-control" in text
     assert "openNextStepSheet" in text
+    assert "functional-readiness" in text
+    assert "Acceptance criteria" in text
+    assert "Evidence required" in text
+    assert "Demo readiness" in text
+    assert "demoReadinessLabel" in text
     assert "goal-core-sheet" in text
     assert "goal-core-control" in text
     assert "openGoalCoreSheet" in text
