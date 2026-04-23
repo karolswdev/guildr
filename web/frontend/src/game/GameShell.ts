@@ -68,6 +68,7 @@ export class GameShell {
   private readonly objectLensSheet = document.createElement("div");
   private readonly storyLensSheet = document.createElement("div");
   private readonly narratorBox = document.createElement("div");
+  private readonly functionalLaneRail = document.createElement("div");
   private readonly timelineRibbon = document.createElement("div");
   private renderer: THREE.WebGLRenderer | null = null;
   private sceneManager: SceneManager | null = null;
@@ -346,6 +347,18 @@ export class GameShell {
       "pointer-events: auto",
     ].join("; ");
 
+    this.functionalLaneRail.dataset.role = "functional-lane-rail";
+    this.functionalLaneRail.style.cssText = [
+      "position: absolute",
+      "left: 50%",
+      "top: calc(64px + env(safe-area-inset-top))",
+      "z-index: 4",
+      "display: none",
+      "width: min(860px, calc(100vw - 24px))",
+      "transform: translateX(-50%)",
+      "pointer-events: auto",
+    ].join("; ");
+
     this.timelineRibbon.dataset.role = "timeline-ribbon";
     this.timelineRibbon.style.cssText = [
       "position: absolute",
@@ -373,6 +386,7 @@ export class GameShell {
     this.root.appendChild(this.objectLensSheet);
     this.root.appendChild(this.storyLensSheet);
     this.root.appendChild(this.narratorBox);
+    this.root.appendChild(this.functionalLaneRail);
     this.root.appendChild(this.bottomHud);
     this.root.appendChild(this.composeDock);
     this.root.appendChild(this.timelineRibbon);
@@ -465,6 +479,7 @@ export class GameShell {
     this.renderBottomHud(snapshot);
     this.renderTimeline(snapshot);
     this.renderNarrator(snapshot);
+    this.renderFunctionalLane(snapshot);
     if (this.actionRing.style.display !== "none") {
       this.renderActionRing();
     }
@@ -576,6 +591,20 @@ export class GameShell {
       return;
     }
     this.renderNarratorFrame(narration);
+  }
+
+  private renderFunctionalLane(snapshot: EngineSnapshot): void {
+    const html = functionalLaneRail(snapshot, this.options.workflow);
+    if (!html) {
+      this.functionalLaneRail.style.display = "none";
+      this.functionalLaneRail.innerHTML = "";
+      return;
+    }
+    this.functionalLaneRail.style.display = "block";
+    this.functionalLaneRail.innerHTML = html;
+    this.functionalLaneRail.querySelectorAll<HTMLButtonElement>("[data-functional-lane-target]").forEach((button) => {
+      button.addEventListener("click", () => this.focusFunctionalLaneTarget(button.dataset.functionalLaneTarget || ""));
+    });
   }
 
   private renderNarratorFrame(narration: NarrationCue): void {
@@ -725,6 +754,54 @@ export class GameShell {
     this.sceneManager?.focusGoalCore();
     if (this.lastSnapshot) {
       this.renderGoalCoreSheet(this.lastSnapshot);
+    }
+  }
+
+  private focusFunctionalLaneTarget(target: string): void {
+    if (!target) {
+      return;
+    }
+    if (target === "demo") {
+      this.actionRing.style.display = "none";
+      this.composeDock.style.display = "none";
+      this.nextStepSheet.style.display = "none";
+      this.goalCoreSheet.style.display = "none";
+      this.memorySheet.style.display = "none";
+      this.costSheet.style.display = "none";
+      this.objectLensSheet.style.display = "none";
+      this.bottomHud.style.display = "flex";
+      this.storyLensSheet.style.display = "block";
+      this.viewLevel = "story";
+      this.sceneManager?.setViewLevel("story", this.selectedAtomId);
+      if (this.lastSnapshot) {
+        this.renderStoryLens(this.lastSnapshot);
+      }
+      return;
+    }
+    if (target === "acceptance") {
+      this.openNextStepSheet();
+      return;
+    }
+    const step = this.options.workflow.find((item) => item.id === target);
+    if (!step) {
+      return;
+    }
+    this.selectedAtomId = target;
+    this.selectedScope = target;
+    this.viewLevel = "surface";
+    this.actionRing.style.display = "none";
+    this.composeDock.style.display = "none";
+    this.nextStepSheet.style.display = "none";
+    this.goalCoreSheet.style.display = "none";
+    this.memorySheet.style.display = "none";
+    this.costSheet.style.display = "none";
+    this.storyLensSheet.style.display = "none";
+    this.bottomHud.style.display = "flex";
+    this.objectLensSheet.style.display = "block";
+    this.sceneManager?.setViewLevel("surface", target);
+    this.sceneManager?.focusAtomInView(target, 0.38);
+    if (this.lastSnapshot) {
+      this.renderObjectLens(this.lastSnapshot);
     }
   }
 
@@ -1454,6 +1531,7 @@ function fallbackHtml(workflow: WorkflowStep[], snapshot: EngineSnapshot, projec
           <div style="font-size: 12px; color: #C7CAD6; margin-top: 6px;">${escapeHtml(snapshot.nextStepPacket.objective || snapshot.nextStepPacket.whyNow || "")}</div>
         </div>
       ` : ""}
+      ${functionalLaneRail(snapshot, workflow)}
       <div data-role="memory-core-sheet" style="padding: 12px; border: 1px solid #254A50; border-radius: 8px; background: #101923;">
         ${memoryStatusCard(snapshot)}
       </div>
@@ -1829,6 +1907,34 @@ export function functionalMiniSprintPanel(snapshot: EngineSnapshot): string {
   `;
 }
 
+export function functionalLaneRail(snapshot: EngineSnapshot, workflow: WorkflowStep[]): string {
+  const sprint = snapshot.functional.currentMiniSprint;
+  if (!sprint) {
+    return "";
+  }
+  const items = functionalLaneItems(snapshot, workflow);
+  if (items.length === 0) {
+    return "";
+  }
+  return `
+    <div data-role="functional-lane-rail" style="display: grid; gap: 8px; padding: 10px 12px; border: 1px solid rgba(77,111,255,0.28); border-radius: 8px; background: linear-gradient(180deg, rgba(12,16,28,0.88), rgba(8,10,18,0.94)); box-shadow: 0 18px 42px rgba(0,0,0,0.36), inset 0 1px 0 rgba(255,255,255,0.06); backdrop-filter: blur(14px);">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+        <div style="min-width: 0;">
+          <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Mini-Sprint Lane</div>
+          <div style="font-size: 13px; color: #E8EAF0; font-weight: 850; line-height: 1.25; overflow-wrap: anywhere;">${escapeHtml(sprint.title || sprint.miniSprintId)} · ${escapeHtml(sprint.objective || "Objective pending.")}</div>
+        </div>
+        <div style="display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
+          <span style="${refChipStyle()}">${escapeHtml(sprint.demoRequested ? `Demo ${sprint.demoCompatibility || "unknown"}` : "No demo requested")}</span>
+          <span style="${refChipStyle()}">${escapeHtml(sprint.acceptance?.passed ? "Acceptance passed" : sprint.acceptance ? "Acceptance blocked" : "Acceptance pending")}</span>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(126px, 1fr)); gap: 8px;">
+        ${items.map((item) => functionalLaneStepCard(item)).join("")}
+      </div>
+    </div>
+  `;
+}
+
 function functionalAcceptanceActions(acceptance: { passed: boolean; recommendedActions?: string[] } | null): string {
   if (!acceptance || acceptance.passed) {
     return "";
@@ -1849,6 +1955,155 @@ function demoGateLabel(sprint: { demoRequested: boolean; demoCompatibility: stri
   const confidence = sprint.demoConfidence ? ` · ${sprint.demoConfidence}` : "";
   const reason = sprint.demoReason ? ` · ${sprint.demoReason}` : "";
   return `${requested} · ${compatibility}${confidence}${reason}`;
+}
+
+type FunctionalLaneItem = {
+  id: string;
+  label: string;
+  target: string;
+  state: string;
+  detail: string;
+  tone: string;
+};
+
+function functionalLaneItems(snapshot: EngineSnapshot, workflow: WorkflowStep[]): FunctionalLaneItem[] {
+  const sprint = snapshot.functional.currentMiniSprint;
+  if (!sprint) {
+    return [];
+  }
+  const buildTarget = workflowStepIdByKind(workflow, "implementation", "build");
+  const testTarget = workflowStepIdByKind(workflow, "testing", "test");
+  const reviewTarget = workflowStepIdByKind(workflow, "review", "review");
+  const buildStep = sprint.steps.find((step) => step.stepId === buildTarget || step.stepKind === "build") ?? null;
+  const testStep = sprint.steps.find((step) => step.stepId === testTarget || step.stepKind === "test") ?? null;
+  const reviewStep = sprint.steps.find((step) => step.stepId === reviewTarget || step.stepKind === "review") ?? null;
+  const demo = [...snapshot.demos].reverse().find((item) => item.taskId === sprint.miniSprintId) ?? null;
+  const acceptance = sprint.acceptance;
+
+  return [
+    {
+      id: "build",
+      label: "Build",
+      target: buildTarget || "implementation",
+      state: laneStateLabel(buildStep?.status ?? "pending"),
+      detail: buildStep ? laneEvidenceDetail(buildStep.evidenceRefs, buildStep.artifactRefs) : "Waiting for implementation.",
+      tone: laneToneForStatus(buildStep?.status ?? "pending"),
+    },
+    {
+      id: "test",
+      label: "Test",
+      target: testTarget || "testing",
+      state: laneStateLabel(testStep?.status ?? "pending"),
+      detail: testStep ? laneEvidenceDetail(testStep.evidenceRefs, testStep.artifactRefs) : "Waiting for test proof.",
+      tone: laneToneForStatus(testStep?.status ?? "pending"),
+    },
+    {
+      id: "demo",
+      label: "Demo",
+      target: "demo",
+      state: demo ? laneStateLabel(demo.status) : sprint.demoRequested ? "Pending" : "Not requested",
+      detail: demo
+        ? compactText(demo.captureError || demo.reason || laneEvidenceDetail(demo.artifactRefs, []), 72) || "Demo ceremony recorded."
+        : sprint.demoRequested
+          ? `Gate ${sprint.demoCompatibility || "unknown"}`
+          : "No demo ceremony required.",
+      tone: demo ? laneToneForStatus(demo.status) : sprint.demoRequested ? "active" : "idle",
+    },
+    {
+      id: "review",
+      label: "Review",
+      target: reviewTarget || "review",
+      state: laneStateLabel(reviewStep?.status ?? "pending"),
+      detail: reviewStep ? laneEvidenceDetail(reviewStep.evidenceRefs, reviewStep.artifactRefs) : "Waiting for review verdict.",
+      tone: laneToneForStatus(reviewStep?.status ?? "pending"),
+    },
+    {
+      id: "acceptance",
+      label: "Acceptance",
+      target: "acceptance",
+      state: acceptance ? (acceptance.passed ? "Accepted" : "Blocked") : "Pending",
+      detail: acceptance
+        ? compactText(acceptance.blockingFindings[0] || acceptance.reviewArtifactRef || laneEvidenceDetail(acceptance.evidenceRefs, []), 72) || "Acceptance recorded."
+        : "Waiting for final acceptance gate.",
+      tone: acceptance ? (acceptance.passed ? "done" : "error") : "waiting",
+    },
+  ];
+}
+
+function functionalLaneStepCard(item: FunctionalLaneItem): string {
+  return `
+    <button data-functional-lane-target="${escapeHtml(item.target)}" data-functional-lane-step="${escapeHtml(item.id)}" style="${functionalLaneButtonStyle(item.tone)}">
+      <span style="display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <span style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">${escapeHtml(item.label)}</span>
+        <span style="${functionalLaneStateStyle(item.tone)}">${escapeHtml(item.state)}</span>
+      </span>
+      <span style="font-size: 12px; color: #E8EAF0; font-weight: 850; line-height: 1.28; overflow-wrap: anywhere;">${escapeHtml(item.detail)}</span>
+    </button>
+  `;
+}
+
+function workflowStepIdByKind(workflow: WorkflowStep[], preferredId: string, stepKind: string): string {
+  return workflow.find((step) => step.id === preferredId)?.id
+    || workflow.find((step) => step.handler === preferredId)?.id
+    || workflow.find((step) => step.id.includes(stepKind) || step.handler.includes(stepKind))?.id
+    || "";
+}
+
+function laneStateLabel(status: string): string {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "done") {
+    return "Done";
+  }
+  if (normalized === "presented") {
+    return "Presented";
+  }
+  if (normalized === "failed") {
+    return "Failed";
+  }
+  if (normalized === "capturing") {
+    return "Capturing";
+  }
+  if (normalized === "captured") {
+    return "Captured";
+  }
+  if (normalized === "planned") {
+    return "Planned";
+  }
+  if (normalized === "blocked") {
+    return "Blocked";
+  }
+  if (normalized === "accepted") {
+    return "Accepted";
+  }
+  if (normalized === "skipped") {
+    return "Skipped";
+  }
+  return "Pending";
+}
+
+function laneToneForStatus(status: string): string {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "done" || normalized === "presented" || normalized === "accepted") {
+    return "done";
+  }
+  if (normalized === "failed" || normalized === "blocked") {
+    return "error";
+  }
+  if (normalized === "capturing" || normalized === "captured" || normalized === "planned") {
+    return "active";
+  }
+  if (normalized === "skipped") {
+    return "idle";
+  }
+  return "waiting";
+}
+
+function laneEvidenceDetail(evidenceRefs: string[], artifactRefs: string[]): string {
+  const refs = [...evidenceRefs, ...artifactRefs].filter(Boolean);
+  if (refs.length === 0) {
+    return "Evidence pending.";
+  }
+  return refs.slice(0, 2).join(" · ");
 }
 
 export function heroRosterPanel(snapshot: EngineSnapshot): string {
@@ -2389,6 +2644,40 @@ function sheetLineStyle(): string {
 
 function refChipStyle(): string {
   return "max-width: 100%; padding: 6px 8px; border: 1px solid rgba(65,199,199,0.26); border-radius: 999px; background: rgba(65,199,199,0.10); color: #C7CAD6; font-size: 11px; font-weight: 750; overflow-wrap: anywhere;";
+}
+
+function functionalLaneButtonStyle(tone: string): string {
+  const palette: Record<string, { border: string; background: string; shadow: string }> = {
+    done: { border: "rgba(65,199,199,0.34)", background: "rgba(14,38,43,0.72)", shadow: "0 0 0 1px rgba(65,199,199,0.06)" },
+    active: { border: "rgba(77,111,255,0.34)", background: "rgba(18,28,54,0.74)", shadow: "0 0 0 1px rgba(77,111,255,0.08)" },
+    error: { border: "rgba(217,106,106,0.34)", background: "rgba(52,20,24,0.76)", shadow: "0 0 0 1px rgba(217,106,106,0.06)" },
+    waiting: { border: "rgba(224,155,42,0.30)", background: "rgba(42,28,14,0.74)", shadow: "0 0 0 1px rgba(224,155,42,0.06)" },
+    idle: { border: "rgba(232,234,240,0.12)", background: "rgba(16,20,30,0.64)", shadow: "0 0 0 1px rgba(255,255,255,0.04)" },
+  };
+  const selected = palette[tone] ?? palette.idle;
+  return [
+    "min-width: 0",
+    "display: grid",
+    "gap: 7px",
+    "padding: 10px",
+    `border: 1px solid ${selected.border}`,
+    "border-radius: 8px",
+    `background: ${selected.background}`,
+    `box-shadow: ${selected.shadow}, inset 0 1px 0 rgba(255,255,255,0.04)`,
+    "text-align: left",
+  ].join("; ");
+}
+
+function functionalLaneStateStyle(tone: string): string {
+  const palette: Record<string, string> = {
+    done: "#41C7C7",
+    active: "#4D6FFF",
+    error: "#D96A6A",
+    waiting: "#E09B2A",
+    idle: "#8C92A8",
+  };
+  const color = palette[tone] ?? palette.idle;
+  return `display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px; background: ${color}1F; color: ${color}; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0;`;
 }
 
 function emptyChipStyle(): string {

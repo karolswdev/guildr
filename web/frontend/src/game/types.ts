@@ -140,6 +140,9 @@ export type FunctionalMiniSprint = {
   evidenceRequired: string[];
   demoRequested: boolean;
   demoCompatibility: string | null;
+  demoAdapter?: string | null;
+  demoConfidence?: string | null;
+  demoReason?: string | null;
   sourceRefs: string[];
   steps: FunctionalMiniSprintStep[];
   acceptance: FunctionalAcceptance | null;

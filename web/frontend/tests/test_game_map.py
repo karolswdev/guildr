@@ -242,6 +242,8 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "demoCompatibility" in text
     assert "functional-mini-sprint" in text
     assert "functionalMiniSprintPanel" in text
+    assert "functional-lane-rail" in text
+    assert "functionalLaneRail" in text
     assert "Functional evidence" in text
     assert "Blocking findings" in text
     assert "functional-acceptance-actions" in text
@@ -594,6 +596,72 @@ def test_functional_mini_sprint_panel_helper(tmp_path: Path) -> None:
         assert.ok(html.includes('data-action="next-functional-override"'));
         assert.ok(!html.includes('Ship <login>'));
         assert.ok(!html.includes('Missing mobile proof <375px>'));
+        """,
+        include_three=True,
+    )
+
+
+def test_functional_lane_rail_helper(tmp_path: Path) -> None:
+    run_script(
+        tmp_path,
+        GAME_SHELL_TS,
+        """
+        import assert from 'node:assert/strict';
+
+        globalThis.document = {
+          createElement: () => {
+            const node = { textContent: '', get innerHTML() { return String(this.textContent).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } };
+            return node;
+          },
+        };
+
+        const { functionalLaneRail } = await import('__BUNDLE__');
+        const snapshot = {
+          demos: [{
+            demoId: 'demo_runtime',
+            status: 'presented',
+            taskId: 'ms_login',
+            captureError: null,
+            reason: 'Playwright proof requested',
+            artifactRefs: ['.orchestrator/demos/demo_runtime/demo.gif'],
+          }],
+          functional: {
+            currentMiniSprint: {
+              miniSprintId: 'ms_login',
+              title: 'Ship login',
+              objective: 'Make sign-in usable.',
+              demoRequested: true,
+              demoCompatibility: 'eligible',
+              acceptance: {
+                passed: false,
+                blockingFindings: ['Waiting for reviewer sign-off <strict>'],
+                reviewArtifactRef: 'REVIEW.md',
+                evidenceRefs: ['TEST_REPORT.md', 'demo.gif'],
+              },
+              steps: [
+                { stepId: 'implementation', stepKind: 'build', status: 'done', evidenceRefs: ['app.py'], artifactRefs: ['app.py'] },
+                { stepId: 'testing', stepKind: 'test', status: 'done', evidenceRefs: ['TEST_REPORT.md'], artifactRefs: [] },
+                { stepId: 'review', stepKind: 'review', status: 'done', evidenceRefs: ['REVIEW.md'], artifactRefs: [] },
+              ],
+            },
+          },
+        };
+        const workflow = [
+          { id: 'implementation', handler: 'implementation' },
+          { id: 'testing', handler: 'testing' },
+          { id: 'review', handler: 'review' },
+        ];
+
+        const html = functionalLaneRail(snapshot, workflow);
+        assert.ok(html.includes('data-role="functional-lane-rail"'));
+        assert.ok(html.includes('data-functional-lane-step="build"'));
+        assert.ok(html.includes('data-functional-lane-step="demo"'));
+        assert.ok(html.includes('data-functional-lane-step="acceptance"'));
+        assert.ok(html.includes('Ship login'));
+        assert.ok(html.includes('Presented'));
+        assert.ok(html.includes('Blocked'));
+        assert.ok(html.includes('Waiting for reviewer sign-off &lt;strict&gt;'));
+        assert.ok(!html.includes('Waiting for reviewer sign-off <strict>'));
         """,
         include_three=True,
     )

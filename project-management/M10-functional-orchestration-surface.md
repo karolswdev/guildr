@@ -584,6 +584,39 @@ Delivered 2026-04-23:
 - Functional acceptance now calls out failed demo capture explicitly, rather
   than collapsing that case into generic missing-proof language.
 
+### Slice F11 — Mini-Sprint Lane Map Promotion
+
+- Promote the runtime mini-sprint out of the Next-Step sheet and into the live
+  map shell as a persistent lane rail.
+- Keep the lane deterministic from replay state only: build/test/review from
+  mini-sprint step events, demo from demo ceremony events scoped to the active
+  mini-sprint, and acceptance from `functional_acceptance_evaluated`.
+- Make lane segments actionable: build/test/review should focus the
+  corresponding object, demo should open story/demo evidence, acceptance should
+  open the acceptance sheet.
+- Keep fallback parity so the same lane is visible without WebGL.
+
+Evidence:
+
+```bash
+uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py
+./web/frontend/build.sh
+git diff --check -- web/frontend/src/game/GameShell.ts web/frontend/src/game/types.ts web/frontend/tests/test_game_map.py project-management/STATUS.md project-management/M10-functional-orchestration-surface.md
+```
+
+Delivered 2026-04-23:
+
+- `GameShell` now renders a persistent `functional-lane-rail` overlay in the
+  map shell whenever a current mini-sprint exists, instead of keeping that lane
+  only inside the Next-Step sheet.
+- The lane renders first-class build, test, demo, review, and acceptance
+  segments with replay-derived state and evidence detail.
+- Lane clicks now route into the correct surfaces: object focus for
+  build/test/review, Story Lens for demo proof, and Next-Step acceptance for
+  final gate review.
+- WebGL fallback rendering now includes the same functional lane rail, keeping
+  the orchestration surface coherent across render modes.
+
 ## Quality Gates
 
 - Event integrity: every new functional event is registered in backend and
@@ -622,6 +655,6 @@ Delivered 2026-04-23:
 
 ## Immediate Next Step
 
-Run Slice F11: upgrade the operator-facing Mini-Sprint Lane so runtime build,
-test, demo, review, and acceptance appear as first-class map atoms/bands rather
-than only inside the Next-Step summary sheet.
+Run Slice F12: add lane-native operator controls so blocked acceptance and demo
+states can trigger Repair, Hero, Override, or open-demo actions directly from
+the map lane without opening the Next-Step sheet first.
