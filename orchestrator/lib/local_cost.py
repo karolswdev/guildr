@@ -24,7 +24,7 @@ def load_local_cost_profile(project_dir: Path | None = None) -> tuple[dict[str, 
     1. Newest `.orchestrator/costs/rate-cards/local-*.json` under project_dir.
     2. Built-in default with version `local-default-<bootstrap-ts>`.
 
-    Versioning is write-once: callers persist a snapshot file the first time a
+    Versioning is write-once: this persists a snapshot file the first time a
     machine profile is observed; replay later resolves the original version
     rather than recomputing from current machine config.
     """
@@ -42,10 +42,75 @@ def load_local_cost_profile(project_dir: Path | None = None) -> tuple[dict[str, 
                 except (OSError, json.JSONDecodeError):
                     pass
 
-    machine = os.environ.get("ORCH_LOCAL_MACHINE_ID", DEFAULT_PROFILE["machine_id"])
+    profile, version = _default_profile()
+    if project_dir is not None:
+        profile = _persist_snapshot(project_dir, profile, version)
+        version = str(profile.get("rate_card_version") or version)
+    return profile, version
+
+
+def _default_profile() -> tuple[dict[str, Any], str]:
+    machine = _safe_machine_id(
+        os.environ.get("ORCH_LOCAL_MACHINE_ID", DEFAULT_PROFILE["machine_id"])
+    )
     snapshot_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00:00Z")
-    profile = {**DEFAULT_PROFILE, "machine_id": machine}
-    return profile, f"local-{machine}-{snapshot_ts}"
+    version = f"local-{machine}-{snapshot_ts}"
+    profile = {
+        **DEFAULT_PROFILE,
+        "machine_id": machine,
+        "hourly_cost_usd": _env_float(
+            "ORCH_LOCAL_HOURLY_COST_USD",
+            DEFAULT_PROFILE["hourly_cost_usd"],
+        ),
+        "energy_cost_usd_per_kwh": _env_float(
+            "ORCH_LOCAL_ENERGY_COST_USD_PER_KWH",
+            DEFAULT_PROFILE["energy_cost_usd_per_kwh"],
+        ),
+        "gpu_hourly_cost_usd": _env_float(
+            "ORCH_LOCAL_GPU_HOURLY_COST_USD",
+            DEFAULT_PROFILE["gpu_hourly_cost_usd"],
+        ),
+        "rate_card_version": version,
+        "provider_kind": "local",
+        "snapshot_source": "env_or_default",
+        "snapshot_created_at": snapshot_ts,
+    }
+    return profile, version
+
+
+def _persist_snapshot(project_dir: Path, profile: dict[str, Any], version: str) -> dict[str, Any]:
+    rate_dir = project_dir / ".orchestrator" / "costs" / "rate-cards"
+    rate_dir.mkdir(parents=True, exist_ok=True)
+    path = rate_dir / f"{version}.json"
+    payload = dict(profile)
+    try:
+        with path.open("x", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+    except FileExistsError:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except (OSError, json.JSONDecodeError):
+            pass
+    return payload
+
+
+def _safe_machine_id(raw: object) -> str:
+    value = str(raw or DEFAULT_PROFILE["machine_id"])
+    safe = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "-" for ch in value)
+    return safe.strip("-_.") or str(DEFAULT_PROFILE["machine_id"])
+
+
+def _env_float(name: str, default: Any) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError:
+        return float(default)
 
 
 def estimate_local_cost(

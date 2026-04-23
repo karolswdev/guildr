@@ -258,6 +258,17 @@ written with the same write-once immutability rule as provider rate cards.
 Replay resolves local cost profiles using this version string, not the
 current machine config at replay time.
 
+When no local snapshot exists yet, the orchestrator writes one from the current
+local profile defaults / environment:
+
+- `ORCH_LOCAL_MACHINE_ID`
+- `ORCH_LOCAL_HOURLY_COST_USD`
+- `ORCH_LOCAL_ENERGY_COST_USD_PER_KWH`
+- `ORCH_LOCAL_GPU_HOURLY_COST_USD`
+
+Once written, later environment changes create no silent mutation of that
+historical file; a new versioned snapshot is required for new assumptions.
+
 The UI must label this as an estimate, not an invoice.
 
 ## Rate Card Immutability
