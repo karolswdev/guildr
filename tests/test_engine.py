@@ -347,12 +347,51 @@ class TestLoopEvents:
         accepted = [event for event in events.events if event["type"] == "functional_acceptance_evaluated"]
         assert planned[-1]["mini_sprint_id"] == "ms_runtime_acceptance"
         assert planned[-1]["acceptance_criteria"] == ["- [ ] Imports"]
-        assert [step["step_id"] for step in steps[-3:]] == ["implementation", "testing", "review"]
+        assert [step["step_id"] for step in steps] == ["review"]
         assert accepted[-1]["passed"] is True
         assert accepted[-1]["blocking_findings"] == []
         assert accepted[-1]["recommended_actions"] == []
         assert "TEST_REPORT.md" in accepted[-1]["evidence_refs"]
         assert "REVIEW.md" in accepted[-1]["evidence_refs"]
+
+    def test_runtime_mini_sprint_progress_streams_before_review_acceptance(
+        self,
+        config: Config,
+        sprint_plan: Path,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        events = ReturningCaptureEvents()
+        (config.project_dir / "app").mkdir()
+        (config.project_dir / "app" / "__init__.py").write_text("# code\n", encoding="utf-8")
+        (config.project_dir / "TEST_REPORT.md").write_text("All tests passed.", encoding="utf-8")
+        (config.project_dir / "REVIEW.md").write_text("APPROVED", encoding="utf-8")
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events)
+
+        orchestrator._run_phase("implementation", lambda: None)
+        assert [event["type"] for event in events.events[:3]] == [
+            "next_step_packet_created",
+            "mini_sprint_planned",
+            "phase_start",
+        ]
+        assert [event["step_id"] for event in events.events if event["type"] == "mini_sprint_step_completed"] == [
+            "implementation"
+        ]
+        assert not [event for event in events.events if event["type"] == "functional_acceptance_evaluated"]
+
+        orchestrator._run_phase("testing", lambda: None)
+        assert [event["step_id"] for event in events.events if event["type"] == "mini_sprint_step_completed"] == [
+            "implementation",
+            "testing",
+        ]
+
+        orchestrator._run_phase("review", lambda: None)
+        assert [event["step_id"] for event in events.events if event["type"] == "mini_sprint_step_completed"] == [
+            "implementation",
+            "testing",
+            "review",
+        ]
+        assert len([event for event in events.events if event["type"] == "mini_sprint_planned"]) == 1
+        assert [event["passed"] for event in events.events if event["type"] == "functional_acceptance_evaluated"] == [True]
 
     def test_review_phase_blocks_acceptance_when_required_demo_missing(
         self,

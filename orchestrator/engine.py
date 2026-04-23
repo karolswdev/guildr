@@ -32,6 +32,13 @@ from orchestrator.lib.workflow import enabled_steps
 
 logger = logging.getLogger(__name__)
 
+RUNTIME_MINI_SPRINT_ID = "ms_runtime_acceptance"
+RUNTIME_MINI_SPRINT_PHASES: dict[str, str] = {
+    "implementation": "build",
+    "testing": "test",
+    "review": "review",
+}
+
 
 class PhaseFailure(Exception):
     """Raised when a phase exhausts all retries without passing validation."""
@@ -164,6 +171,8 @@ class Orchestrator:
             self.state.current_phase = name
             self.state.save()
             current_packet = self._emit_next_step_packet(current_step=name)
+            if name == "implementation" and attempt == 0:
+                self._ensure_runtime_mini_sprint_planned()
             if current_packet is None and attempt == 0:
                 pre_step_event = self._events_obj.emit(
                     "narrator_pre_step",
@@ -246,6 +255,10 @@ class Orchestrator:
                     )
                 except Exception:  # noqa: BLE001 — preview emission is best-effort
                     logger.exception("artifact preview emission failed for phase %s", name)
+                self._emit_runtime_mini_sprint_step(
+                    name,
+                    phase_done_event if isinstance(phase_done_event, dict) else None,
+                )
                 if name == "review":
                     self._emit_runtime_functional_acceptance(
                         phase_done_event if isinstance(phase_done_event, dict) else None
@@ -343,11 +356,13 @@ class Orchestrator:
         )
         self._last_memory_diff_hash = current_hash if isinstance(current_hash, str) else None
 
-    def _emit_runtime_functional_acceptance(self, phase_done_event: dict[str, Any] | None) -> None:
-        """Emit runtime mini-sprint and functional acceptance events after review."""
+    def _runtime_mini_sprint_context(
+        self,
+        phase_done_event: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         sprint_plan = self.state.project_dir / "sprint-plan.md"
         if not sprint_plan.exists():
-            return
+            return None
         tasks = parse_tasks(sprint_plan.read_text(encoding="utf-8"))
         acceptance_criteria = [item for task in tasks for item in task.acceptance_criteria]
         evidence_required = [item for task in tasks for item in task.evidence_required]
@@ -366,58 +381,85 @@ class Orchestrator:
         if demo["status"] is not None:
             demo_gate["demo_requested"] = True
             demo_gate["demo_compatibility"] = "eligible"
+        return {
+            "acceptance_criteria": acceptance_criteria,
+            "evidence_required": evidence_required,
+            "changed_files": changed_files,
+            "source_refs": source_refs,
+            "demo": demo,
+            "demo_gate": demo_gate,
+        }
 
-        mini_sprint_id = "ms_runtime_acceptance"
+    def _ensure_runtime_mini_sprint_planned(self, phase_done_event: dict[str, Any] | None = None) -> None:
+        """Emit the runtime mini-sprint plan once as the build lane starts."""
+        if self._has_runtime_mini_sprint_plan():
+            return
+        context = self._runtime_mini_sprint_context(phase_done_event)
+        if context is None:
+            return
         plan = build_mini_sprint_plan(
             title="Runtime functional acceptance",
             objective="Confirm reviewed work satisfies declared acceptance criteria.",
             scope_refs=["workflow:implementation", "workflow:testing", "workflow:review"],
-            acceptance_criteria=acceptance_criteria,
-            evidence_required=evidence_required,
-            demo_gate=demo_gate,
-            source_refs=source_refs,
-            mini_sprint_id=mini_sprint_id,
+            acceptance_criteria=context["acceptance_criteria"],
+            evidence_required=context["evidence_required"],
+            demo_gate=context["demo_gate"],
+            source_refs=context["source_refs"],
+            mini_sprint_id=RUNTIME_MINI_SPRINT_ID,
         )
         emit_mini_sprint_planned(self._events_obj, str(self.state.project_dir.name), plan)
 
-        step_results: list[dict[str, Any]] = []
-        for step_id, step_kind in (
-            ("implementation", "build"),
-            ("testing", "test"),
-            ("review", "review"),
-        ):
-            refs = refs_for_phase(step_id, self.state, include_outputs=True)
-            step_results.append({"step_id": step_id, "status": "done"})
-            emit_mini_sprint_step_completed(
-                self._events_obj,
-                str(self.state.project_dir.name),
-                mini_sprint_id=mini_sprint_id,
-                step_id=step_id,
-                step_kind=step_kind,
-                status="done",
-                artifact_refs=refs["artifact_refs"],
-                evidence_refs=refs["evidence_refs"],
-                source_event_ids=self._event_ids("phase_done", name=step_id),
-                source_refs=[f"workflow:{step_id}", *source_refs],
-            )
+    def _emit_runtime_mini_sprint_step(self, name: str, phase_done_event: dict[str, Any] | None) -> None:
+        """Emit runtime mini-sprint progress as each functional phase completes."""
+        step_kind = RUNTIME_MINI_SPRINT_PHASES.get(name)
+        if step_kind is None:
+            return
+        self._ensure_runtime_mini_sprint_planned(phase_done_event)
+        if self._has_runtime_mini_sprint_step(name):
+            return
+        refs = refs_for_phase(name, self.state, include_outputs=True)
+        source_refs = [f"workflow:{name}"]
+        if phase_done_event and phase_done_event.get("event_id"):
+            source_refs.append(f"event:{phase_done_event['event_id']}")
+        emit_mini_sprint_step_completed(
+            self._events_obj,
+            str(self.state.project_dir.name),
+            mini_sprint_id=RUNTIME_MINI_SPRINT_ID,
+            step_id=name,
+            step_kind=step_kind,
+            status="done",
+            artifact_refs=refs["artifact_refs"],
+            evidence_refs=refs["evidence_refs"],
+            source_event_ids=self._event_ids("phase_done", name=name),
+            source_refs=source_refs,
+        )
 
-        evidence_refs = self._runtime_acceptance_evidence_refs(demo["artifact_refs"])
+    def _emit_runtime_functional_acceptance(self, phase_done_event: dict[str, Any] | None) -> None:
+        """Emit runtime functional acceptance after review evidence exists."""
+        context = self._runtime_mini_sprint_context(phase_done_event)
+        if context is None:
+            return
+        step_results: list[dict[str, Any]] = []
+        for step_id in RUNTIME_MINI_SPRINT_PHASES:
+            step_results.append({"step_id": step_id, "status": "done"})
+
+        evidence_refs = self._runtime_acceptance_evidence_refs(context["demo"]["artifact_refs"])
         gate = build_functional_acceptance_gate(
-            acceptance_criteria=acceptance_criteria,
-            evidence_required=evidence_required,
+            acceptance_criteria=context["acceptance_criteria"],
+            evidence_required=context["evidence_required"],
             evidence_refs=evidence_refs,
             step_results=step_results,
             review_findings=self._runtime_review_findings(),
             review_artifact_ref="REVIEW.md",
-            demo_requested=bool(demo_gate.get("demo_requested")),
-            demo_status=demo["status"],
-            demo_artifact_refs=demo["artifact_refs"],
-            source_refs=source_refs,
+            demo_requested=bool(context["demo_gate"].get("demo_requested")),
+            demo_status=context["demo"]["status"],
+            demo_artifact_refs=context["demo"]["artifact_refs"],
+            source_refs=context["source_refs"],
         )
         emit_functional_acceptance_evaluated(
             self._events_obj,
             str(self.state.project_dir.name),
-            mini_sprint_id=mini_sprint_id,
+            mini_sprint_id=RUNTIME_MINI_SPRINT_ID,
             acceptance_gate=gate,
         )
 
@@ -482,6 +524,21 @@ class Orchestrator:
             if isinstance(event_id, str):
                 ids.append(event_id)
         return ids
+
+    def _has_runtime_mini_sprint_plan(self) -> bool:
+        return any(
+            event.get("type") == "mini_sprint_planned" and
+            event.get("mini_sprint_id") == RUNTIME_MINI_SPRINT_ID
+            for event in self._recent_events()
+        )
+
+    def _has_runtime_mini_sprint_step(self, step_id: str) -> bool:
+        return any(
+            event.get("type") == "mini_sprint_step_completed" and
+            event.get("mini_sprint_id") == RUNTIME_MINI_SPRINT_ID and
+            event.get("step_id") == step_id
+            for event in self._recent_events()
+        )
 
     def _recent_events(self) -> list[dict[str, Any]]:
         events = getattr(self._events_obj, "events", None)

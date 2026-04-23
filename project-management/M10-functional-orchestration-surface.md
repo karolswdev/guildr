@@ -522,6 +522,35 @@ Delivered 2026-04-23:
 - Engine coverage proves reviewed work produces accepted functional state and
   explicit missing demo proof produces blocked state with recommended actions.
 
+### Slice F9 — Streaming Runtime Mini-Sprint Lane
+
+- Emit runtime mini-sprint plan before implementation starts.
+- Emit build/test/review progress as each phase completes.
+- Keep final functional acceptance at review completion.
+- Avoid duplicate runtime plan or step rows on retries/rebuilds.
+
+Evidence:
+
+```bash
+uv run pytest -q tests/test_engine.py tests/test_functional_orchestration.py tests/test_event_schema.py
+uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py
+./web/frontend/build.sh
+git diff --check -- orchestrator/engine.py tests/test_engine.py project-management/STATUS.md project-management/M10-functional-orchestration-surface.md
+```
+
+Delivered 2026-04-23:
+
+- Runtime emits `mini_sprint_planned` once before `phase_start` for
+  implementation, giving the PWA a functional lane before build work finishes.
+- Runtime emits `mini_sprint_step_completed` for implementation, testing, and
+  review when each phase completes successfully.
+- Runtime review no longer backfills implementation/testing step rows in
+  review-only isolation; those rows arrive when those phases actually complete.
+- Duplicate guards prevent re-emitting the runtime plan or per-phase step rows
+  when the event bus already carries them.
+- Acceptance remains review-bound and uses the streamed step state plus
+  evidence/demo/review refs for the final verdict.
+
 ## Quality Gates
 
 - Event integrity: every new functional event is registered in backend and
@@ -560,7 +589,6 @@ Delivered 2026-04-23:
 
 ## Immediate Next Step
 
-Run Slice F9: improve the functional mini-sprint lane by streaming runtime
-mini-sprint progress earlier than review completion, so the PWA shows planning,
-build, test, review, demo, and acceptance progression as it happens rather than
-receiving the whole functional lane at the review boundary.
+Run Slice F10: add demo ceremony runtime scheduling into the functional lane,
+so eligible mini-sprints can emit demo plan/capture/presented events between
+test/review/acceptance rather than only showing compatibility metadata.
