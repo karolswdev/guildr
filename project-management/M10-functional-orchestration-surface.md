@@ -674,6 +674,39 @@ Delivered 2026-04-23:
 - Frontend helper coverage now asserts both the expansion toggle and the
   expanded inline detail rail.
 
+### Slice F14 — Lane-Native Cross-Highlighting
+
+- Make the lane selection visible beyond the rail itself so the operator can
+  immediately see which object, demo proof, or acceptance block the selected
+  segment is referring to.
+- Keep the implementation frontend-only and replay-derived: selection is view
+  state in `GameShell`, while related atoms/evidence are derived from the
+  existing workflow, demo, and acceptance fold.
+- Reuse existing scene focus plumbing instead of inventing a separate highlight
+  system for the 3D map.
+
+Evidence:
+
+```bash
+uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py
+./web/frontend/build.sh
+git diff --check -- web/frontend/src/game/GameShell.ts web/frontend/tests/test_game_map.py project-management/STATUS.md project-management/M10-functional-orchestration-surface.md
+```
+
+Delivered 2026-04-23:
+
+- `GameShell` now tracks lane focus separately from expansion, so both
+  selected and expanded segments can drive cross-surface highlighting.
+- The scene now reuses `SceneManager.setStoryFocus(...)` to dim unrelated atoms
+  and spotlight the build/test/review/demo/acceptance target implied by the
+  selected lane segment.
+- Object Lens, Story Lens, and the Next-Step functional blocks now render
+  highlighted wrappers tied to the active lane segment, so demo proof and
+  acceptance evidence read as part of the same mini-sprint lane instead of as
+  disconnected panels.
+- Frontend helper coverage now asserts lane-highlight markers in the rendered
+  rail, and source-level coverage checks the new cross-highlight surfaces.
+
 ## Quality Gates
 
 - Event integrity: every new functional event is registered in backend and
@@ -712,6 +745,6 @@ Delivered 2026-04-23:
 
 ## Immediate Next Step
 
-Run Slice F14: add lane-native cross-highlighting so selecting an expanded lane
-segment also highlights the related object/demo/acceptance evidence in the
-scene and sheet surfaces.
+Run Slice F15: add lane-native replay jumps so highlighted lane segments and
+their evidence blocks can scrub the timeline or open the exact replay window
+that produced the current build/test/demo/review/acceptance proof.

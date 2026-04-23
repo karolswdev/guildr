@@ -248,6 +248,9 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "data-functional-lane-action" in text
     assert "functional-lane-details" in text
     assert "data-functional-lane-toggle" in text
+    assert "data-functional-lane-highlighted" in text
+    assert "focusedFunctionalLaneStep" in text
+    assert "functionalLaneSurfaceStyle" in text
     assert "Functional evidence" in text
     assert "Blocking findings" in text
     assert "functional-acceptance-actions" in text
@@ -292,12 +295,14 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "founderCard" in text
     assert "object-lens-sheet" in text
     assert "renderObjectLens" in text
+    assert "object-lane-focus" in text
     assert "objectCommandStyle" in text
     assert "Produced" in text
     assert "Consumed" in text
     assert "story-lens-sheet" in text
     assert "story-lens-control" in text
     assert "renderStoryLens" in text
+    assert "story-next-step-panel" in text
     assert "story-card" in text
     assert "storyDigestCard" in text
     assert "story-discussion-card" in text
@@ -656,12 +661,14 @@ def test_functional_lane_rail_helper(tmp_path: Path) -> None:
           { id: 'review', handler: 'review' },
         ];
 
-        const html = functionalLaneRail(snapshot, workflow, 'acceptance');
+        const html = functionalLaneRail(snapshot, workflow, 'acceptance', 'demo');
         assert.ok(html.includes('data-role="functional-lane-rail"'));
         assert.ok(html.includes('data-functional-lane-step="build"'));
         assert.ok(html.includes('data-functional-lane-step="demo"'));
         assert.ok(html.includes('data-functional-lane-step="acceptance"'));
         assert.ok(html.includes('data-functional-lane-toggle="acceptance"'));
+        assert.ok(html.includes('data-functional-lane-highlighted="true"'));
+        assert.ok(html.includes('data-functional-lane-step-id="demo"'));
         assert.ok(html.includes('data-role="functional-lane-actions"'));
         assert.ok(html.includes('data-functional-lane-action="demo-open"'));
         assert.ok(html.includes('data-functional-lane-action="acceptance-repair"'));
