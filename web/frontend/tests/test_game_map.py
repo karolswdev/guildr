@@ -254,6 +254,11 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "cost-phase-rail" in text
     assert "cost-atom-rail" in text
     assert "cost-source-rail" in text
+    assert "budget-gate-control" in text
+    assert "budget-gate-card" in text
+    assert "budgetDecisionPayload" in text
+    assert "/gates/" in text
+    assert "/decide" in text
     assert "founding-team-brief" in text
     assert "founderCard" in text
     assert "object-lens-sheet" in text
@@ -330,7 +335,7 @@ def test_cost_summary_card_helper(tmp_path: Path) -> None:
           },
         };
 
-        const { costSummaryCard } = await import('__BUNDLE__');
+        const { budgetDecisionPayload, budgetGateControls, costSummaryCard } = await import('__BUNDLE__');
 
         const bucket = (effectiveUsd, inputTokens, outputTokens, unknownCostCount = 0) => ({
           effectiveUsd,
@@ -390,6 +395,37 @@ def test_cost_summary_card_helper(tmp_path: Path) -> None:
         assert.ok(html.includes('task&lt;1&gt;'));
         assert.ok(!html.includes('local<llama>'));
         assert.ok(!html.includes('task<1>'));
+
+        const controls = budgetGateControls(cost);
+        assert.ok(controls.includes('data-role="budget-gate-control"'));
+        assert.ok(controls.includes('data-role="budget-gate-card"'));
+        assert.ok(controls.includes('data-budget-gate-action="approved"'));
+        assert.ok(controls.includes('data-budget-gate-action="raise"'));
+        assert.ok(controls.includes('data-budget-gate-action="reject"'));
+        assert.ok(controls.includes('budget_phase'));
+        assert.ok(controls.includes('100.00'));
+
+        const escapedControls = budgetGateControls({ ...cost, openBudgetGateIds: ['budget<gate>'] });
+        assert.ok(escapedControls.includes('budget&lt;gate&gt;'));
+        assert.ok(!escapedControls.includes('budget<gate>'));
+
+        const emptyControls = budgetGateControls({ ...cost, openBudgetGateIds: [] });
+        assert.ok(emptyControls.includes('No budget gate is waiting'));
+
+        const approved = budgetDecisionPayload(cost, 'approved', 'continue', null);
+        assert.equal(approved.decision, 'approved');
+        assert.equal(approved.new_run_budget_usd, null);
+        assert.equal(approved.budget_at_decision.run_budget_usd, 10);
+        assert.equal(approved.budget_at_decision.remaining_run_budget_usd, 8.5);
+
+        const raised = budgetDecisionPayload(cost, 'approved', 'raise', 20);
+        assert.equal(raised.new_run_budget_usd, 20);
+        assert.equal(raised.budget_at_decision.run_budget_usd, 20);
+        assert.equal(raised.budget_at_decision.remaining_run_budget_usd, 18.7655);
+
+        const rejected = budgetDecisionPayload(cost, 'rejected', 'stop', null);
+        assert.equal(rejected.decision, 'rejected');
+        assert.equal(rejected.reason, 'stop');
         """,
         include_three=True,
     )

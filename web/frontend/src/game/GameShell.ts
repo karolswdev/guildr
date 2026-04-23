@@ -30,6 +30,20 @@ export type ProjectBrief = {
 };
 
 type ComposeAction = "shape" | "interject" | "intercept";
+type BudgetGateDecision = "approved" | "rejected";
+
+type BudgetGateDecisionBody = {
+  decision: BudgetGateDecision;
+  reason: string;
+  new_run_budget_usd: number | null;
+  new_phase_budget_usd: number | null;
+  budget_at_decision: {
+    run_budget_usd: number | null;
+    phase_budget_usd: number | null;
+    remaining_run_budget_usd: number | null;
+    remaining_phase_budget_usd: number | null;
+  };
+};
 
 type NarrationCue = {
   key: string;
@@ -854,12 +868,45 @@ export class GameShell {
           </div>
         </div>
         ${costSummaryCard(snapshot.cost)}
+        ${budgetGateControls(snapshot.cost)}
       </div>
     `;
     (this.costSheet.querySelector('[data-action="cost-close"]') as HTMLButtonElement | null)?.addEventListener("click", () => {
       this.costSheet.style.display = "none";
     });
     (this.costSheet.querySelector('[data-action="cost-open-timeline"]') as HTMLButtonElement | null)?.addEventListener("click", () => this.showTimeline(5000));
+    this.costSheet.querySelectorAll<HTMLButtonElement>("[data-budget-gate-action]").forEach((button) => {
+      button.addEventListener("click", () => void this.decideBudgetGate(button));
+    });
+  }
+
+  private async decideBudgetGate(button: HTMLButtonElement): Promise<void> {
+    const gateId = button.dataset.gateId || "";
+    const action = button.dataset.budgetGateAction || "";
+    if (!gateId || !this.lastSnapshot) {
+      return;
+    }
+    const card = button.closest('[data-role="budget-gate-card"]') as HTMLElement | null;
+    const input = card?.querySelector('[data-role="budget-gate-run-budget"]') as HTMLInputElement | null;
+    const newRunBudget = action === "raise" ? inputNumberOrNull(input?.value ?? "") : null;
+    const decision: BudgetGateDecision = action === "reject" ? "rejected" : "approved";
+    const reason = action === "raise"
+      ? "Raised run budget from PWA Economics sheet."
+      : action === "reject"
+        ? "Stopped from PWA Economics sheet."
+        : "Continued from PWA Economics sheet.";
+    const body = budgetDecisionPayload(this.lastSnapshot.cost, decision, reason, newRunBudget);
+    button.disabled = true;
+    button.textContent = "Sending";
+    try {
+      await apiPost(`/api/projects/${encodeURIComponent(this.options.projectId)}/gates/${encodeURIComponent(gateId)}/decide`, body);
+      this.options.engine.resumeLive();
+    } finally {
+      button.disabled = false;
+      if (this.lastSnapshot) {
+        this.renderCostSheet(this.lastSnapshot);
+      }
+    }
   }
 
   private renderNextStepSheet(snapshot: EngineSnapshot): void {
@@ -1335,6 +1382,7 @@ function fallbackHtml(workflow: WorkflowStep[], snapshot: EngineSnapshot, projec
       </div>
       <div data-role="cost-sheet" style="padding: 12px; border: 1px solid #7A5C23; border-radius: 8px; background: #14120C;">
         ${costSummaryCard(snapshot.cost)}
+        ${budgetGateControls(snapshot.cost)}
       </div>
       ${snapshot.latestDigest ? `
         <div data-role="narrative-digest" style="padding: 12px; border: 1px solid #2A3042; border-radius: 8px; background: #141822;">
@@ -1405,6 +1453,65 @@ export function costSummaryCard(cost: CostSnapshot): string {
   `;
 }
 
+export function budgetGateControls(cost: CostSnapshot): string {
+  if (cost.openBudgetGateIds.length === 0) {
+    return `
+      <div data-role="budget-gate-control" style="${sheetPanelStyle()}">
+        <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 5px;">Budget gates</div>
+        <div style="font-size: 12px; color: #C7CAD6; line-height: 1.35;">No budget gate is waiting. Defaults stay advisory unless hard caps are explicitly enabled.</div>
+      </div>
+    `;
+  }
+  const suggestedRunBudget = suggestRunBudget(cost);
+  const cards = cost.openBudgetGateIds.map((gateId) => `
+    <div data-role="budget-gate-card" data-gate-id="${escapeHtml(gateId)}" style="display: grid; gap: 8px; padding: 10px; border: 1px solid rgba(224,155,42,0.34); border-radius: 8px; background: rgba(224,155,42,0.08);">
+      <div style="display: flex; align-items: start; justify-content: space-between; gap: 8px;">
+        <div style="min-width: 0;">
+          <div style="font-size: 10px; color: #E09B2A; text-transform: uppercase; font-weight: 900;">Budget gate waiting</div>
+          <div style="font-size: 13px; color: #E8EAF0; font-weight: 900; margin-top: 3px; overflow-wrap: anywhere;">${escapeHtml(gateId)}</div>
+        </div>
+        <span style="${refChipStyle()}">${escapeHtml(cost.runHalted ? "halted" : "pending")}</span>
+      </div>
+      <div style="display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, minmax(82px, auto)); gap: 7px; align-items: center;">
+        <input data-role="budget-gate-run-budget" data-gate-id="${escapeHtml(gateId)}" type="number" min="0" step="0.01" value="${escapeHtml(suggestedRunBudget)}" aria-label="New run budget" style="min-width: 0; height: 36px; box-sizing: border-box; border: 1px solid rgba(232,234,240,0.14); border-radius: 999px; background: #10141E; color: #E8EAF0; padding: 0 11px; font: 800 12px Inter, system-ui, sans-serif;" />
+        <button data-budget-gate-action="approved" data-gate-id="${escapeHtml(gateId)}" style="${smallCostButtonStyle("#41C7C7")}">Continue</button>
+        <button data-budget-gate-action="raise" data-gate-id="${escapeHtml(gateId)}" style="${smallCostButtonStyle("#D9B84D")}">Raise</button>
+        <button data-budget-gate-action="reject" data-gate-id="${escapeHtml(gateId)}" style="${smallCostButtonStyle("#D96A6A")}">Stop</button>
+      </div>
+    </div>
+  `).join("");
+
+  return `
+    <div data-role="budget-gate-control" style="display: grid; gap: 7px;">
+      <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Budget gate controls</div>
+      ${cards}
+    </div>
+  `;
+}
+
+export function budgetDecisionPayload(
+  cost: CostSnapshot,
+  decision: BudgetGateDecision,
+  reason: string,
+  newRunBudgetUsd: number | null,
+): BudgetGateDecisionBody {
+  const runBudget = newRunBudgetUsd ?? cost.runBudgetUsd;
+  return {
+    decision,
+    reason,
+    new_run_budget_usd: newRunBudgetUsd,
+    new_phase_budget_usd: null,
+    budget_at_decision: {
+      run_budget_usd: runBudget,
+      phase_budget_usd: cost.phaseBudgetUsd,
+      remaining_run_budget_usd: newRunBudgetUsd !== null
+        ? Math.max(0, newRunBudgetUsd - cost.effectiveUsd)
+        : cost.remainingRunBudgetUsd,
+      remaining_phase_budget_usd: cost.remainingPhaseBudgetUsd,
+    },
+  };
+}
+
 function costBucketRail(label: string, buckets: Record<string, CostBucket>, role: string): string {
   const rows = Object.entries(buckets)
     .sort(([, a], [, b]) => (b.effectiveUsd - a.effectiveUsd) || (tokenCount(b) - tokenCount(a)))
@@ -1447,6 +1554,17 @@ function tokenCount(bucket: CostBucket): number {
 
 function formatInteger(value: number): string {
   return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function suggestRunBudget(cost: CostSnapshot): string {
+  const current = cost.runBudgetUsd ?? cost.effectiveUsd;
+  const suggested = Math.max(100, current * 1.5, cost.effectiveUsd + 25);
+  return suggested.toFixed(2);
+}
+
+function inputNumberOrNull(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 export function memoryStatusCard(snapshot: EngineSnapshot): string {
@@ -2264,6 +2382,19 @@ function ghostButtonStyle(): string {
 
 function primaryButtonStyle(): string {
   return "height: 44px; border: 0; border-radius: 999px; background: #E8EAF0; color: #0D0F14; font-size: 13px; font-weight: 900;";
+}
+
+function smallCostButtonStyle(color: string): string {
+  return [
+    "height: 36px",
+    "border: 1px solid rgba(232,234,240,0.14)",
+    "border-radius: 999px",
+    "background: rgba(13,15,20,0.58)",
+    `color: ${color}`,
+    "font: 900 11px Inter, system-ui, sans-serif",
+    "padding: 0 10px",
+    "white-space: nowrap",
+  ].join("; ");
 }
 
 function escapeHtml(text: string): string {

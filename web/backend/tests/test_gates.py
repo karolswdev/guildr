@@ -189,6 +189,42 @@ async def test_budget_gate_decision_emits_budget_events(
     assert decided["budget_at_decision"]["remaining_run_budget_usd"] == 7.5
 
 
+@pytest.mark.asyncio
+async def test_budget_gate_decision_without_raise_keeps_budget_fields_explicit(
+    app: FastAPI,
+    fresh_store: GateRegistryStore,
+    tmp_path: Path,
+) -> None:
+    fresh_store.ensure("proj-budget-approve").open_gate("budget_run")
+
+    event_store = EventStore()
+    transport = ASGITransport(app=app)
+    with (
+        patch("web.backend.routes.stream.get_event_store", return_value=event_store),
+        patch("web.backend.routes.stream._projects_base", return_value=tmp_path),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(
+                "/api/projects/proj-budget-approve/gates/budget_run/decide",
+                json={"decision": "approved", "reason": "Continue without raising"},
+            )
+        events = [
+            json.loads(line)
+            for line in event_log_path("proj-budget-approve").read_text(encoding="utf-8").splitlines()
+        ]
+
+    assert response.status_code == 200
+    assert [event["type"] for event in events] == ["budget_gate_decided"]
+    decided = events[0]
+    assert decided["decision"] == "approved"
+    assert decided["new_run_budget_usd"] is None
+    assert decided["new_phase_budget_usd"] is None
+    assert decided["budget_at_decision"]["run_budget_usd"] is None
+    assert decided["budget_at_decision"]["phase_budget_usd"] is None
+    assert decided["budget_at_decision"]["remaining_run_budget_usd"] is None
+    assert decided["budget_at_decision"]["remaining_phase_budget_usd"] is None
+
+
 class TestGateRegistryStore:
     """Unit tests for the per-project store container."""
 

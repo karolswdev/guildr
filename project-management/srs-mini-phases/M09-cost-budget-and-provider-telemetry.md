@@ -36,12 +36,15 @@ SRS §4.9, §8.1, §11, §14 M4. Cost truth is what separates "we have a run" fr
   - [x] Hard-cap halting requires explicit operator configuration; advisory defaults may warn but must not halt execution.
 - [ ] Budget state on every `usage_recorded`: `remaining_run_budget_usd`, `remaining_phase_budget_usd` (explicit null when unset).
 - [ ] Budget gate: on threshold, emit `budget_halted`; workflow pauses; operator resumes or cancels via existing gate path.
+  - [x] PWA Economics sheet can decide open budget gates through the canonical `/gates/{gate}/decide` route.
+  - [x] Budget gate decisions preserve explicit null budget fields when the operator continues without raising limits.
+  - [ ] Engine-side budget threshold enforcement still needs to open/pause the gate from configured hard caps.
 - [ ] Provider telemetry adapter for llama.cpp (local_estimate); keep OpenAI-compatible parsing for `provider_reported`.
 - [ ] Provider health pings surfaced as events for PWA provider body state.
 - [ ] PWA Economics lens: cost by provider / model / role / phase / atom; ripple on expensive paths; budget dial on HUD.
   - [x] First-pass map-native Economics sheet shows replay-folded effective/provider/estimated/unknown totals, budget state, source counts, and provider/model/role/phase/atom rails from `CostSnapshot`.
   - [x] Bottom HUD cost control opens the Economics sheet in the same PWA map surface and WebGL fallback renders the same summary.
-  - [ ] Add active budget dial/resume/cancel controls once backend budget gates are writable through the control path.
+  - [x] Add active budget dial/resume/cancel controls once backend budget gates are writable through the control path.
   - [ ] Add expensive-path ripple ranking beyond the existing per-atom cost ring.
 - [ ] `rollup()` continues to join with zero orphans; add budget totals to the `RunSummary`.
 
@@ -73,6 +76,7 @@ jq -c 'select(.cost.source == null or (.remaining_run_budget_usd == null and .re
 
 - 2026-04-22 M09 slice A: PWA Economics surface landed in `web/frontend/src/game/GameShell.ts`. The HUD cost chip is now `cost-control` and opens `cost-sheet`; `costSummaryCard()` renders effective/provider/estimated/unknown totals, token totals, budget state, source counts, and provider/model/role/phase/atom rails. WebGL fallback includes the same cost summary. Evidence: `uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py` -> 27 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,354,618 bytes.
 - 2026-04-23 M09 slice B0: permissive budget defaults landed. `orchestrator.lib.budget.BudgetConfig` defines high advisory defaults (`$100` run / `$25` phase), no hard caps, and `halt_on_hard_cap=false`; `Config` loads YAML/env overrides without allowing surprise halts. Evidence: `uv run pytest -q tests/test_config.py` -> 18 passed.
+- 2026-04-23 M09 slice B1: PWA budget gate controls landed. `GameShell` now renders `budget-gate-control` inside the Economics sheet whenever `CostSnapshot.openBudgetGateIds` is non-empty, with Continue, Raise, and Stop actions posting to the existing gate decision route. The decision payload carries the folded budget snapshot so replay remains event-ledger driven. Backend tests now prove approving without a raise keeps budget fields explicitly null. Evidence: `uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py web/backend/tests/test_gates.py` -> 45 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,359,926 bytes.
 
 ## Known traps
 
