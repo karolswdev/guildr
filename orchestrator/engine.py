@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from orchestrator.lib.artifact_preview import emit_phase_artifact_previews
+from orchestrator.lib.budget import BudgetHalted
 from orchestrator.lib.config import Config
 from orchestrator.lib.logger import setup_phase_logger
 from orchestrator.lib.loop_refs import refs_for_phase
@@ -52,6 +53,8 @@ class Orchestrator:
         self.config = config
         self.state = State(config.project_dir)
         self.state.load()
+        self.state.config = config
+        self.state.budget_config = config.budget
         self._gate_registry = gate_registry
         self._events = events
         self._git_ops = git_ops
@@ -64,6 +67,7 @@ class Orchestrator:
         self._session_runners: dict[str, Any] = dict(session_runners or {})
         self._endpoints = endpoints
         self.state.events = events
+        self.state.gate_registry = gate_registry
 
     # -- lazy accessors (import on first use) --------------------------------
 
@@ -121,6 +125,7 @@ class Orchestrator:
     def run(self, *, start_at: str | None = None) -> None:
         """Execute the full SDLC pipeline, optionally resuming at one step."""
         self.state.events = self._events_obj
+        self.state.gate_registry = self._gate_registry_obj
         self._ensure_git_repo()
         self._ensure_qwendea()
         steps = enabled_steps(self.config.project_dir)
@@ -178,6 +183,17 @@ class Orchestrator:
             )
             try:
                 self._invoke_handler(fn, phase_logger=phase_logger, step=step)
+            except BudgetHalted as e:
+                self._events_obj.emit("phase_error", name=name, error=str(e), budget_gate=e.gate_id)
+                emit_loop_event(
+                    self._events_obj,
+                    "loop_blocked",
+                    step=name,
+                    error=str(e),
+                    attempt=attempt,
+                    **refs_for_phase(name, self.state, include_outputs=False),
+                )
+                raise
             except Exception as e:
                 phase_error_event = self._events_obj.emit("phase_error", name=name, error=str(e))
                 self._run_narrator_sidecar(

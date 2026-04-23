@@ -465,8 +465,16 @@ export class EventEngine {
     this.cost.sourceCounts[source] += 1;
 
     const budget = objectValue(event.budget);
+    const runBudget = numberOrNull(budget.run_budget_usd);
+    const phaseBudget = numberOrNull(budget.phase_budget_usd);
     const remainingRun = numberOrNull(budget.remaining_run_budget_usd);
     const remainingPhase = numberOrNull(budget.remaining_phase_budget_usd);
+    if (runBudget !== null) {
+      this.cost.runBudgetUsd = runBudget;
+    }
+    if (phaseBudget !== null) {
+      this.cost.phaseBudgetUsd = phaseBudget;
+    }
     if (remainingRun !== null) {
       this.cost.remainingRunBudgetUsd = remainingRun;
     }

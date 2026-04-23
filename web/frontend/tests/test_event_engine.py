@@ -88,6 +88,7 @@ def test_cost_replay_and_budget_gate(tmp_path: Path) -> None:
             model: 'm',
             role: 'architect',
             usage: { input_tokens: 10, output_tokens: 5 },
+            budget: { run_budget_usd: 10, phase_budget_usd: 2, remaining_run_budget_usd: 9.75, remaining_phase_budget_usd: 1.75 },
             cost: { effective_cost: 0.25, provider_reported_cost: 0.25, estimated_cost: null, source: 'provider_reported' },
           },
           {
@@ -110,12 +111,14 @@ def test_cost_replay_and_budget_gate(tmp_path: Path) -> None:
         assert.equal(cost.effectiveUsd, 0.25);
         assert.equal(cost.providerReportedUsd, 0.25);
         assert.equal(cost.unknownCostCount, 1);
+        assert.equal(cost.runBudgetUsd, 10);
+        assert.equal(cost.phaseBudgetUsd, 2);
         assert.equal(cost.remainingRunBudgetUsd, 7.5);
         assert.equal(cost.runHalted, true);
         engine.scrubTo(0);
         cost = engine.snapshot().cost;
         assert.equal(cost.effectiveUsd, 0.25);
-        assert.equal(cost.remainingRunBudgetUsd, null);
+        assert.equal(cost.remainingRunBudgetUsd, 9.75);
         assert.equal(cost.runHalted, false);
         """,
     )

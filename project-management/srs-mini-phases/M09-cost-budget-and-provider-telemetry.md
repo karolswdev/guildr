@@ -35,10 +35,11 @@ SRS §4.9, §8.1, §11, §14 M4. Cost truth is what separates "we have a run" fr
   - [x] Default runtime posture is permissive: `$100` advisory run budget, `$25` advisory phase budget, no hard caps, and `halt_on_hard_cap=false`.
   - [x] Hard-cap halting requires explicit operator configuration; advisory defaults may warn but must not halt execution.
 - [ ] Budget state on every `usage_recorded`: `remaining_run_budget_usd`, `remaining_phase_budget_usd` (explicit null when unset).
+  - [x] Central usage/opencode audit paths attach explicit `budget` state with run/phase caps and remaining values.
 - [ ] Budget gate: on threshold, emit `budget_halted`; workflow pauses; operator resumes or cancels via existing gate path.
   - [x] PWA Economics sheet can decide open budget gates through the canonical `/gates/{gate}/decide` route.
   - [x] Budget gate decisions preserve explicit null budget fields when the operator continues without raising limits.
-  - [ ] Engine-side budget threshold enforcement still needs to open/pause the gate from configured hard caps.
+  - [x] Engine-side budget evaluation emits advisory warnings, hard-cap exceeded events, and opens/waits on budget gates only when hard caps plus `halt_on_hard_cap` are explicitly configured.
 - [ ] Provider telemetry adapter for llama.cpp (local_estimate); keep OpenAI-compatible parsing for `provider_reported`.
 - [ ] Provider health pings surfaced as events for PWA provider body state.
 - [ ] PWA Economics lens: cost by provider / model / role / phase / atom; ripple on expensive paths; budget dial on HUD.
@@ -77,6 +78,7 @@ jq -c 'select(.cost.source == null or (.remaining_run_budget_usd == null and .re
 - 2026-04-22 M09 slice A: PWA Economics surface landed in `web/frontend/src/game/GameShell.ts`. The HUD cost chip is now `cost-control` and opens `cost-sheet`; `costSummaryCard()` renders effective/provider/estimated/unknown totals, token totals, budget state, source counts, and provider/model/role/phase/atom rails. WebGL fallback includes the same cost summary. Evidence: `uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py` -> 27 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,354,618 bytes.
 - 2026-04-23 M09 slice B0: permissive budget defaults landed. `orchestrator.lib.budget.BudgetConfig` defines high advisory defaults (`$100` run / `$25` phase), no hard caps, and `halt_on_hard_cap=false`; `Config` loads YAML/env overrides without allowing surprise halts. Evidence: `uv run pytest -q tests/test_config.py` -> 18 passed.
 - 2026-04-23 M09 slice B1: PWA budget gate controls landed. `GameShell` now renders `budget-gate-control` inside the Economics sheet whenever `CostSnapshot.openBudgetGateIds` is non-empty, with Continue, Raise, and Stop actions posting to the existing gate decision route. The decision payload carries the folded budget snapshot so replay remains event-ledger driven. Backend tests now prove approving without a raise keeps budget fields explicitly null. Evidence: `uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py web/backend/tests/test_gates.py` -> 45 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,359,926 bytes.
+- 2026-04-23 M09 slice B2: runtime hard-cap enforcement landed. `BudgetRuntime` tracks cumulative run/phase spend across central `usage_recorded` emitters, attaches explicit budget state to each payload, emits `budget_warning` for advisory thresholds, emits `budget_exceeded` for hard caps, and opens/waits on `budget_gate_opened` only when `halt_on_hard_cap=true`. Opencode session audit uses the same evaluator, and the engine treats rejected budget gates as a halt rather than a retryable phase failure. Evidence: `uv run pytest -q tests/test_budget.py tests/test_config.py tests/test_opencode_audit.py web/frontend/tests/test_event_engine.py tests/test_engine.py` -> 83 passed; `uv run pytest -q tests/test_usage_summary.py tests/test_usage_writer.py tests/test_events.py web/backend/tests/test_gates.py` -> 33 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,360,210 bytes.
 
 ## Known traps
 

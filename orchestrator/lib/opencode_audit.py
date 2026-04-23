@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from orchestrator.lib.budget import apply_budget_to_usage, emit_budget_events
 from orchestrator.lib.event_schema import new_event_id
 from orchestrator.lib.local_cost import estimate_local_cost, load_local_cost_profile
 from orchestrator.lib.memory_palace import wakeup_hash
@@ -191,8 +192,10 @@ def _emit_usage(
     )
 
     event_bus = getattr(state, "events", None)
+    evaluation = apply_budget_to_usage(state, payload)
     if event_bus is not None:
         event_bus.emit("usage_recorded", **payload)
+        emit_budget_events(state, event_bus, evaluation)
 
     write_usage(project_dir, payload)
 

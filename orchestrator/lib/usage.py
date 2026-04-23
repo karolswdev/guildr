@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from orchestrator.lib.budget import apply_budget_to_usage, emit_budget_events
 from orchestrator.lib.event_schema import new_event_id
 from orchestrator.lib.local_cost import estimate_local_cost, load_local_cost_profile
 
@@ -112,9 +113,11 @@ def emit_llm_usage(
         runtime_extra=runtime_extra,
         rate_card_version=rate_card_version,
     )
+    evaluation = apply_budget_to_usage(state, payload)
     event_bus.emit("usage_recorded", **payload)
     from orchestrator.lib.usage_writer import write_usage
     write_usage(getattr(state, "project_dir", None), payload)
+    emit_budget_events(state, event_bus, evaluation)
 
 
 def emit_provider_error(
@@ -193,9 +196,11 @@ def emit_advisor_usage(
         error=error,
         provider_metadata=provider_metadata,
     )
+    evaluation = apply_budget_to_usage(state, payload)
     event_bus.emit("usage_recorded", **payload)
     from orchestrator.lib.usage_writer import write_usage
     write_usage(getattr(state, "project_dir", None), payload)
+    emit_budget_events(state, event_bus, evaluation)
     return call_id
 
 
