@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { AssetManager } from "./assets/AssetManager.js";
 import { EventEngine } from "./EventEngine.js";
 import { SceneManager, type SpatialViewLevel } from "./SceneManager.js";
-import type { ArtifactPreview, DemoArtifact, DemoPlan, DemoStatus, DemoViewport, EngineSnapshot, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
+import type { ArtifactPreview, DemoArtifact, DemoPlan, DemoStatus, DemoViewport, DiscussionEntry, DiscussionHighlight, EngineSnapshot, NarrativeDigest, NextStepPacket, OperatorIntentState, WorkflowStep } from "./types.js";
 
 type GameShellOptions = {
   projectId: string;
@@ -983,11 +983,16 @@ export class GameShell {
             ${digests.map((digest) => storyDigestCard(digest)).join("")}
           </div>
         ` : `<div style="${sheetEmptyStyle()}">No narrative digests have been emitted into the event ledger yet.</div>`}
-        ${highlights.length > 0 ? sheetSection("Discussion highlights", highlights.map((highlight) => highlight.text), "No highlights yet.") : ""}
+        ${highlights.length > 0 ? `
+          <div data-role="story-highlight-rail" style="display: grid; gap: 6px;">
+            <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Discussion highlights</div>
+            ${highlights.map((highlight) => discussionHighlightCard(highlight)).join("")}
+          </div>
+        ` : ""}
         ${discussionRows.length > 0 ? `
           <div data-role="story-discussion-rail" style="display: grid; gap: 6px;">
             <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Recent discussion</div>
-            ${discussionRows.map((entry) => `<div style="${sheetLineStyle()}"><strong style="color: #E8EAF0;">${escapeHtml(entry.speaker)} · ${escapeHtml(entry.entryType.replace(/_/g, " "))}</strong><br>${escapeHtml(entry.text)}</div>`).join("")}
+            ${discussionRows.map((entry) => discussionEntryCard(entry)).join("")}
           </div>
         ` : ""}
         <div style="display: grid; grid-template-columns: minmax(0, 1fr) ${next?.step ? "118px" : "0"}; gap: 8px; align-items: center;">
@@ -1494,11 +1499,12 @@ function founderCard(persona: ProjectBrief["founding_team"][number]): string {
   `;
 }
 
-function storyDigestCard(digest: NarrativeDigest): string {
+export function storyDigestCard(digest: NarrativeDigest): string {
   const highlights = digest.highlights.slice(0, 3).map((highlight) => highlight.text);
   const refs = [
     ...digest.sourceEventIds.slice(0, 5).map((eventId) => `event:${eventId}`),
     ...digest.artifactRefs.slice(0, 4),
+    ...memoryProvenanceRefs(digest.memoryRefs, digest.wakeUpHash),
   ];
   return `
     <div data-role="story-card" style="display: grid; gap: 7px; padding: 10px; border: 1px solid rgba(217,184,77,0.24); border-radius: 8px; background: rgba(217,184,77,0.07);">
@@ -1515,6 +1521,43 @@ function storyDigestCard(digest: NarrativeDigest): string {
       ${sheetRefs("Sources", refs)}
     </div>
   `;
+}
+
+export function discussionEntryCard(entry: DiscussionEntry): string {
+  const refs = [
+    ...entry.sourceRefs.slice(0, 4),
+    ...entry.artifactRefs.slice(0, 3),
+    ...memoryProvenanceRefs(entry.memoryRefs, entry.wakeUpHash),
+  ];
+  return `
+    <div data-role="story-discussion-card" style="${sheetLineStyle()}">
+      <strong style="color: #E8EAF0;">${escapeHtml(entry.speaker)} · ${escapeHtml(entry.entryType.replace(/_/g, " "))}</strong>
+      <br>${escapeHtml(entry.text)}
+      <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px;">${refs.map((ref) => `<span style="${refChipStyle()}">${escapeHtml(ref)}</span>`).join("") || `<span style="${emptyChipStyle()}">Sources pending</span>`}</div>
+    </div>
+  `;
+}
+
+export function discussionHighlightCard(highlight: DiscussionHighlight): string {
+  const refs = [
+    ...highlight.sourceRefs.slice(0, 4),
+    ...highlight.artifactRefs.slice(0, 3),
+    ...memoryProvenanceRefs(highlight.memoryRefs, highlight.wakeUpHash),
+  ];
+  return `
+    <div data-role="story-highlight-card" style="${sheetLineStyle()}">
+      <strong style="color: #E8EAF0;">${escapeHtml(highlight.highlightType.replace(/_/g, " "))}</strong>
+      <br>${escapeHtml(highlight.text)}
+      <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px;">${refs.map((ref) => `<span style="${refChipStyle()}">${escapeHtml(ref)}</span>`).join("") || `<span style="${emptyChipStyle()}">Sources pending</span>`}</div>
+    </div>
+  `;
+}
+
+function memoryProvenanceRefs(memoryRefs: string[], wakeUpHash: string | null): string[] {
+  return [
+    ...memoryRefs.slice(0, 4).map((ref) => `memory: ${ref}`),
+    ...(wakeUpHash ? [`wake: ${wakeUpHash.slice(0, 12)}`] : []),
+  ];
 }
 
 const DEMO_STATUS_COLORS: Record<DemoStatus, string> = {

@@ -20,9 +20,11 @@ rails anchored by atom. That means every atom in the replay view now shows the
 bytes it actually produced — not a summary of them. **M08 Memory Spine slices A
 and B are now landed:** memory has a map-native body/sheet in the PWA, backed
 by replay-folded memory events and the existing sync route, and every
-successful phase boundary emits a `memory_diff` hash-change signal. The
-load-bearing remaining M08 work is memory-backed claim coverage and
-cost/provider accounting for memory operations.
+successful phase boundary emits a `memory_diff` hash-change signal. **M08 slice
+C is now landed too:** Story Lens narrative and discussion cards expose memory
+refs plus wake-up hashes beside source/artifact refs. The load-bearing
+remaining M08 work is cost/provider accounting for memory operations,
+agent-specific wings, and optional MemPalace MCP exposure.
 
 ### What actually works
 
@@ -52,7 +54,8 @@ cost/provider accounting for memory operations.
   and every `artifact_preview_created` event; every opencode-backed role
   injects the wake-up packet into its prompt. The PWA now folds memory events
   into `snapshot.memoryEvents` and exposes the wake-up packet through a
-  map-native memory body/sheet.
+  map-native memory body/sheet. Story Lens now renders memory refs and wake
+  hashes on digest, discussion, and highlight cards.
 
 ### Load-bearing gaps
 
@@ -62,9 +65,10 @@ cost/provider accounting for memory operations.
 2. **Live provider confidence.** Usage rows now share one payload path across
    advisor and opencode calls, but a real attended provider walkthrough still
    needs to prove cost/runtime telemetry under live failure and retry behavior.
-3. **Memory-backed claim coverage is still shallow.** M08's operator-facing
-   surface and phase-boundary diff signal now exist, but memory refs still need
-   stricter coverage on every memory-backed narrative / discussion claim.
+3. **Memory cost and wing coverage is still shallow.** M08's operator-facing
+   surface, phase-boundary diff signal, and Story Lens memory provenance now
+   exist, but memory operations still need provider/cost accounting and
+   agent-specific wings.
 4. **Founding-team cadence and intervention depth.** Intents are durable and
    replayable. A-8 now has a bounded consultation design, including temporary
    Hero reviewers, but the recurring consultation implementation still needs
@@ -90,7 +94,7 @@ running checklist for product-grade follow/review/intervene work.
 | **M05 Narrator Agent** | Done first pass | Codex | Read-only narrator role, sidecar triggers, fallback diagnostics, sidecar state locking, outcome normalization, and PWA dialogue shell exist. |
 | **M06 PWA Lenses/Map Surface** | Done first pass | Codex | Next-Step, Object, Story, and Goal lenses are in the map surface with WebGL fallback coverage. |
 | **M07 Artifact Preview Depth** | Complete | Claude | Demo-ceremony half via A-10 slices 1/2/2b/3 (demo events + storage + `DemoRunner` + bounded `/api/projects/{id}/demos/...` route + Story/Object Lens demo cards). Artifact-preview half landed via M07 slices 1–4: `artifact_preview_created` emitter with sha256, bounded excerpts (8 KiB text head / 2 KiB code tail / binary placeholder), secret scrubbing, A-9 provenance; engine + narrator hooks emit previews for every canonical artifact (sprint-plan, TEST_REPORT, REVIEW, DEPLOY, narrative digest `.md`); PWA folds previews into `snapshot.previews`, renders `artifactPreviewCard` in Story + Object Lens rails anchored by `producingAtomId`; `PHASE_SOURCE_REFS` threads upstream lineage through every event. |
-| **M08 Memory Spine** | Partial | Codex | MemPalace sync/search/provenance packets exist, are attached to next-step context, visible in the PWA memory body/sheet, and diffed after phase boundaries via `memory_diff`. Needs memory-backed claim coverage and G7 cost audit. |
+| **M08 Memory Spine** | Partial | Codex | MemPalace sync/search/provenance packets exist, are attached to next-step context, visible in the PWA memory body/sheet, diffed after phase boundaries via `memory_diff`, and shown on Story Lens claim cards. Needs G7 cost audit, agent-specific wings, and optional MCP exposure. |
 | **M09 Cost/Budget Telemetry** | Partial | Claude | Usage rows and rollups exist. Needs PWA budget controls and provider-aware display. |
 | **M10 Hookability** | Not started | Unassigned | External trigger/plugin boundary still needs design and tests. |
 | **M11 Replay Resilience** | Partial | Codex | Event replay works; needs corruption/rebuild/fallback hardening and replay/export handling for recorded demo artifacts. |
@@ -99,10 +103,10 @@ running checklist for product-grade follow/review/intervene work.
 ## Next Recommended Task
 
 **Next milestone: continue M08 Memory Spine.** With M07 artifact previews fully
-landed and M08 slices A/B in place, the largest remaining gap is stricter
-memory-backed claim provenance. Backend provenance (`wake_up_hash`,
-`memory_refs`, memory events, and `memory_diff`) is already stamped everywhere
-that matters; what remains is making memory-shaped claims explicit. See
+landed and M08 slices A/B/C in place, the largest remaining gap is memory cost
+and provider accounting. Backend provenance (`wake_up_hash`, `memory_refs`,
+memory events, and `memory_diff`) is stamped everywhere that matters, and Story
+Lens now makes memory-shaped claims explicit. See
 `project-management/srs-mini-phases/M08-memory-spine-and-mempalace.md` for the
 full checklist.
 
@@ -120,24 +124,21 @@ full checklist.
    into the PWA memory event rail.
 
 3. **M08 slice C — memory refs on narrative digests and discussion entries.**
-   `narrative_digest_created` already carries `wake_up_hash` + `memory_refs`
-   through `memory_event_fields`; verify the audit + extend to
-   `discussion_entry_created` and `discussion_highlight_created` so Story
-   Lens rows cite the memory packet that shaped them. Checklist item
-   currently blocked on "DWA/narrative digest refs remain pending until
-   M04/M05."
+   Landed 2026-04-22. `narrative_digest_created`,
+   `discussion_entry_created`, and `discussion_highlight_created` already carry
+   `wake_up_hash` + `memory_refs`; Story Lens now renders those refs on digest,
+   discussion, and highlight cards beside source/artifact refs.
 
-4. **M08 slice D — quality gates G2/G4/G5/G7 for memory.** Replay
-   determinism (G2) requires fold to use the `wake_up_hash` present at the
-   event index, not current palace state — audit the fold path. G4 requires
-   the memory surface be a body + panel, not a tab grid (will be satisfied
-   by slice A). G5 requires every memory-backed claim cite a ref (extends
-   slice C). G7 requires memory operations that invoke embedding models to
-   emit `usage_recorded` — may be empty today; audit.
+4. **M08 slice D — quality gates G7 plus wing/MCP hardening.** G2/G4/G5 are
+   now satisfied by slices A/B/C. G7 requires memory operations that invoke
+   embedding models to emit `usage_recorded` — may be empty today; audit. Then
+   add role-scoped wings and optional MemPalace MCP config without making
+   zero-tool roles nondeterministic.
 
-**Headless/scriptable path for the next session:** Continue with M08 slice C:
-audit and tighten memory refs on narrative/discussion claims, then make Story
-Lens expose those memory refs alongside source refs.
+**Headless/scriptable path for the next session:** Continue with M08 slice D:
+audit memory provider/cost behavior, add or explicitly document `usage_recorded`
+coverage for memory operations, then stub role-scoped wings if the cost path is
+already non-model-backed.
 
 **When a human is at the device with providers ready:** run the attended PWA
 walkthrough with `--gate`, real opencode providers, visible gate decisions,

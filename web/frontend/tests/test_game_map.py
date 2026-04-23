@@ -255,6 +255,9 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "renderStoryLens" in text
     assert "story-card" in text
     assert "storyDigestCard" in text
+    assert "story-discussion-card" in text
+    assert "story-highlight-card" in text
+    assert "memoryProvenanceRefs" in text
     assert "storyAtomIdsForSnapshot" in text
     assert "setStoryFocus" in text
     assert "setLensDimmed" in text
@@ -536,6 +539,84 @@ def test_memory_status_card_helper(tmp_path: Path) -> None:
         assert.ok(html.includes('&lt;packet&gt;'));
         assert.ok(html.includes('query: founding team'));
         assert.ok(!html.includes('<packet>'));
+        """,
+        include_three=True,
+    )
+
+
+def test_story_provenance_cards_show_memory_refs(tmp_path: Path) -> None:
+    run_script(
+        tmp_path,
+        GAME_SHELL_TS,
+        """
+        import assert from 'node:assert/strict';
+
+        globalThis.document = {
+          createElement: () => {
+            const node = { textContent: '', get innerHTML() { return String(this.textContent).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } };
+            return node;
+          },
+        };
+
+        const { storyDigestCard, discussionEntryCard, discussionHighlightCard } = await import('__BUNDLE__');
+
+        const baseEvent = { type: 'x', event_id: 'evt-1', ts: 0 };
+        const digestHtml = storyDigestCard({
+          digestId: 'digest-1',
+          title: 'Memory shaped digest',
+          summary: 'Claim from <wake-up>',
+          highlights: [{ text: 'Highlight one', sourceRefs: ['event:evt-1'] }],
+          risks: [],
+          openQuestions: [],
+          nextStepHint: 'coder',
+          sourceEventIds: ['evt-1'],
+          artifactRefs: ['artifact:REVIEW.md'],
+          window: { event_count: 1 },
+          wakeUpHash: 'abcdef1234567890',
+          memoryRefs: ['.orchestrator/memory/wake-up.md'],
+          lastEvent: baseEvent,
+          raw: {},
+        });
+        assert.ok(digestHtml.includes('memory: .orchestrator/memory/wake-up.md'));
+        assert.ok(digestHtml.includes('wake: abcdef123456'));
+        assert.ok(digestHtml.includes('&lt;wake-up&gt;'));
+        assert.ok(!digestHtml.includes('<wake-up>'));
+
+        const entryHtml = discussionEntryCard({
+          discussionEntryId: 'disc-1',
+          speaker: 'Operator <One>',
+          entryType: 'consult_persona_statement',
+          atomId: 'review',
+          text: 'Check memory claim',
+          sourceRefs: ['event:evt-2'],
+          artifactRefs: ['artifact:FOUNDING_TEAM.json'],
+          metadata: {},
+          wakeUpHash: 'fedcba9876543210',
+          memoryRefs: ['.orchestrator/memory/last-search.txt'],
+          lastEvent: baseEvent,
+          raw: {},
+        });
+        assert.ok(entryHtml.includes('data-role="story-discussion-card"'));
+        assert.ok(entryHtml.includes('memory: .orchestrator/memory/last-search.txt'));
+        assert.ok(entryHtml.includes('wake: fedcba987654'));
+        assert.ok(entryHtml.includes('Operator &lt;One&gt;'));
+
+        const highlightHtml = discussionHighlightCard({
+          discussionHighlightId: 'hl-1',
+          highlightType: 'source_backed_convergence',
+          atomId: 'review',
+          text: 'Consensus cites memory',
+          sourceRefs: ['entry:disc-1'],
+          artifactRefs: [],
+          wakeUpHash: '1234567890abcdef',
+          memoryRefs: ['.orchestrator/memory/wake-up.md'],
+          lastEvent: baseEvent,
+          raw: {},
+        });
+        assert.ok(highlightHtml.includes('data-role="story-highlight-card"'));
+        assert.ok(highlightHtml.includes('source backed convergence'));
+        assert.ok(highlightHtml.includes('memory: .orchestrator/memory/wake-up.md'));
+        assert.ok(highlightHtml.includes('wake: 1234567890ab'));
         """,
         include_three=True,
     )
