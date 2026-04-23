@@ -236,6 +236,13 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "goal-core-control" in text
     assert "openGoalCoreSheet" in text
     assert "renderGoalCoreSheet" in text
+    assert "memory-core-sheet" in text
+    assert "memory-core-control" in text
+    assert "openMemorySheet" in text
+    assert "renderMemorySheet" in text
+    assert "memoryStatusCard" in text
+    assert "memory-sync-control" in text
+    assert "/memory/sync" in text
     assert "founding-team-brief" in text
     assert "founderCard" in text
     assert "object-lens-sheet" in text
@@ -253,6 +260,8 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "setLensDimmed" in text
     assert "focusGoalCore" in text
     assert "goal-core:body" in text
+    assert "onSelectMemoryCore" in (ROOT / "web" / "frontend" / "src" / "game" / "SceneManager.ts").read_text()
+    assert "memory-core:body" in (ROOT / "web" / "frontend" / "src" / "game" / "SceneManager.ts").read_text()
     assert "narrative-digest" in text
     assert "latestDigestPanel" in text
     assert "Recent story" in text
@@ -439,6 +448,94 @@ def test_artifact_preview_card_helper(tmp_path: Path) -> None:
 
         const bytesMb = artifactPreviewCard({ ...textPreview, bytes: 3 * 1024 * 1024 });
         assert.ok(bytesMb.includes('3.0 MiB'));
+        """,
+        include_three=True,
+    )
+
+
+def test_memory_status_card_helper(tmp_path: Path) -> None:
+    run_script(
+        tmp_path,
+        GAME_SHELL_TS,
+        """
+        import assert from 'node:assert/strict';
+
+        globalThis.document = {
+          createElement: () => {
+            const node = { textContent: '', get innerHTML() { return String(this.textContent).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } };
+            return node;
+          },
+        };
+
+        const { memoryStatusCard } = await import('__BUNDLE__');
+
+        const snapshot = {
+          memPalaceStatus: {
+            available: true,
+            initialized: true,
+            wing: 'project-demo',
+            cached_wakeup: 'Wake <packet>\\nNext thing',
+            last_search: 'Search <result>',
+            wakeUpHash: 'abcdef1234567890',
+            wakeUpBytes: 2048,
+            memoryRefs: ['.orchestrator/memory/wake-up.md'],
+            artifactRefs: ['.orchestrator/memory/wake-up.md'],
+            error: null,
+            lastEvent: null,
+          },
+          memoryEvents: [
+            {
+              type: 'memory_refreshed',
+              eventId: 'mem-1',
+              available: true,
+              initialized: true,
+              wing: 'project-demo',
+              cachedWakeup: 'Wake <packet>',
+              lastSearch: '',
+              wakeUpHash: 'abcdef1234567890',
+              wakeUpBytes: 2048,
+              memoryRefs: ['.orchestrator/memory/wake-up.md'],
+              artifactRefs: ['.orchestrator/memory/wake-up.md'],
+              error: null,
+              query: null,
+              room: null,
+              results: null,
+              ts: 0,
+              lastEvent: null,
+            },
+            {
+              type: 'memory_search_completed',
+              eventId: 'mem-2',
+              available: true,
+              initialized: true,
+              wing: 'project-demo',
+              cachedWakeup: 'Wake <packet>',
+              lastSearch: 'Search <result>',
+              wakeUpHash: 'abcdef1234567890',
+              wakeUpBytes: 2048,
+              memoryRefs: ['.orchestrator/memory/wake-up.md'],
+              artifactRefs: ['.orchestrator/memory/wake-up.md'],
+              error: null,
+              query: 'founding team',
+              room: 'project',
+              results: 2,
+              ts: 1,
+              lastEvent: null,
+            },
+          ],
+        };
+
+        const html = memoryStatusCard(snapshot);
+        assert.ok(html.includes('data-role="memory-status-card"'));
+        assert.ok(html.includes('data-role="memory-wakeup-preview"'));
+        assert.ok(html.includes('data-role="memory-last-search"'));
+        assert.ok(html.includes('data-role="memory-event-rail"'));
+        assert.ok(html.includes('project-demo'));
+        assert.ok(html.includes('abcdef1234567890'));
+        assert.ok(html.includes('2.0 KiB'));
+        assert.ok(html.includes('&lt;packet&gt;'));
+        assert.ok(html.includes('query: founding team'));
+        assert.ok(!html.includes('<packet>'));
         """,
         include_three=True,
     )

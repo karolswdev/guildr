@@ -228,6 +228,72 @@ def test_next_step_packet_replay_fold(tmp_path: Path) -> None:
     )
 
 
+def test_memory_events_replay_fold(tmp_path: Path) -> None:
+    run_engine_script(
+        tmp_path,
+        """
+        import assert from 'node:assert/strict';
+        import { EventEngine } from '__BUNDLE__';
+        const engine = new EventEngine('p1');
+        engine.loadHistory([
+          {
+            event_id: 'mem-1',
+            type: 'memory_refreshed',
+            available: true,
+            initialized: true,
+            wing: 'project-p1',
+            cached_wakeup: 'Wake up packet body',
+            last_search: '',
+            wake_up_hash: 'abc1234567890',
+            wake_up_bytes: 19,
+            memory_refs: ['.orchestrator/memory/wake-up.md'],
+            artifact_refs: ['.orchestrator/memory/wake-up.md'],
+          },
+          {
+            event_id: 'mem-2',
+            type: 'memory_search_completed',
+            query: 'architecture',
+            room: 'project',
+            results: 3,
+            last_search: 'architecture result',
+            wake_up_hash: 'abc1234567890',
+          },
+          {
+            event_id: 'mem-3',
+            type: 'memory_diff',
+            previous_wake_up_hash: 'abc1234567890',
+            wake_up_hash: 'def1234567890',
+            wake_up_bytes: 20,
+            hash_changed: true,
+            memory_refs: ['.orchestrator/memory/wake-up.md'],
+            artifact_refs: ['.orchestrator/memory/wake-up.md'],
+          },
+          {
+            event_id: 'mem-4',
+            type: 'memory_error',
+            available: false,
+            error: 'MemPalace unavailable',
+          },
+        ]);
+        let snapshot = engine.snapshot();
+        assert.equal(snapshot.memPalaceStatus.error, 'MemPalace unavailable');
+        assert.equal(snapshot.memPalaceStatus.wakeUpHash, 'def1234567890');
+        assert.equal(snapshot.memoryEvents.length, 4);
+        assert.equal(snapshot.memoryEvents[1].query, 'architecture');
+        assert.equal(snapshot.memoryEvents[1].results, 3);
+        assert.equal(snapshot.memoryEvents[2].previousWakeUpHash, 'abc1234567890');
+        assert.equal(snapshot.memoryEvents[2].hashChanged, true);
+
+        engine.scrubTo(0);
+        snapshot = engine.snapshot();
+        assert.equal(snapshot.memoryEvents.length, 1);
+        assert.equal(snapshot.memPalaceStatus.initialized, true);
+        assert.equal(snapshot.memPalaceStatus.error, null);
+        assert.equal(snapshot.memPalaceStatus.cached_wakeup, 'Wake up packet body');
+        """,
+    )
+
+
 def test_operator_intent_lifecycle_replay_fold(tmp_path: Path) -> None:
     run_engine_script(
         tmp_path,

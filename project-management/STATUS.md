@@ -17,10 +17,12 @@ sha256, bounded excerpts, secret scrubbing, A-9 provenance, `producing_atom_id`
 anchor, and `PHASE_SOURCE_REFS` lineage; the PWA folds those into
 `snapshot.previews` and renders `artifactPreviewCard` in Story + Object Lens
 rails anchored by atom. That means every atom in the replay view now shows the
-bytes it actually produced — not a summary of them. **The load-bearing remaining
-work is M08 Memory Spine**, which has a solid backend foundation but is missing
-the PWA surface, cross-phase memory diff signalling, and the memory-refs thread
-into narrative/DWA packets. M08 is the next milestone.
+bytes it actually produced — not a summary of them. **M08 Memory Spine slices A
+and B are now landed:** memory has a map-native body/sheet in the PWA, backed
+by replay-folded memory events and the existing sync route, and every
+successful phase boundary emits a `memory_diff` hash-change signal. The
+load-bearing remaining M08 work is memory-backed claim coverage and
+cost/provider accounting for memory operations.
 
 ### What actually works
 
@@ -34,19 +36,23 @@ into narrative/DWA packets. M08 is the next milestone.
 - **Intervene.** `operator_intent` events persist through
   `.orchestrator/control/intents.jsonl`, appear on next-step packets, and
   become `operator_intent_applied` or `operator_intent_ignored`.
-- **PWA map.** The Three.js game surface now has Next-Step, Object, Story, and
-  Goal lenses plus narrator dialogue and compose controls on top of the same
-  replay snapshot. Both lenses gained demo-ceremony cards (A-10) and
-  artifact-preview cards (M07) in this April 22 wave.
+- **PWA map.** The Three.js game surface now has Next-Step, Object, Story, Goal,
+  and Memory surfaces plus narrator dialogue and compose controls on top of the
+  same replay snapshot. Both lenses gained demo-ceremony cards (A-10) and
+  artifact-preview cards (M07) in this April 22 wave; the Memory surface now
+  shows MemPalace status, wake-up preview, last search, recent memory events,
+  and a live sync control.
 - **Dry-run pipeline.** `dry_run=True` auto-wires deterministic role runners.
   This is the default local proof path when no live model provider is present.
 - **Live runtime.** Production role work is routed through opencode
   `SessionRunner`s built from `endpoints:` and `routing:` config.
-- **Memory plumbing (backend).** MemPalace init/mine/wake-up/search/status all
+- **Memory plumbing and surface.** MemPalace init/mine/wake-up/search/status all
   land; `wake_up_hash` + `memory_refs` are stamped onto `memory_refreshed`,
-  `memory_error`, `next_step_packet_created`, every demo event, and every
-  `artifact_preview_created` event; every opencode-backed role injects the
-  wake-up packet into its prompt.
+  `memory_error`, `memory_diff`, `next_step_packet_created`, every demo event,
+  and every `artifact_preview_created` event; every opencode-backed role
+  injects the wake-up packet into its prompt. The PWA now folds memory events
+  into `snapshot.memoryEvents` and exposes the wake-up packet through a
+  map-native memory body/sheet.
 
 ### Load-bearing gaps
 
@@ -56,11 +62,9 @@ into narrative/DWA packets. M08 is the next milestone.
 2. **Live provider confidence.** Usage rows now share one payload path across
    advisor and opencode calls, but a real attended provider walkthrough still
    needs to prove cost/runtime telemetry under live failure and retry behavior.
-3. **Memory surface is invisible in the PWA.** M08's backend provenance is
-   solid, but the operator cannot see it — there is no memory body on the
-   goal core orbit, no memory panel (status / last search / sync control /
-   wake-up preview), no cross-phase diff signal, and no memory-refs thread
-   into narrative digests or discussion. This is the next shippable wave.
+3. **Memory-backed claim coverage is still shallow.** M08's operator-facing
+   surface and phase-boundary diff signal now exist, but memory refs still need
+   stricter coverage on every memory-backed narrative / discussion claim.
 4. **Founding-team cadence and intervention depth.** Intents are durable and
    replayable. A-8 now has a bounded consultation design, including temporary
    Hero reviewers, but the recurring consultation implementation still needs
@@ -86,7 +90,7 @@ running checklist for product-grade follow/review/intervene work.
 | **M05 Narrator Agent** | Done first pass | Codex | Read-only narrator role, sidecar triggers, fallback diagnostics, sidecar state locking, outcome normalization, and PWA dialogue shell exist. |
 | **M06 PWA Lenses/Map Surface** | Done first pass | Codex | Next-Step, Object, Story, and Goal lenses are in the map surface with WebGL fallback coverage. |
 | **M07 Artifact Preview Depth** | Complete | Claude | Demo-ceremony half via A-10 slices 1/2/2b/3 (demo events + storage + `DemoRunner` + bounded `/api/projects/{id}/demos/...` route + Story/Object Lens demo cards). Artifact-preview half landed via M07 slices 1–4: `artifact_preview_created` emitter with sha256, bounded excerpts (8 KiB text head / 2 KiB code tail / binary placeholder), secret scrubbing, A-9 provenance; engine + narrator hooks emit previews for every canonical artifact (sprint-plan, TEST_REPORT, REVIEW, DEPLOY, narrative digest `.md`); PWA folds previews into `snapshot.previews`, renders `artifactPreviewCard` in Story + Object Lens rails anchored by `producingAtomId`; `PHASE_SOURCE_REFS` threads upstream lineage through every event. |
-| **M08 Memory Spine** | Partial | Codex | MemPalace sync/search/provenance packets exist and are attached to next-step context. Needs broader UI treatment and stronger contract checks. |
+| **M08 Memory Spine** | Partial | Codex | MemPalace sync/search/provenance packets exist, are attached to next-step context, visible in the PWA memory body/sheet, and diffed after phase boundaries via `memory_diff`. Needs memory-backed claim coverage and G7 cost audit. |
 | **M09 Cost/Budget Telemetry** | Partial | Claude | Usage rows and rollups exist. Needs PWA budget controls and provider-aware display. |
 | **M10 Hookability** | Not started | Unassigned | External trigger/plugin boundary still needs design and tests. |
 | **M11 Replay Resilience** | Partial | Codex | Event replay works; needs corruption/rebuild/fallback hardening and replay/export handling for recorded demo artifacts. |
@@ -94,34 +98,26 @@ running checklist for product-grade follow/review/intervene work.
 
 ## Next Recommended Task
 
-**Next milestone: M08 Memory Spine.** With M07 artifact previews fully landed,
-the largest remaining visible gap is that MemPalace state is invisible in the
-PWA. Backend provenance (`wake_up_hash`, `memory_refs`, memory events) is
-already stamped everywhere that matters; what is missing is the operator-facing
-surface and the cross-phase diff signal. See
+**Next milestone: continue M08 Memory Spine.** With M07 artifact previews fully
+landed and M08 slices A/B in place, the largest remaining gap is stricter
+memory-backed claim provenance. Backend provenance (`wake_up_hash`,
+`memory_refs`, memory events, and `memory_diff`) is already stamped everywhere
+that matters; what remains is making memory-shaped claims explicit. See
 `project-management/srs-mini-phases/M08-memory-spine-and-mempalace.md` for the
 full checklist.
 
 **Recommended slice order (each shippable independently):**
 
-1. **M08 slice A — PWA memory surface** (highest-impact, pure frontend + a
-   bounded backend route). Add a low-frequency `memory-core:body` on the goal
-   orbit (pattern established by M06C Goal Core). Tap opens a memory sheet
-   showing: MemPalace status (initialized, wing, command availability), latest
-   `wake_up_hash` with a truncated wake-up preview, last search (scrubbed),
-   memory sync button that POSTs to the existing memory route, and a recent
-   list of `memory_refreshed` / `memory_search_completed` / `memory_error`
-   events folded from the snapshot. Fold already exists in `EventEngine`
-   (`memory_status`, `memory_refreshed`, `memory_search_completed`); render
-   them. Test with a new `test_game_map.py` jsdom fixture + bundle assertions.
+1. **M08 slice A — PWA memory surface** — landed 2026-04-22. `memory-core:body`
+   orbits the goal core, the HUD exposes `memory-core-control`, and
+   `memory-core-sheet` shows MemPalace status, wake hash, wake-up preview, last
+   search, recent memory events, and a sync button posting to the existing
+   memory route.
 
-2. **M08 slice B — cross-phase memory diff event.** After each phase ends,
-   compare the current wake-up hash to the last emitted one and emit a
-   `memory_refreshed` (or a new `memory_diff` event if it's cleaner) with a
-   `hash_changed` flag. This lets the PWA show "memory shifted between
-   architect and testing" without any semantic diff. The orchestrator has the
-   previous hash in the last `memory_refreshed` event on the bus — fold it or
-   re-read `.orchestrator/memory/wake-up.md` and compare sha256.
+2. **M08 slice B — cross-phase memory diff event** — landed 2026-04-22.
+   `memory_diff` is emitted after successful phase boundaries with
+   `previous_wake_up_hash`, `wake_up_hash`, and `hash_changed`, then folded
+   into the PWA memory event rail.
 
 3. **M08 slice C — memory refs on narrative digests and discussion entries.**
    `narrative_digest_created` already carries `wake_up_hash` + `memory_refs`
@@ -139,9 +135,9 @@ full checklist.
    slice C). G7 requires memory operations that invoke embedding models to
    emit `usage_recorded` — may be empty today; audit.
 
-**Headless/scriptable path for this session:** Continue with M08 slice A
-(frontend memory surface) — matches the same "land the operator-visible
-surface first" shape as M07 slice 3 and M06C.
+**Headless/scriptable path for the next session:** Continue with M08 slice C:
+audit and tighten memory refs on narrative/discussion claims, then make Story
+Lens expose those memory refs alongside source refs.
 
 **When a human is at the device with providers ready:** run the attended PWA
 walkthrough with `--gate`, real opencode providers, visible gate decisions,
@@ -203,6 +199,8 @@ Append new evidence here instead of burying it in chat.
 
 | Date | Phase/task | Evidence |
 | --- | --- | --- |
+| 2026-04-22 | M08 slice B — cross-phase memory diff event | Registered `memory_diff` in backend/frontend event registries. `Orchestrator._emit_memory_diff_for_phase` now runs after successful `phase_done`, compares the current wake-up hash to the prior phase-boundary hash, and emits `previous_wake_up_hash`, `wake_up_hash`, `wake_up_bytes`, `hash_changed`, memory/artifact refs, and source refs. `EventEngine` folds `memory_diff` into replayable `memoryEvents`; `memoryStatusCard` renders changed/unchanged rows in the memory rail. Evidence: `uv run pytest -q tests/test_engine.py tests/test_event_schema.py web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` → 63 passed; `./web/frontend/build.sh` → `dist/app.js` 1,342,965 bytes; `git diff --check` clean |
+| 2026-04-22 | M08 slice A — PWA memory surface | `EventEngine` now folds `memory_status`, `memory_refreshed`, `memory_search_completed`, and `memory_error` into replayable `memoryEvents` plus cloned `memPalaceStatus`; replay scrub rebuilds memory from the event index. `SceneManager` adds a tappable cyan `memory-core:body` on the goal core. `GameShell` adds `memory-core-control`, `memory-core-sheet`, `memoryStatusCard`, wake-up preview, last-search panel, recent memory event rail, and `memory-sync-control` posting to `/api/projects/{id}/memory/sync`; fallback rendering includes the same memory card. Evidence: `uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` → 25 passed; `./web/frontend/build.sh` → `dist/app.js` 1,342,500 bytes; `git diff --check` clean |
 | 2026-04-22 | M07 slice 4 — source_refs lineage on artifact previews | Commit `8da1ad5`. `orchestrator/lib/artifact_preview.py::PHASE_SOURCE_REFS` (static map: architect_plan/architect_refine→(qwendea.md, PERSONA_FORUM.md); testing→(sprint-plan.md,); review→(sprint-plan.md, TEST_REPORT.md); deployment→(REVIEW.md,)) is threaded through `emit_phase_artifact_previews` onto every `artifact_preview_created` event. Declarative map chosen over per-role return-value threading because the consumption pattern is a workflow contract, not a runtime property; roles wanting non-canonical source_refs can still emit their own preview events. New `test_emit_phase_artifact_previews_threads_source_refs`, `test_phase_source_refs_mapping_covers_expected_roles`; integration test extended to assert every per-phase preview carries the expected source_refs in the dry-run pipeline. Evidence: `uv run pytest -q` → 592 passed, 2 warnings |
 | 2026-04-22 | M07 slice 3 — artifact preview cards folded into PWA | Commit `9cee3d8`. `web/frontend/src/game/types.ts` adds `ArtifactPreview` type + `previews` / `latestPreview` on `EngineSnapshot`. `EventEngine.applyArtifactPreviewEvent` folds `artifact_preview_created` into `snapshot.previews`, deduping by `(artifactRef, producingAtomId)` so re-writes overwrite rather than stack; previews reset across `loadHistory` / `scrubTo` / `rebuildFromHistory`. `GameShell.artifactPreviewCard(preview)` renders a card with escaped excerpt in `<pre>` for text (head/tail), italic placeholder for binary, truncation chip, and atom/mime/hash/source chips. Wired as `data-role="story-preview-rail"` in Story Lens (`snapshot.previews.slice(-3).reverse()`) and `data-role="object-preview-rail"` in Object Lens (`snapshot.previews.filter(p => p.producingAtomId === atomId).slice(-2).reverse()`). Evidence: `uv run pytest -q web/frontend/tests/test_game_map.py` → 9 passed (new `test_artifact_preview_card_helper` + 5 bundle assertions for `artifactPreviewCard` / `story-preview-rail` / `object-preview-rail` / `preview-card` / `preview-excerpt`). `./web/frontend/build.sh` → `dist/app.js` 1,331,852 bytes (+5,939 from slice 2 baseline) |
 | 2026-04-22 | M07 slices 1+2 — artifact_preview_created emitter + engine/narrator hooks | Commit `157a788`. `orchestrator/lib/artifact_preview.py` adds `emit_artifact_preview` (sha256, 8 KiB text head / 2 KiB code tail / binary placeholder excerpts, secret scrubbing via `scrub_text`, path-traversal rejection, A-9 provenance from `memory_event_fields`) and `emit_phase_artifact_previews` (static `PHASE_CANONICAL_ARTIFACTS` map: architect*→sprint-plan.md, testing→TEST_REPORT.md, review→REVIEW.md, deployment→DEPLOY.md). `ARTIFACT_PREVIEW_CREATED` registered in `event_types.EVENT_TYPES` and mirrored in `web/frontend/src/game/eventTypes.ts`. Engine calls `emit_phase_artifact_previews` after each `phase_done` (wrapped in try/except — preview failure never breaks a phase). `orchestrator/lib/narrative.py::emit_narrative_digest` and `orchestrator/roles/narrator.py::_emit_digest` both emit previews for digest `.md` with `producing_atom_id="narrator"`. Evidence: `uv run pytest -q` → 590 passed, 2 warnings (11 new unit in `tests/test_artifact_preview.py` covering hashing/head-tail/binary/missing/traversal/empty/scrub/phase-mapping/unknown-phase + 1 integration `tests/test_integration_artifact_previews.py` driving dry-run and asserting sha256 + producing_atom_id per artifact + narrator preview). `./web/frontend/build.sh` → `dist/app.js` 1,325,913 bytes |

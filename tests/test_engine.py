@@ -329,6 +329,36 @@ class TestLoopEvents:
         assert packet_events[0]["packet_id"].startswith("next_")
         assert packet_events[0]["source_refs"]
 
+    def test_phase_boundaries_emit_memory_diff_when_wakeup_changes(
+        self,
+        config: Config,
+        mock_git_ops: MagicMock,
+    ) -> None:
+        memory_dir = config.project_dir / ".orchestrator" / "memory"
+        memory_dir.mkdir(parents=True)
+        wakeup = memory_dir / "wake-up.md"
+        wakeup.write_text("initial memory", encoding="utf-8")
+        events = ReturningCaptureEvents()
+        orchestrator = Orchestrator(config=config, git_ops=mock_git_ops, events=events)
+        orchestrator._validate = MagicMock(return_value=True)
+
+        orchestrator._run_phase("architect", lambda: None)
+        wakeup.write_text("changed memory", encoding="utf-8")
+        orchestrator._run_phase("testing", lambda: None)
+
+        diff_events = [event for event in events.events if event["type"] == "memory_diff"]
+        assert len(diff_events) == 2
+        assert diff_events[0]["step"] == "architect"
+        assert diff_events[0]["previous_wake_up_hash"] is None
+        assert diff_events[0]["hash_changed"] is False
+        assert diff_events[0]["wake_up_hash"]
+        assert diff_events[0]["memory_refs"] == [".orchestrator/memory/wake-up.md"]
+        assert diff_events[0]["source_refs"][0].startswith("event:")
+        assert diff_events[1]["step"] == "testing"
+        assert diff_events[1]["previous_wake_up_hash"] == diff_events[0]["wake_up_hash"]
+        assert diff_events[1]["wake_up_hash"] != diff_events[0]["wake_up_hash"]
+        assert diff_events[1]["hash_changed"] is True
+
     def test_phase_completion_emits_narrative_digest(
         self,
         config: Config,

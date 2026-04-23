@@ -15,6 +15,7 @@ type SceneManagerOptions = {
   workflow: WorkflowStep[];
   assets: AssetManager;
   onSelectGoalCore: () => void;
+  onSelectMemoryCore: () => void;
   onSelectAtom: (atomId: string) => void;
 };
 
@@ -42,7 +43,9 @@ export class SceneManager {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly goalCore = new THREE.Group();
   private readonly goalCoreMesh: THREE.Mesh;
+  private memoryCoreMesh: THREE.Mesh | null = null;
   private readonly onSelectGoalCore: () => void;
+  private readonly onSelectMemoryCore: () => void;
   private readonly onSelectAtom: (atomId: string) => void;
   private viewportAspect = 1;
   private selectedAtomId = "";
@@ -64,6 +67,7 @@ export class SceneManager {
     this.canvas = options.canvas;
     this.renderer = options.renderer;
     this.onSelectGoalCore = options.onSelectGoalCore;
+    this.onSelectMemoryCore = options.onSelectMemoryCore;
     this.onSelectAtom = options.onSelectAtom;
     this.layout = layoutWorkflowAtoms(options.workflow);
     this.scene.background = new THREE.Color(0x0d0f14);
@@ -312,6 +316,22 @@ export class SceneManager {
     mesh.name = "goal-core:body";
     mesh.userData.goalCore = true;
     this.goalCore.add(mesh);
+
+    const memoryMaterial = new THREE.MeshStandardMaterial({
+      color: 0x41c7c7,
+      emissive: 0x125a5a,
+      emissiveIntensity: 0.6,
+      roughness: 0.42,
+      metalness: 0.18,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const memoryBody = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 12), memoryMaterial);
+    memoryBody.name = "memory-core:body";
+    memoryBody.position.set(0.62, 0.1, 0.16);
+    memoryBody.userData.memoryCore = true;
+    this.memoryCoreMesh = memoryBody;
+    this.goalCore.add(memoryBody);
 
     const ringMaterial = new THREE.MeshBasicMaterial({
       color: 0xd9b84d,
@@ -621,6 +641,10 @@ export class SceneManager {
         this.onSelectGoalCore();
         return;
       }
+      if (hit === "__memory_core__") {
+        this.onSelectMemoryCore();
+        return;
+      }
       this.selectAtom(hit);
       this.onSelectAtom(hit);
       return;
@@ -687,7 +711,11 @@ export class SceneManager {
     this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObjects([this.goalCoreMesh, ...[...this.atomNodes.values()].map((atom) => atom.mesh)], false);
+    const coreTargets = [this.goalCoreMesh, ...(this.memoryCoreMesh ? [this.memoryCoreMesh] : [])];
+    const hits = this.raycaster.intersectObjects([...coreTargets, ...[...this.atomNodes.values()].map((atom) => atom.mesh)], false);
+    if (hits[0]?.object.userData.memoryCore === true) {
+      return "__memory_core__";
+    }
     if (hits[0]?.object.userData.goalCore === true) {
       return "__goal_core__";
     }

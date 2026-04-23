@@ -64,14 +64,41 @@ export type CostSnapshot = CostBucket & {
 };
 
 export type MemPalaceStatus = {
+  available: boolean;
   initialized: boolean;
   wing: string | null;
   cached_wakeup: string | null;
   last_search: string | null;
   wakeUpHash: string | null;
+  previousWakeUpHash: string | null;
+  hashChanged: boolean | null;
   wakeUpBytes: number;
   memoryRefs: string[];
   artifactRefs: string[];
+  error: string | null;
+  lastEvent: RunEvent | null;
+};
+
+export type MemoryEventRecord = {
+  type: string;
+  eventId: string | null;
+  available: boolean;
+  initialized: boolean;
+  wing: string | null;
+  cachedWakeup: string | null;
+  lastSearch: string | null;
+  wakeUpHash: string | null;
+  previousWakeUpHash: string | null;
+  hashChanged: boolean | null;
+  wakeUpBytes: number;
+  memoryRefs: string[];
+  artifactRefs: string[];
+  error: string | null;
+  query: string | null;
+  room: string | null;
+  results: number | null;
+  ts: number | null;
+  lastEvent: RunEvent | null;
 };
 
 export type NextStepPacket = {
@@ -259,6 +286,7 @@ export type EngineSnapshot = {
   scrubIndex: number;
   isLive: boolean;
   memPalaceStatus: MemPalaceStatus | null;
+  memoryEvents: MemoryEventRecord[];
   nextStepPacket: NextStepPacket | null;
   digests: NarrativeDigest[];
   latestDigest: NarrativeDigest | null;

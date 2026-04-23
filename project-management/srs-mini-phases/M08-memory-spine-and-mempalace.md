@@ -69,8 +69,9 @@ Only after M08a is green should **M08b — MemPalace MCP For Opencode** add gene
 - [x] Verify every opencode-backed role either calls `append_operator_context()` directly or inherits it through `BaseRole._augment_prompt()`.
 - [x] Add prompt-level provenance: opencode session audit or adjacent event records which wake-up hash was injected.
 - [ ] Add next-step / DWA memory refs so the narrative surface can cite the wake-up packet and relevant searches. Partial 2026-04-22: M02a next-step packets include `memory_provenance()`; DWA/narrative digest refs remain pending until M04/M05.
-- [ ] PWA: memory body (radar/antenna prop) orbits the goal core; tap opens memory panel (status, last search, sync control, wake-up preview).
-- [ ] Memory diffing hook: before/after each phase emits a memory diff summary event (future-capable; minimum: hash changed flag).
+- [x] PWA: memory body (radar/antenna prop) orbits the goal core; tap opens memory panel (status, last search, sync control, wake-up preview). Landed 2026-04-22: `memory-core:body`, `memory-core-control`, `memory-core-sheet`, replay-folded `memoryEvents`, and `/memory/sync` control.
+- [x] Memory diffing hook: after each successful phase emits `memory_diff` with
+  `previous_wake_up_hash`, `wake_up_hash`, and `hash_changed`.
 - [ ] Agent-specific wings: each SDLC role gets a wing scoped to its concerns (can be stubbed with empty wings v1).
 - [ ] Optional after provenance is green: generate OpenCode `mcp.mempalace` config using `python -m mempalace.mcp_server`, disabled globally and enabled only for selected tool-using agents.
 
@@ -79,9 +80,9 @@ Only after M08a is green should **M08b — MemPalace MCP For Opencode** add gene
 - [x] G1 Event integrity on memory events.
 - [x] G8 Security — search queries scrubbed; no secrets in `last-search.txt`.
 - [ ] G7 Cost — memory operations emit `usage_recorded` where they invoke models (e.g., embedding).
-- [ ] G4 No-dashboard — memory surface is a body + panel, not a tab grid.
+- [x] G4 No-dashboard — memory surface is a body + panel, not a tab grid.
 - [ ] G5 Source-ref credibility — every memory-backed narrative/DWA claim carries a memory/artifact/event ref.
-- [ ] G2 Replay determinism — replay uses the wake-up hash/refs known at that event index, not current memory state.
+- [x] G2 Replay determinism — replay uses the wake-up hash/refs known at that event index, not current memory state.
 
 ## Evidence commands / checks
 
@@ -99,9 +100,9 @@ rg -n "\"mcp\"|mempalace|mcp_server" orchestrator/lib/opencode_config.py tests d
 - [x] Compact context and operator prompt include wake-up packet content.
 - [x] Every opencode-backed role records or references the wake-up hash it received.
 - [ ] Next-step / DWA packets carry memory refs so the PWA can display memory provenance. Partial 2026-04-22: next-step packets carry memory refs; DWA packets do not exist yet.
-- [ ] PWA shows memory status, last search, sync button, wake-up preview.
+- [x] PWA shows memory status, last search, sync button, wake-up preview.
 - [x] Memory errors appear as events (not as silent warnings).
-- [ ] Hash changes across phases produce at least a `memory_refreshed` with diff summary.
+- [x] Hash changes across phases produce `memory_diff` with `hash_changed`.
 - [ ] Optional M08b only: generated opencode config can expose MemPalace MCP to selected tool-enabled agents without enabling it for zero-tool roles by accident.
 
 ## Known traps
@@ -126,3 +127,5 @@ rg -n "\"mcp\"|mempalace|mcp_server" orchestrator/lib/opencode_config.py tests d
 - 2026-04-22 M08a partial: `orchestrator/lib/memory_palace.py` computes stable `wake_up_hash`; `memory_refresh` emits `memory_refreshed` / `memory_error`; memory routes emit status/refresh/search/error events; opencode audit rows include `runtime.memory.wake_up_hash`; EventEngine folds memory hash/refs. Evidence: `uv run pytest -q orchestrator/tests/test_workflow.py web/backend/tests/test_memory.py web/backend/tests/test_control.py tests/test_opencode_audit.py` -> 25 passed; `uv run pytest -q tests/test_engine.py tests/test_loop_refs.py orchestrator/tests/test_workflow.py` -> 46 passed; `uv run pytest -q web/backend/tests/test_events.py web/backend/tests/test_memory.py` -> 7 passed; `./web/frontend/build.sh` passed; `git diff --check` clean.
 - 2026-04-22 M08a provenance/scrubbing: added `memory_provenance()` as the compact packet future next-step/DWA generators should cite; memory search now scrubs query/room before CLI invocation and scrubs output before returning or caching `last-search.txt`. Evidence: `uv run pytest -q tests/test_memory_palace.py web/backend/tests/test_memory.py tests/test_opencode_audit.py orchestrator/tests/test_workflow.py` -> 23 passed; `uv run pytest -q web/backend/tests/test_intents.py tests/test_usage_events.py` -> 3 passed; `./web/frontend/build.sh` passed; `git diff --check` clean.
 - 2026-04-22 M02a consumption: deterministic next-step packets now include `memory_provenance()` with wake-up hash and memory refs. Evidence tracked in `M02-intent-lifecycle-and-next-step.md`.
+- 2026-04-22 M08 slice A: PWA memory surface landed. `EventEngine` now folds `memory_status`, `memory_refreshed`, `memory_search_completed`, and `memory_error` into replayable `memoryEvents` plus `memPalaceStatus`; scrub/replay rebuild uses the event-index state instead of current palace state. `SceneManager` adds tappable `memory-core:body` on the goal core, and `GameShell` adds `memory-core-control` / `memory-core-sheet` with status, wing, wake hash, packet size, wake-up preview, last search, recent memory event rail, and a sync button posting to `/api/projects/{id}/memory/sync`. Evidence: `uv run pytest -q web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` -> 25 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,342,500 bytes; `git diff --check` clean.
+- 2026-04-22 M08 slice B: cross-phase memory diff landed. `memory_diff` is registered in the backend/frontend event registries; `Orchestrator._emit_memory_diff_for_phase` runs after each successful `phase_done`, compares current `.orchestrator/memory/wake-up.md` hash to the prior phase-boundary hash, and emits `previous_wake_up_hash`, `wake_up_hash`, `wake_up_bytes`, `hash_changed`, `memory_refs`, `artifact_refs`, and source refs to the triggering phase event. `EventEngine` folds `memory_diff` into `memoryEvents`; `memoryStatusCard` displays changed/unchanged diff rows. Evidence: `uv run pytest -q tests/test_engine.py tests/test_event_schema.py web/frontend/tests/test_event_engine.py web/frontend/tests/test_game_map.py` -> 63 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,342,965 bytes; `git diff --check` clean.

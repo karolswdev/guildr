@@ -16,6 +16,7 @@ import type {
   EngineSnapshot,
   LoopSnapshot,
   LoopStage,
+  MemoryEventRecord,
   MemPalaceStatus,
   NarrativeDigest,
   NarrativeHighlight,
@@ -40,6 +41,7 @@ export class EventEngine {
   private cost: CostSnapshot = emptyCostSnapshot();
   private loops: LoopSnapshot = emptyLoopSnapshot();
   private memPalaceStatus: MemPalaceStatus | null = null;
+  private memoryEvents: MemoryEventRecord[] = [];
   private nextStepPacket: NextStepPacket | null = null;
   private digests: NarrativeDigest[] = [];
   private discussion: DiscussionEntry[] = [];
@@ -131,6 +133,7 @@ export class EventEngine {
     this.cost = emptyCostSnapshot();
     this.loops = emptyLoopSnapshot();
     this.memPalaceStatus = null;
+    this.memoryEvents = [];
     this.nextStepPacket = null;
     this.digests = [];
     this.discussion = [];
@@ -166,6 +169,7 @@ export class EventEngine {
     this.cost = emptyCostSnapshot();
     this.loops = emptyLoopSnapshot();
     this.memPalaceStatus = null;
+    this.memoryEvents = [];
     this.nextStepPacket = null;
     this.digests = [];
     this.discussion = [];
@@ -196,7 +200,8 @@ export class EventEngine {
       events: this.history.map((event) => ({ ...event })),
       scrubIndex: this.replayIndex,
       isLive: this.replayIndex < 0,
-      memPalaceStatus: this.memPalaceStatus ? { ...this.memPalaceStatus } : null,
+      memPalaceStatus: this.memPalaceStatus ? cloneMemPalaceStatus(this.memPalaceStatus) : null,
+      memoryEvents: this.memoryEvents.map(cloneMemoryEventRecord),
       nextStepPacket: this.nextStepPacket
         ? attachPendingIntents(cloneNextStepPacket(this.nextStepPacket), this.pendingIntents)
         : null,
@@ -239,6 +244,7 @@ export class EventEngine {
     this.cost = emptyCostSnapshot();
     this.loops = emptyLoopSnapshot();
     this.memPalaceStatus = null;
+    this.memoryEvents = [];
     this.nextStepPacket = null;
     this.digests = [];
     this.discussion = [];
@@ -286,6 +292,7 @@ export class EventEngine {
       this.cost = emptyCostSnapshot();
       this.loops = emptyLoopSnapshot();
       this.memPalaceStatus = null;
+      this.memoryEvents = [];
       this.nextStepPacket = null;
       this.digests = [];
       this.discussion = [];
@@ -351,7 +358,7 @@ export class EventEngine {
       this.applyLoopEvent(event, type);
       return;
     }
-    if (type === "memory_status" || type === "memory_refreshed" || type === "memory_search_completed") {
+    if (type === "memory_status" || type === "memory_refreshed" || type === "memory_search_completed" || type === "memory_error" || type === "memory_diff") {
       this.applyMemoryEvent(event);
     }
     if (type === "next_step_packet_created") {
@@ -529,15 +536,48 @@ export class EventEngine {
   }
 
   private applyMemoryEvent(event: RunEvent): void {
+    const previous = this.memPalaceStatus;
+    const memoryRefs = arrayOfStrings(event.memory_refs);
+    const artifactRefs = arrayOfStrings(event.artifact_refs);
+    const record: MemoryEventRecord = {
+      type: key(event.type, "memory_event"),
+      eventId: stringOrNull(event.event_id),
+      available: typeof event.available === "boolean" ? event.available : (previous?.available ?? false),
+      initialized: typeof event.initialized === "boolean" ? event.initialized : (previous?.initialized ?? false),
+      wing: stringOrNull(event.wing) ?? previous?.wing ?? null,
+      cachedWakeup: stringOrNull(event.cached_wakeup) ?? previous?.cached_wakeup ?? null,
+      lastSearch: stringOrNull(event.last_search) ?? previous?.last_search ?? null,
+      wakeUpHash: stringOrNull(event.wake_up_hash) ?? previous?.wakeUpHash ?? null,
+      previousWakeUpHash: stringOrNull(event.previous_wake_up_hash),
+      hashChanged: typeof event.hash_changed === "boolean" ? event.hash_changed : null,
+      wakeUpBytes: numberOrNull(event.wake_up_bytes) ?? previous?.wakeUpBytes ?? 0,
+      memoryRefs: memoryRefs.length > 0 ? memoryRefs : [...(previous?.memoryRefs ?? [])],
+      artifactRefs: artifactRefs.length > 0 ? artifactRefs : [...(previous?.artifactRefs ?? [])],
+      error: stringOrNull(event.error),
+      query: stringOrNull(event.query),
+      room: stringOrNull(event.room),
+      results: numberOrNull(event.results),
+      ts: timeMs(event.ts),
+      lastEvent: event,
+    };
+    this.memoryEvents.push(record);
+    if (this.memoryEvents.length > 20) {
+      this.memoryEvents = this.memoryEvents.slice(-20);
+    }
     this.memPalaceStatus = {
-      initialized: Boolean(event.initialized),
-      wing: typeof event.wing === "string" ? event.wing : null,
-      cached_wakeup: typeof event.cached_wakeup === "string" ? event.cached_wakeup : null,
-      last_search: typeof event.last_search === "string" ? event.last_search : null,
-      wakeUpHash: typeof event.wake_up_hash === "string" ? event.wake_up_hash : null,
-      wakeUpBytes: numberOrNull(event.wake_up_bytes) ?? 0,
-      memoryRefs: arrayOfStrings(event.memory_refs),
-      artifactRefs: arrayOfStrings(event.artifact_refs),
+      available: record.available,
+      initialized: record.initialized,
+      wing: record.wing,
+      cached_wakeup: record.cachedWakeup,
+      last_search: record.lastSearch,
+      wakeUpHash: record.wakeUpHash,
+      previousWakeUpHash: record.previousWakeUpHash,
+      hashChanged: record.hashChanged,
+      wakeUpBytes: record.wakeUpBytes,
+      memoryRefs: [...record.memoryRefs],
+      artifactRefs: [...record.artifactRefs],
+      error: record.error,
+      lastEvent: event,
     };
   }
 
@@ -1070,6 +1110,24 @@ function cloneLoopSnapshot(snapshot: LoopSnapshot): LoopSnapshot {
     activeStageCounts: { ...snapshot.activeStageCounts },
     selectedStageFilter: snapshot.selectedStageFilter,
     lastLoopEvent: snapshot.lastLoopEvent,
+  };
+}
+
+function cloneMemoryEventRecord(record: MemoryEventRecord): MemoryEventRecord {
+  return {
+    ...record,
+    memoryRefs: [...record.memoryRefs],
+    artifactRefs: [...record.artifactRefs],
+    lastEvent: record.lastEvent ? { ...record.lastEvent } : null,
+  };
+}
+
+function cloneMemPalaceStatus(status: MemPalaceStatus): MemPalaceStatus {
+  return {
+    ...status,
+    memoryRefs: [...status.memoryRefs],
+    artifactRefs: [...status.artifactRefs],
+    lastEvent: status.lastEvent ? { ...status.lastEvent } : null,
   };
 }
 

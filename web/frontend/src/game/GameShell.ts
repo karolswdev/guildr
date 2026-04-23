@@ -49,6 +49,7 @@ export class GameShell {
   private readonly composeDock = document.createElement("div");
   private readonly nextStepSheet = document.createElement("div");
   private readonly goalCoreSheet = document.createElement("div");
+  private readonly memorySheet = document.createElement("div");
   private readonly objectLensSheet = document.createElement("div");
   private readonly storyLensSheet = document.createElement("div");
   private readonly narratorBox = document.createElement("div");
@@ -230,6 +231,26 @@ export class GameShell {
       "pointer-events: auto",
     ].join("; ");
 
+    this.memorySheet.dataset.role = "memory-core-sheet";
+    this.memorySheet.style.cssText = [
+      "position: absolute",
+      "left: 50%",
+      "bottom: calc(max(78px, env(safe-area-inset-bottom) + 78px))",
+      "z-index: 4",
+      "display: none",
+      "width: min(720px, calc(100vw - 24px))",
+      "max-height: min(52vh, calc(100vh - 148px))",
+      "overflow: auto",
+      "transform: translateX(-50%)",
+      "padding: 11px",
+      "border: 1px solid rgba(65,199,199,0.32)",
+      "border-radius: 8px",
+      "background: linear-gradient(180deg, rgba(14,23,31,0.92), rgba(7,11,17,0.96))",
+      "box-shadow: 0 -18px 42px rgba(0,0,0,0.44), inset 0 1px 0 rgba(255,255,255,0.06)",
+      "backdrop-filter: blur(16px)",
+      "pointer-events: auto",
+    ].join("; ");
+
     this.objectLensSheet.dataset.role = "object-lens-sheet";
     this.objectLensSheet.style.cssText = [
       "position: absolute",
@@ -312,6 +333,7 @@ export class GameShell {
     this.root.appendChild(this.actionRing);
     this.root.appendChild(this.nextStepSheet);
     this.root.appendChild(this.goalCoreSheet);
+    this.root.appendChild(this.memorySheet);
     this.root.appendChild(this.objectLensSheet);
     this.root.appendChild(this.storyLensSheet);
     this.root.appendChild(this.narratorBox);
@@ -364,6 +386,7 @@ export class GameShell {
         workflow: this.options.workflow,
         assets: this.options.assetManager,
         onSelectGoalCore: () => this.openGoalCoreSheet(),
+        onSelectMemoryCore: () => this.openMemorySheet(),
         onSelectAtom: (atomId) => this.openActionRing(atomId),
       });
       this.unsubscribeEvent = this.options.engine.onEvent((event, snapshot) => {
@@ -418,6 +441,9 @@ export class GameShell {
     if (this.goalCoreSheet.style.display !== "none") {
       this.renderGoalCoreSheet(snapshot);
     }
+    if (this.memorySheet.style.display !== "none") {
+      this.renderMemorySheet(snapshot);
+    }
     if (this.objectLensSheet.style.display !== "none") {
       this.renderObjectLens(snapshot);
     }
@@ -438,10 +464,16 @@ export class GameShell {
     const remaining = snapshot.cost.remainingRunBudgetUsd !== null ? ` · ${formatUsd(snapshot.cost.remainingRunBudgetUsd)} left` : "";
     const unknown = snapshot.cost.unknownCostCount > 0 ? `<span title="Unknown costs" style="width: 8px; height: 8px; border-radius: 999px; background: #CC3333;"></span>` : "";
     const nextLabel = snapshot.nextStepPacket?.title || snapshot.nextStepPacket?.step || "No packet";
+    const memoryLabel = snapshot.memPalaceStatus?.wakeUpHash
+      ? `Memory: ${snapshot.memPalaceStatus.wakeUpHash.slice(0, 8)}`
+      : snapshot.memPalaceStatus?.error
+        ? "Memory: error"
+        : "Memory";
     const storyCount = snapshot.digests.length + snapshot.discussionHighlights.length;
     this.bottomHud.innerHTML = `
       <button data-action="focus-active" style="${hudChipStyle("#E8EAF0")}"><span style="color: #41C7C7;">●</span>${escapeHtml(active?.id || "overview")}</button>
       <button data-action="open-goal-core" data-role="goal-core-control" style="${hudChipStyle("#D9B84D")}">Goal</button>
+      <button data-action="open-memory-core" data-role="memory-core-control" style="${hudChipStyle("#41C7C7")}">${escapeHtml(memoryLabel)}</button>
       <button data-action="open-next-step" data-role="next-step-control" style="${hudChipStyle("#41C7C7")}">Next: ${escapeHtml(nextLabel)}</button>
       <button data-view-level="global" aria-label="Global view" style="${viewChipStyle(this.viewLevel === "global")}">Run</button>
       <button data-view-level="cluster" aria-label="Loop cluster view" style="${viewChipStyle(this.viewLevel === "cluster")}">Loop</button>
@@ -453,6 +485,7 @@ export class GameShell {
     `;
     (this.bottomHud.querySelector('[data-action="focus-active"]') as HTMLButtonElement).addEventListener("click", () => this.focusActiveAtom());
     (this.bottomHud.querySelector('[data-action="open-goal-core"]') as HTMLButtonElement).addEventListener("click", () => this.openGoalCoreSheet());
+    (this.bottomHud.querySelector('[data-action="open-memory-core"]') as HTMLButtonElement).addEventListener("click", () => this.openMemorySheet());
     (this.bottomHud.querySelector('[data-action="open-next-step"]') as HTMLButtonElement).addEventListener("click", () => this.openNextStepSheet());
     (this.bottomHud.querySelector('[data-action="open-timeline"]') as HTMLButtonElement).addEventListener("click", () => this.showTimeline(3000));
     this.bottomHud.querySelectorAll<HTMLButtonElement>("[data-view-level]").forEach((button) => {
@@ -479,6 +512,7 @@ export class GameShell {
     const overlayOpen = (
       this.nextStepSheet.style.display !== "none" ||
       this.goalCoreSheet.style.display !== "none" ||
+      this.memorySheet.style.display !== "none" ||
       this.objectLensSheet.style.display !== "none" ||
       this.storyLensSheet.style.display !== "none" ||
       this.composeDock.style.display !== "none" ||
@@ -565,6 +599,7 @@ export class GameShell {
     this.viewLevel = "surface";
     this.nextStepSheet.style.display = "none";
     this.goalCoreSheet.style.display = "none";
+    this.memorySheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
     this.composeDock.style.display = "none";
     this.actionRing.style.display = "none";
@@ -599,6 +634,7 @@ export class GameShell {
     this.composeAction = action;
     this.nextStepSheet.style.display = "none";
     this.goalCoreSheet.style.display = "none";
+    this.memorySheet.style.display = "none";
     this.actionRing.style.display = "none";
     this.objectLensSheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
@@ -614,6 +650,7 @@ export class GameShell {
     this.actionRing.style.display = "none";
     this.composeDock.style.display = "none";
     this.goalCoreSheet.style.display = "none";
+    this.memorySheet.style.display = "none";
     this.objectLensSheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
     this.bottomHud.style.display = "flex";
@@ -634,6 +671,7 @@ export class GameShell {
     this.actionRing.style.display = "none";
     this.composeDock.style.display = "none";
     this.nextStepSheet.style.display = "none";
+    this.memorySheet.style.display = "none";
     this.objectLensSheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
     this.bottomHud.style.display = "flex";
@@ -694,6 +732,61 @@ export class GameShell {
         this.openComposeDock(next.step, "interject");
       }
     });
+  }
+
+  private openMemorySheet(): void {
+    this.actionRing.style.display = "none";
+    this.composeDock.style.display = "none";
+    this.nextStepSheet.style.display = "none";
+    this.goalCoreSheet.style.display = "none";
+    this.objectLensSheet.style.display = "none";
+    this.storyLensSheet.style.display = "none";
+    this.bottomHud.style.display = "flex";
+    this.memorySheet.style.display = "block";
+    this.viewLevel = "global";
+    this.sceneManager?.focusGoalCore();
+    if (this.lastSnapshot) {
+      this.renderMemorySheet(this.lastSnapshot);
+    }
+  }
+
+  private renderMemorySheet(snapshot: EngineSnapshot): void {
+    this.memorySheet.innerHTML = `
+      <div style="display: grid; gap: 11px;">
+        <div style="display: flex; align-items: start; justify-content: space-between; gap: 10px;">
+          <div style="min-width: 0;">
+            <div style="font-size: 10px; color: #41C7C7; text-transform: uppercase; font-weight: 900;">Memory Spine · ${escapeHtml(snapshot.live ? "Live" : "Replay")}</div>
+            <div style="font-size: 17px; font-weight: 900; line-height: 1.2; margin-top: 3px; overflow-wrap: anywhere;">MemPalace wake-up packet</div>
+            <div style="font-size: 11px; color: #8C92A8; margin-top: 4px;">${snapshot.memoryEvents.length} memory events folded into this replay point</div>
+          </div>
+          <div style="display: inline-flex; gap: 6px; flex: 0 0 auto;">
+            <button data-action="memory-sync" data-role="memory-sync-control" style="${primaryButtonStyle()}">Sync</button>
+            <button data-action="memory-close" style="${ghostButtonStyle()}">Close</button>
+          </div>
+        </div>
+        ${memoryStatusCard(snapshot)}
+      </div>
+    `;
+    (this.memorySheet.querySelector('[data-action="memory-close"]') as HTMLButtonElement | null)?.addEventListener("click", () => {
+      this.memorySheet.style.display = "none";
+    });
+    (this.memorySheet.querySelector('[data-action="memory-sync"]') as HTMLButtonElement | null)?.addEventListener("click", () => void this.syncMemory());
+  }
+
+  private async syncMemory(): Promise<void> {
+    const button = this.memorySheet.querySelector('[data-action="memory-sync"]') as HTMLButtonElement | null;
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Syncing";
+    }
+    try {
+      await apiPost(`/api/projects/${this.options.projectId}/memory/sync`, {});
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Sync";
+      }
+    }
   }
 
   private renderNextStepSheet(snapshot: EngineSnapshot): void {
@@ -1045,6 +1138,7 @@ export class GameShell {
     if (level === "surface" && target && this.lastSnapshot) {
       this.nextStepSheet.style.display = "none";
       this.goalCoreSheet.style.display = "none";
+      this.memorySheet.style.display = "none";
       this.actionRing.style.display = "none";
       this.storyLensSheet.style.display = "none";
       this.objectLensSheet.style.display = "block";
@@ -1052,12 +1146,14 @@ export class GameShell {
     } else if (level === "story" && this.lastSnapshot) {
       this.nextStepSheet.style.display = "none";
       this.goalCoreSheet.style.display = "none";
+      this.memorySheet.style.display = "none";
       this.actionRing.style.display = "none";
       this.objectLensSheet.style.display = "none";
       this.storyLensSheet.style.display = "block";
       this.renderStoryLens(this.lastSnapshot);
     } else {
       this.goalCoreSheet.style.display = "none";
+      this.memorySheet.style.display = "none";
       this.objectLensSheet.style.display = "none";
       this.storyLensSheet.style.display = "none";
     }
@@ -1091,6 +1187,7 @@ export class GameShell {
     this.composeDock.style.display = "none";
     this.nextStepSheet.style.display = "none";
     this.goalCoreSheet.style.display = "none";
+    this.memorySheet.style.display = "none";
     this.objectLensSheet.style.display = "none";
     this.storyLensSheet.style.display = "none";
     this.bottomHud.style.display = "none";
@@ -1125,6 +1222,14 @@ function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 }
 
+function compactText(value: string | null | undefined, max = 520): string {
+  const text = (value || "").trim();
+  if (text.length <= max) {
+    return text;
+  }
+  return `${text.slice(0, max - 1)}…`;
+}
+
 function fallbackHtml(workflow: WorkflowStep[], snapshot: EngineSnapshot, projectBrief: ProjectBrief | null): string {
   return `
     <div style="display: grid; gap: 10px;">
@@ -1143,6 +1248,9 @@ function fallbackHtml(workflow: WorkflowStep[], snapshot: EngineSnapshot, projec
           <div style="font-size: 12px; color: #C7CAD6; margin-top: 6px;">${escapeHtml(snapshot.nextStepPacket.objective || snapshot.nextStepPacket.whyNow || "")}</div>
         </div>
       ` : ""}
+      <div data-role="memory-core-sheet" style="padding: 12px; border: 1px solid #254A50; border-radius: 8px; background: #101923;">
+        ${memoryStatusCard(snapshot)}
+      </div>
       ${snapshot.latestDigest ? `
         <div data-role="narrative-digest" style="padding: 12px; border: 1px solid #2A3042; border-radius: 8px; background: #141822;">
           <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Recent story</div>
@@ -1171,6 +1279,60 @@ function fallbackHtml(workflow: WorkflowStep[], snapshot: EngineSnapshot, projec
           </div>
         `;
       }).join("")}
+    </div>
+  `;
+}
+
+export function memoryStatusCard(snapshot: EngineSnapshot): string {
+  const status = snapshot.memPalaceStatus;
+  const initialized = status?.initialized ? "Initialized" : "Not initialized";
+  const availability = status?.available ? "CLI available" : "CLI unavailable";
+  const wakeHash = status?.wakeUpHash ? status.wakeUpHash.slice(0, 16) : "No wake-up hash";
+  const bytes = status ? formatBytes(status.wakeUpBytes) : "0 B";
+  const wakeup = compactText(status?.cached_wakeup, 760);
+  const lastSearch = compactText(status?.last_search, 420);
+  const refs = status?.memoryRefs ?? [];
+  const recent = snapshot.memoryEvents.slice(-5).reverse();
+  const error = status?.error
+    ? `<div style="font-size: 12px; color: #D96A6A; line-height: 1.35; overflow-wrap: anywhere;">${escapeHtml(status.error)}</div>`
+    : "";
+  const recentRows = recent.length > 0
+    ? recent.map((event) => {
+      const detail = event.error
+        ? event.error
+        : typeof event.hashChanged === "boolean"
+          ? `${event.hashChanged ? "memory changed" : "memory unchanged"}${event.wakeUpHash ? ` · ${event.wakeUpHash.slice(0, 12)}` : ""}`
+        : event.query
+          ? `query: ${event.query}${event.results !== null ? ` · ${event.results} results` : ""}`
+          : event.wakeUpHash
+            ? `wake: ${event.wakeUpHash.slice(0, 12)}`
+            : event.eventId || "";
+      return `<div style="${sheetLineStyle()}"><strong style="color: #E8EAF0;">${escapeHtml(event.type.replace(/_/g, " "))}</strong><br>${escapeHtml(detail || "Memory state recorded.")}</div>`;
+    }).join("")
+    : `<div style="${sheetEmptyStyle()}">No memory events have landed in this replay window yet.</div>`;
+
+  return `
+    <div data-role="memory-status-card" style="display: grid; gap: 9px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(156px, 1fr)); gap: 7px;">
+        ${sheetField("Status", `${initialized} · ${availability}`)}
+        ${sheetField("Wing", status?.wing || "No project wing resolved.")}
+        ${sheetField("Wake hash", wakeHash)}
+        ${sheetField("Packet size", bytes)}
+      </div>
+      ${error}
+      <div data-role="memory-wakeup-preview" style="${sheetPanelStyle()}">
+        <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 5px;">Wake-up preview</div>
+        <div style="font-size: 12px; color: #D9D2B2; line-height: 1.36; white-space: pre-wrap; overflow-wrap: anywhere;">${escapeHtml(wakeup || "No cached wake-up packet is available yet.")}</div>
+      </div>
+      <div data-role="memory-last-search" style="${sheetPanelStyle()}">
+        <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 5px;">Last search</div>
+        <div style="font-size: 12px; color: #C7CAD6; line-height: 1.36; white-space: pre-wrap; overflow-wrap: anywhere;">${escapeHtml(lastSearch || "No memory search has been recorded yet.")}</div>
+      </div>
+      ${sheetRefs("Memory refs", refs)}
+      <div data-role="memory-event-rail" style="display: grid; gap: 6px;">
+        <div style="font-size: 11px; color: #8C92A8; text-transform: uppercase; font-weight: 850;">Recent memory events</div>
+        <div style="display: grid; gap: 5px;">${recentRows}</div>
+      </div>
     </div>
   `;
 }
