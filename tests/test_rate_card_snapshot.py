@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from orchestrator.lib.local_cost import load_local_cost_profile
+from orchestrator.lib.local_cost import annotate_rate_card_snapshot_status, load_local_cost_profile
 
 
 def _rate_dir(project_dir: Path) -> Path:
@@ -76,3 +76,89 @@ def test_projectless_profile_does_not_require_snapshot(monkeypatch) -> None:
     assert version.startswith("local-offline-")
     assert profile["rate_card_version"] == version
     assert profile["machine_id"] == "offline"
+
+
+def test_rate_card_status_marks_existing_snapshot(tmp_path: Path) -> None:
+    rate_dir = _rate_dir(tmp_path)
+    rate_dir.mkdir(parents=True)
+    (rate_dir / "local-rig.json").write_text(
+        json.dumps({"rate_card_version": "local-rig"}),
+        encoding="utf-8",
+    )
+    payload = {
+        "rate_card_version": "local-rig",
+        "rate_card_ref": ".orchestrator/costs/rate-cards/local-rig.json",
+        "source": "local_estimate",
+        "confidence": "medium",
+        "cost_usd": 0.01,
+        "cost": {
+            "source": "local_estimate",
+            "confidence": "medium",
+            "effective_cost": 0.01,
+            "estimated_cost": 0.01,
+            "rate_card_version": "local-rig",
+            "rate_card_ref": ".orchestrator/costs/rate-cards/local-rig.json",
+        },
+    }
+
+    annotate_rate_card_snapshot_status(tmp_path, payload)
+
+    assert payload["rate_card_checked"] is True
+    assert payload["rate_card_missing"] is False
+    assert payload["cost"]["rate_card_checked"] is True
+    assert payload["cost"]["rate_card_missing"] is False
+    assert payload["source"] == "local_estimate"
+    assert payload["cost_usd"] == 0.01
+
+
+def test_rate_card_status_downgrades_missing_estimate(tmp_path: Path) -> None:
+    payload = {
+        "rate_card_version": "local-missing",
+        "source": "local_estimate",
+        "confidence": "medium",
+        "cost_usd": 0.01,
+        "cost": {
+            "source": "local_estimate",
+            "confidence": "medium",
+            "effective_cost": 0.01,
+            "estimated_cost": 0.01,
+            "rate_card_version": "local-missing",
+        },
+    }
+
+    annotate_rate_card_snapshot_status(tmp_path, payload)
+
+    assert payload["rate_card_ref"] == ".orchestrator/costs/rate-cards/local-missing.json"
+    assert payload["cost"]["rate_card_ref"] == ".orchestrator/costs/rate-cards/local-missing.json"
+    assert payload["rate_card_checked"] is True
+    assert payload["rate_card_missing"] is True
+    assert payload["source"] == "unknown"
+    assert payload["confidence"] == "none"
+    assert payload["cost_usd"] is None
+    assert payload["cost"]["source"] == "unknown"
+    assert payload["cost"]["confidence"] == "none"
+    assert payload["cost"]["effective_cost"] is None
+    assert payload["cost"]["estimated_cost"] is None
+
+
+def test_rate_card_status_rejects_unsafe_ref(tmp_path: Path) -> None:
+    payload = {
+        "rate_card_version": "local-escape",
+        "rate_card_ref": "../outside.json",
+        "source": "rate_card_estimate",
+        "confidence": "medium",
+        "cost_usd": 1.0,
+        "cost": {
+            "source": "rate_card_estimate",
+            "confidence": "medium",
+            "effective_cost": 1.0,
+            "estimated_cost": 1.0,
+            "rate_card_version": "local-escape",
+            "rate_card_ref": "../outside.json",
+        },
+    }
+
+    annotate_rate_card_snapshot_status(tmp_path, payload)
+
+    assert payload["rate_card_missing"] is True
+    assert payload["source"] == "unknown"

@@ -374,7 +374,7 @@ def test_cost_summary_card_helper(tmp_path: Path) -> None:
           openBudgetGateIds: ['budget_phase'],
           rateCardVersions: ['local-rig-2026-04-22T10:00:00Z'],
           rateCardRefs: ['.orchestrator/costs/rate-cards/local-rig-2026-04-22T10:00:00Z.json'],
-          missingRateCardVersions: [],
+          missingRateCardVersions: ['local-missing'],
         };
 
         const html = costSummaryCard(cost);
@@ -395,6 +395,7 @@ def test_cost_summary_card_helper(tmp_path: Path) -> None:
         assert.ok(html.includes('budget_phase'));
         assert.ok(html.includes('local-rig-2026-04-22T10:00:00Z'));
         assert.ok(html.includes('.orchestrator/costs/rate-cards/local-rig-2026-04-22T10:00:00Z.json'));
+        assert.ok(html.includes('missing: local-missing'));
         assert.ok(html.includes('unknown: 1'));
         assert.ok(html.includes('local&lt;llama&gt;'));
         assert.ok(html.includes('task&lt;1&gt;'));

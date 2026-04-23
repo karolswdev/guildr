@@ -260,8 +260,12 @@ def test_zero_cost_local_provider_uses_local_estimate(state: SimpleNamespace) ->
     assert usage["cost"]["estimated_cost"] == pytest.approx(0.005)
     assert usage["cost"]["rate_card_version"] == "local-test"
     assert usage["cost"]["rate_card_ref"] == ".orchestrator/costs/rate-cards/local-test.json"
+    assert usage["cost"]["rate_card_checked"] is True
+    assert usage["cost"]["rate_card_missing"] is False
     assert usage["rate_card_version"] == "local-test"
     assert usage["rate_card_ref"] == ".orchestrator/costs/rate-cards/local-test.json"
+    assert usage["rate_card_checked"] is True
+    assert usage["rate_card_missing"] is False
 
 
 def test_opencode_and_advisor_usage_rows_share_core_schema(state: SimpleNamespace) -> None:

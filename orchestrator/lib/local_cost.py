@@ -22,6 +22,45 @@ def rate_card_snapshot_ref(rate_card_version: str) -> str:
     return f".orchestrator/costs/rate-cards/{rate_card_version}.json"
 
 
+def annotate_rate_card_snapshot_status(
+    project_dir: Path | None,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Mark whether a usage payload's referenced rate-card snapshot exists.
+
+    Replay must not silently substitute current prices when a historical
+    snapshot is missing. For estimated costs, a missing referenced card makes
+    the affected row unknown so downstream folds show it as untrusted.
+    """
+    cost = payload.get("cost")
+    if not isinstance(cost, dict):
+        cost = {}
+        payload["cost"] = cost
+
+    version = _string(cost.get("rate_card_version")) or _string(payload.get("rate_card_version"))
+    if not version:
+        return payload
+    cost["rate_card_version"] = version
+    payload["rate_card_version"] = version
+
+    ref = _string(cost.get("rate_card_ref")) or _string(payload.get("rate_card_ref"))
+    if not ref:
+        ref = rate_card_snapshot_ref(version)
+    cost["rate_card_ref"] = ref
+    payload["rate_card_ref"] = ref
+
+    exists = _rate_card_ref_exists(project_dir, ref)
+    checked = exists is not None
+    missing = exists is False
+    cost["rate_card_checked"] = checked
+    cost["rate_card_missing"] = missing
+    payload["rate_card_checked"] = checked
+    payload["rate_card_missing"] = missing
+    if missing:
+        _mark_missing_rate_card(payload, cost)
+    return payload
+
+
 def load_local_cost_profile(project_dir: Path | None = None) -> tuple[dict[str, Any], str]:
     """Return (profile, rate_card_version) for local llama.cpp estimates.
 
@@ -106,6 +145,33 @@ def _safe_machine_id(raw: object) -> str:
     value = str(raw or DEFAULT_PROFILE["machine_id"])
     safe = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "-" for ch in value)
     return safe.strip("-_.") or str(DEFAULT_PROFILE["machine_id"])
+
+
+def _rate_card_ref_exists(project_dir: Path | None, ref: str) -> bool | None:
+    if project_dir is None:
+        return None
+    path = Path(ref)
+    if path.is_absolute() or ".." in path.parts:
+        return False
+    if path.parts[:3] != (".orchestrator", "costs", "rate-cards"):
+        return False
+    return (project_dir / path).is_file()
+
+
+def _mark_missing_rate_card(payload: dict[str, Any], cost: dict[str, Any]) -> None:
+    if cost.get("source") == "provider_reported" or payload.get("source") == "provider_reported":
+        return
+    payload["source"] = "unknown"
+    payload["confidence"] = "none"
+    payload["cost_usd"] = None
+    cost["source"] = "unknown"
+    cost["confidence"] = "none"
+    cost["effective_cost"] = None
+    cost["estimated_cost"] = None
+
+
+def _string(value: object) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def _env_float(name: str, default: Any) -> float:

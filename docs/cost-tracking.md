@@ -291,6 +291,12 @@ exists on disk. If it is missing, the replay viewer must show a warning and
 fall back to `source: "unknown"`, `confidence: "none"` for affected calls.
 Replay must never silently substitute a newer rate card.
 
+Runtime usage emitters also annotate referenced snapshots before emitting and
+persisting `usage_recorded`: `rate_card_checked` says whether disk validation
+was possible, and `rate_card_missing` flags an absent or unsafe ref. Missing
+estimated-rate rows are downgraded to unknown cost/confidence so budget and
+replay folds do not treat unresolvable assumptions as trusted spend.
+
 ## Budgets And Gates
 
 Budgets are configurable at multiple levels:

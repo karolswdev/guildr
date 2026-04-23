@@ -111,7 +111,15 @@ def test_cost_replay_and_budget_gate(tmp_path: Path) -> None:
             type: 'usage_recorded',
             step: 'testing',
             usage: { input_tokens: 1 },
-            cost: { effective_cost: null, provider_reported_cost: null, estimated_cost: null, source: 'unknown' },
+            cost: {
+              effective_cost: null,
+              provider_reported_cost: null,
+              estimated_cost: null,
+              source: 'unknown',
+              rate_card_version: 'local-missing',
+              rate_card_ref: '.orchestrator/costs/rate-cards/local-missing.json',
+              rate_card_missing: true,
+            },
           },
         ]);
         let cost = engine.snapshot().cost;
@@ -122,8 +130,12 @@ def test_cost_replay_and_budget_gate(tmp_path: Path) -> None:
         assert.equal(cost.phaseBudgetUsd, 2);
         assert.equal(cost.remainingRunBudgetUsd, 7.5);
         assert.equal(cost.runHalted, true);
-        assert.deepEqual(cost.rateCardVersions, ['openrouter-2026-04-22T10:00:00Z']);
-        assert.deepEqual(cost.rateCardRefs, ['.orchestrator/costs/rate-cards/openrouter-2026-04-22T10:00:00Z.json']);
+        assert.deepEqual(cost.rateCardVersions, ['openrouter-2026-04-22T10:00:00Z', 'local-missing']);
+        assert.deepEqual(cost.rateCardRefs, [
+          '.orchestrator/costs/rate-cards/openrouter-2026-04-22T10:00:00Z.json',
+          '.orchestrator/costs/rate-cards/local-missing.json',
+        ]);
+        assert.deepEqual(cost.missingRateCardVersions, ['local-missing']);
         engine.scrubTo(0);
         cost = engine.snapshot().cost;
         assert.equal(cost.effectiveUsd, 0.25);

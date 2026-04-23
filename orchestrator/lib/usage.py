@@ -7,6 +7,7 @@ from typing import Any
 from orchestrator.lib.budget import apply_budget_to_usage, emit_budget_events
 from orchestrator.lib.event_schema import new_event_id
 from orchestrator.lib.local_cost import (
+    annotate_rate_card_snapshot_status,
     estimate_local_cost,
     load_local_cost_profile,
     rate_card_snapshot_ref,
@@ -117,6 +118,7 @@ def emit_llm_usage(
         runtime_extra=runtime_extra,
         rate_card_version=rate_card_version,
     )
+    annotate_rate_card_snapshot_status(getattr(state, "project_dir", None), payload)
     evaluation = apply_budget_to_usage(state, payload)
     event_bus.emit("usage_recorded", **payload)
     from orchestrator.lib.usage_writer import write_usage
@@ -200,6 +202,7 @@ def emit_advisor_usage(
         error=error,
         provider_metadata=provider_metadata,
     )
+    annotate_rate_card_snapshot_status(getattr(state, "project_dir", None), payload)
     evaluation = apply_budget_to_usage(state, payload)
     event_bus.emit("usage_recorded", **payload)
     from orchestrator.lib.usage_writer import write_usage

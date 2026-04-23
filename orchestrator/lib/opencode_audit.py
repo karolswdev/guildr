@@ -37,7 +37,11 @@ from typing import Any
 
 from orchestrator.lib.budget import apply_budget_to_usage, emit_budget_events
 from orchestrator.lib.event_schema import new_event_id
-from orchestrator.lib.local_cost import estimate_local_cost, load_local_cost_profile
+from orchestrator.lib.local_cost import (
+    annotate_rate_card_snapshot_status,
+    estimate_local_cost,
+    load_local_cost_profile,
+)
 from orchestrator.lib.memory_palace import wakeup_hash
 from orchestrator.lib.opencode import OpencodeMessage, OpencodeResult
 from orchestrator.lib.raw_io import write_round_trip
@@ -190,6 +194,7 @@ def _emit_usage(
         runtime_extra=runtime_extra,
         rate_card_version=cost_fields["rate_card_version"],
     )
+    annotate_rate_card_snapshot_status(project_dir, payload)
 
     event_bus = getattr(state, "events", None)
     evaluation = apply_budget_to_usage(state, payload)
