@@ -237,6 +237,10 @@ def test_game_shell_bundle_contains_replay_surface(tmp_path: Path) -> None:
     assert "Evidence required" in text
     assert "Demo readiness" in text
     assert "demoReadinessLabel" in text
+    assert "functional-mini-sprint" in text
+    assert "functionalMiniSprintPanel" in text
+    assert "Functional evidence" in text
+    assert "Blocking findings" in text
     assert "goal-core-sheet" in text
     assert "goal-core-control" in text
     assert "openGoalCoreSheet" in text
@@ -512,6 +516,55 @@ def test_demo_artifact_url_and_card_helpers(tmp_path: Path) -> None:
         assert.ok(failHtml.includes('data-demo-status="failed"'));
         assert.ok(failHtml.includes('boom: selector missing'));
         assert.ok(!failHtml.includes('data-role="demo-thumb"'));
+        """,
+        include_three=True,
+    )
+
+
+def test_functional_mini_sprint_panel_helper(tmp_path: Path) -> None:
+    run_script(
+        tmp_path,
+        GAME_SHELL_TS,
+        """
+        import assert from 'node:assert/strict';
+
+        globalThis.document = {
+          createElement: () => {
+            const node = { textContent: '', get innerHTML() { return String(this.textContent).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } };
+            return node;
+          },
+        };
+
+        const { functionalMiniSprintPanel } = await import('__BUNDLE__');
+        const snapshot = {
+          functional: {
+            evidenceRefs: ['pytest', 'TEST_REPORT.md', 'app.py', 'REVIEW.md'],
+            currentMiniSprint: {
+              miniSprintId: 'ms_login',
+              title: 'Ship <login>',
+              objective: 'Make sign-in usable.',
+              steps: [
+                { stepId: 'implementation', stepKind: 'build', status: 'done' },
+                { stepId: 'testing', stepKind: 'test', status: 'failed' },
+              ],
+              acceptance: {
+                passed: false,
+                blockingFindings: ['Missing mobile proof <375px>'],
+              },
+            },
+          },
+        };
+
+        const html = functionalMiniSprintPanel(snapshot);
+        assert.ok(html.includes('data-role="functional-mini-sprint"'));
+        assert.ok(html.includes('Ship &lt;login&gt;'));
+        assert.ok(html.includes('Blocked'));
+        assert.ok(html.includes('build: done'));
+        assert.ok(html.includes('test: failed'));
+        assert.ok(html.includes('TEST_REPORT.md'));
+        assert.ok(html.includes('Missing mobile proof &lt;375px&gt;'));
+        assert.ok(!html.includes('Ship <login>'));
+        assert.ok(!html.includes('Missing mobile proof <375px>'));
         """,
         include_three=True,
     )

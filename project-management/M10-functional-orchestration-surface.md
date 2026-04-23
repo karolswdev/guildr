@@ -366,10 +366,13 @@ and acceptance state. Evidence: `uv run pytest -q tests/test_event_schema.py tes
 
 ### Slice F4 — Next Move Sheet Upgrade
 
-- Add acceptance criteria, evidence required, demo request, Hero invite, and
-  scope warning rows to the existing Next-Step surface.
-- Keep backend-authoritative `next_step_packet_created` as source.
-- Do not create a new route.
+- [x] Add acceptance/evidence/demo readiness rows to the existing Next-Step
+  surface.
+- [x] Add mini-sprint evidence, functional step status, acceptance verdict, and
+  blocking findings from `snapshot.functional`.
+- [x] Keep backend-authoritative `next_step_packet_created` and functional
+  event folds as source.
+- [x] Do not create a new route.
 
 Evidence:
 
@@ -377,6 +380,11 @@ Evidence:
 uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py
 ./web/frontend/build.sh
 ```
+
+Landed 2026-04-23: the existing map-native Next-Step sheet now includes a
+`functional-mini-sprint` panel with planned sprint objective, functional step
+status, evidence refs, acceptance verdict, and blocking findings. Evidence:
+`uv run pytest -q web/frontend/tests/test_game_map.py web/frontend/tests/test_event_engine.py` -> 29 passed; `./web/frontend/build.sh` -> `dist/app.js` 1,370,300 bytes.
 
 ### Slice F5 — Hero Invite Intent UI
 
@@ -454,5 +462,5 @@ uv run pytest -q tests/test_functional_orchestration.py tests/test_engine.py web
 
 ## Immediate Next Step
 
-Run Slice F4: use the functional mini-sprint fold to upgrade the Next Move
-surface with mini-sprint evidence, acceptance state, and scope warnings.
+Run Slice F5: add bounded Hero invite intent UI with mission, watch-for list,
+model/provider, term, and target step.

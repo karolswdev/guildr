@@ -945,6 +945,7 @@ export class GameShell {
           ${sheetSection("Acceptance criteria", packet.acceptanceCriteria, "No acceptance criteria are declared for this next move yet.")}
           ${sheetSection("Evidence required", packet.evidenceRequired, "No explicit evidence requirements are declared yet.")}
         </div>
+        ${functionalMiniSprintPanel(snapshot)}
         ${latestDigestPanel(snapshot)}
         ${discussionPanel(snapshot, packet.step)}
         ${sheetSection("Context", packet.contextPreview, "No context preview yet.")}
@@ -1724,6 +1725,37 @@ function demoReadinessLabel(packet: NextStepPacket): string {
   return packet.demoRequested
     ? `Requested · ${compatibility}`
     : `Not requested · ${compatibility}`;
+}
+
+export function functionalMiniSprintPanel(snapshot: EngineSnapshot): string {
+  const sprint = snapshot.functional.currentMiniSprint;
+  if (!sprint) {
+    return `
+      <div data-role="functional-mini-sprint" style="${sheetPanelStyle()}">
+        <div style="font-size: 10px; color: #8C92A8; text-transform: uppercase; font-weight: 850; margin-bottom: 4px;">Mini-sprint</div>
+        <div style="font-size: 12px; color: #AEB4C6; line-height: 1.35;">No functional mini-sprint has been planned yet.</div>
+      </div>
+    `;
+  }
+  const acceptance = sprint.acceptance;
+  const verdict = acceptance
+    ? acceptance.passed ? "Accepted" : "Blocked"
+    : "Not evaluated";
+  const stepRows = sprint.steps.length > 0
+    ? sprint.steps.slice(-4).map((step) => `${step.stepKind || step.stepId}: ${step.status}`).join(" · ")
+    : "No functional steps completed yet.";
+  const blockers = acceptance?.blockingFindings ?? [];
+  return `
+    <div data-role="functional-mini-sprint" style="display: grid; gap: 8px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 8px;">
+        ${sheetField("Mini-sprint", `${sprint.title || sprint.miniSprintId}: ${sprint.objective || "Objective pending."}`)}
+        ${sheetField("Acceptance", verdict)}
+      </div>
+      ${sheetSection("Functional steps", [stepRows], "No functional step state has landed yet.")}
+      ${sheetRefs("Functional evidence", snapshot.functional.evidenceRefs)}
+      ${sheetSection("Blocking findings", blockers, "No blocking findings recorded.")}
+    </div>
+  `;
 }
 
 function sheetSection(label: string, rows: string[], empty: string): string {
